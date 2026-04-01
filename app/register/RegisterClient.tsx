@@ -33,8 +33,12 @@ export default function RegisterClient() {
     district: "", prakhand: "", village: "",
     preExistingDiseases: [] as string[],
     height: "", weight: "",
+    photo: "",
   });
 
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState("");
+  const [photoUploading, setPhotoUploading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -52,6 +56,38 @@ export default function RegisterClient() {
     }));
   }
 
+  // Photo select karna
+  function handlePhotoSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoFile(file);
+    setPhotoPreview(URL.createObjectURL(file));
+  }
+
+  // Photo upload karna
+  async function uploadPhoto() {
+    if (!photoFile) return;
+    setPhotoUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("photo", photoFile);
+      const res = await fetch("/api/upload-photo", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (data.success) {
+        setForm((prev) => ({ ...prev, photo: data.url }));
+        setError("");
+      } else {
+        setError("Photo upload fail hua: " + data.message);
+      }
+    } catch {
+      setError("Photo upload mein network error");
+    }
+    setPhotoUploading(false);
+  }
+
   const showMarital = form.gender === "female" && parseInt(form.age) >= 18;
   const showPregnancy = showMarital && form.maritalStatus === "married";
 
@@ -59,6 +95,10 @@ export default function RegisterClient() {
     setError("");
     if (!form.name || !form.age || !form.gender || !form.idType || !form.idNumber || !form.district) {
       setError("Sabhi zaruri (*) fields bharo");
+      return;
+    }
+    if (!form.photo) {
+      setError("Photo upload karna zaruri hai");
       return;
     }
     setLoading(true);
@@ -89,6 +129,34 @@ export default function RegisterClient() {
           <h1 className="text-2xl font-bold text-teal-700 mb-2">Register Karein</h1>
           <p className="text-gray-500 text-sm mb-6">Mobile: +91 {mobile}</p>
 
+          {/* Photo Upload */}
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Photo Upload * (Card pe lagegi)</label>
+            <div className="flex items-center gap-4">
+              <div className="w-24 h-24 rounded-full border-2 border-dashed border-gray-300 flex items-center justify-center overflow-hidden bg-gray-50">
+                {photoPreview ? (
+                  <img src={photoPreview} alt="Preview" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-3xl">👤</span>
+                )}
+              </div>
+              <div className="flex flex-col gap-2">
+                <input type="file" accept="image/*" onChange={handlePhotoSelect}
+                  className="text-sm text-gray-500 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-teal-50 file:text-teal-700 file:font-medium hover:file:bg-teal-100" />
+                {photoFile && !form.photo && (
+                  <button onClick={uploadPhoto} disabled={photoUploading}
+                    className="bg-teal-600 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50">
+                    {photoUploading ? "Upload ho raha hai..." : "Photo Upload Karein ☁️"}
+                  </button>
+                )}
+                {form.photo && (
+                  <span className="text-green-600 text-sm font-medium">✅ Photo upload ho gayi!</span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Name */}
           <div className="mb-4">
             <label className="block text-sm font-medium text-gray-700 mb-1">Poora Naam *</label>
             <input name="name" value={form.name} onChange={handleChange} placeholder="Apna poora naam"
