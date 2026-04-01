@@ -93,7 +93,7 @@ const specializations = ["All", "General Physician", "Gynaecologist", "Orthopaed
 
 export default function DoctorsPage() {
   const [selected, setSelected] = useState("All");
-  const [expanded, setExpanded] = useState(null);
+  const [expanded, setExpanded] = useState<number | null>(null);
 
   const filtered = selected === "All" ? doctors : doctors.filter(d => d.specialization === selected);
 
