@@ -55,6 +55,7 @@ export default function LoginPage() {
       const data = await res.json();
       if (data.success) {
         setMessage("Login ho gaya! 🎉");
+        localStorage.setItem("userId", data.userId);  // ← yeh add karo
         // Agar naya user hai toh register page pe bhejo
         if (data.isNewUser) {
           setTimeout(() => {
