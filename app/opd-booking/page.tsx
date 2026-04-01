@@ -23,7 +23,14 @@ const registeredMembers = [
 export default function OPDBookingPage() {
   const [step, setStep] = useState(1); // 1=Doctor, 2=Patient, 3=Confirm, 4=Success
   const [filterSpec, setFilterSpec] = useState("All");
-  const [selectedDoctor, setSelectedDoctor] = useState(null);
+  const [selectedDoctor, setSelectedDoctor] = useState<{
+  id: number;
+  name: string;
+  specialization: string;
+  fees: number;
+  time: string;
+  available: string[];
+} | null>(null);
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedSlot, setSelectedSlot] = useState("");
   const [paymentMode, setPaymentMode] = useState("");
