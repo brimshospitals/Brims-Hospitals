@@ -28,7 +28,13 @@ export default function OPDBookingPage() {
   const [selectedSlot, setSelectedSlot] = useState("");
   const [paymentMode, setPaymentMode] = useState("");
   const [mobileCheck, setMobileCheck] = useState("");
-  const [memberFound, setMemberFound] = useState(null);
+  const [memberFound, setMemberFound] = useState<{
+  mobile: string;
+  name: string;
+  dob: string;
+  gender: string;
+  city: string;
+} | null>(null);
   const [isNewPatient, setIsNewPatient] = useState(false);
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
