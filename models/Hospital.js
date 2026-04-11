@@ -2,6 +2,8 @@ import mongoose from "mongoose";
 
 const hospitalSchema = new mongoose.Schema({
   hospitalId: { type: String, unique: true },
+  // Auth link — hospital User account
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
   name: { type: String, required: true },
   address: {
     street: { type: String },

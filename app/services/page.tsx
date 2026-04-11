@@ -9,6 +9,7 @@ export default function ServicesPage() {
       features: ["30+ Specialist Doctors", "Same Day Appointment", "Digital Prescription"],
       price: "₹200 – ₹500",
       tag: "Most Popular",
+      href: "/opd-booking",
     },
     {
       icon: "🛏️",
@@ -17,6 +18,7 @@ export default function ServicesPage() {
       features: ["AC & General Wards", "24/7 Nursing Care", "Insurance Accepted"],
       price: "₹1,500/day onwards",
       tag: "Comprehensive Care",
+      href: "/contact",
     },
     {
       icon: "🧪",
@@ -25,14 +27,16 @@ export default function ServicesPage() {
       features: ["200+ Tests Available", "Home Sample Collection", "Reports in 24hrs"],
       price: "₹99 – ₹2,000",
       tag: "Home Collection",
+      href: "/lab-tests",
     },
     {
       icon: "💻",
       title: "Teleconsultation",
-      desc: "Consult with experienced doctors from the comfort of your home via video call.",
+      desc: "Consult with experienced doctors from the comfort of your home via video or audio call.",
       features: ["Video & Audio Call", "Available 8AM–10PM", "E-Prescription"],
-      price: "₹150 – ₹300",
+      price: "₹150 – ₹400",
       tag: "From Home",
+      href: "/teleconsultation",
     },
     {
       icon: "🔪",
@@ -41,6 +45,7 @@ export default function ServicesPage() {
       features: ["All-Inclusive Package", "EMI Available", "Pre & Post Op Care"],
       price: "₹15,000 onwards",
       tag: "EMI Available",
+      href: "/surgery-packages",
     },
     {
       icon: "👨‍👩‍👧",
@@ -49,6 +54,7 @@ export default function ServicesPage() {
       features: ["Upto 6 Members", "15% Discount", "Priority Booking"],
       price: "₹999/year",
       tag: "Best Value",
+      href: "/dashboard",
     },
   ];
 
@@ -91,9 +97,9 @@ export default function ServicesPage() {
                     <p className="text-xs text-gray-400">Starting from</p>
                     <p className="text-lg font-bold text-teal-700">{s.price}</p>
                   </div>
-                  <button className="bg-teal-600 text-white px-5 py-2 rounded-full text-sm font-semibold hover:bg-teal-700 transition">
+                  <a href={s.href} className="bg-teal-600 text-white px-5 py-2 rounded-full text-sm font-semibold hover:bg-teal-700 transition">
                     Book Now
-                  </button>
+                  </a>
                 </div>
               </div>
             </div>

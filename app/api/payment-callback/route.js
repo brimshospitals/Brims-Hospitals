@@ -73,7 +73,7 @@ export async function POST(request) {
       expiryDate,
       status: "active",
       paymentId: data?.transactionId || txnId,
-      amountPaid: data?.amount ? data.amount / 100 : 999,
+      amountPaid: data?.amount ? data.amount / 100 : 249,
     });
 
     // User ko card link karo

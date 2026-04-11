@@ -7,6 +7,10 @@ const slotSchema = new mongoose.Schema({
 
 const doctorSchema = new mongoose.Schema({
   name: { type: String, required: true },
+  // Auth link — a doctor User account is linked here
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+  mobile: { type: String },
+  email:  { type: String },
   hospitalId: { type: mongoose.Schema.Types.ObjectId, ref: "Hospital" },
   hospitalName: { type: String },
   department: { type: String, required: true },

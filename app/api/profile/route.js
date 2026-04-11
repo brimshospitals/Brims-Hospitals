@@ -5,6 +5,54 @@ import FamilyCard from "../../../models/FamilyCard";
 
 export const dynamic = "force-dynamic";
 
+export async function GET(request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const userId = searchParams.get("userId");
+
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, message: "userId zaruri hai" },
+        { status: 400 }
+      );
+    }
+
+    await connectDB();
+
+    const user = await User.findById(userId).select("-otp -otpExpiry");
+    if (!user) {
+      return NextResponse.json(
+        { success: false, message: "User nahi mila" },
+        { status: 404 }
+      );
+    }
+
+    let familyCard = null;
+    let familyMembers = [];
+
+    if (user.familyCardId) {
+      familyCard = await FamilyCard.findById(user.familyCardId);
+      if (familyCard && familyCard.members?.length > 0) {
+        familyMembers = await User.find({ _id: { $in: familyCard.members } }).select(
+          "_id name age gender photo memberId relationship"
+        );
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      user,
+      familyCard,
+      familyMembers,
+    });
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: "Server error: " + error.message },
+      { status: 500 }
+    );
+  }
+}
+
 function generateMemberId() {
   return "BRIMS-" + Date.now().toString(36).toUpperCase();
 }

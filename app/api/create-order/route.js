@@ -10,8 +10,8 @@ const MERCHANT_ID = process.env.PHONEPE_MERCHANT_ID;
 const SALT_KEY = process.env.PHONEPE_SALT_KEY;
 const SALT_INDEX = process.env.PHONEPE_SALT_INDEX || "1";
 
-// Family Card ki price
-const CARD_PRICE = 1000; // Test ke liye 10  rupees in paise
+// Family Card ki price (paise mein)
+const CARD_PRICE = 24900; // ₹249
 
 export async function POST(request) {
   try {

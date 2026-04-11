@@ -1,0 +1,519 @@
+"use client";
+import { useState, useEffect } from "react";
+import Header from "../components/header";
+
+const categories = [
+  "Blood Test", "Urine Test", "Stool Test", "Imaging",
+  "ECG", "X-Ray", "Ultrasound", "MRI", "CT Scan", "Pathology",
+];
+
+const biharDistricts = [
+  "Patna", "Saran", "Siwan", "Gopalganj", "Gaya", "Muzaffarpur",
+  "Bhagalpur", "Nalanda", "Vaishali", "Darbhanga",
+];
+
+const timeSlots = [
+  "7:00 AM - 9:00 AM",
+  "9:00 AM - 11:00 AM",
+  "11:00 AM - 1:00 PM",
+  "2:00 PM - 4:00 PM",
+  "4:00 PM - 6:00 PM",
+];
+
+export default function LabTestsPage() {
+  const [tests, setTests]               = useState<any[]>([]);
+  const [loading, setLoading]           = useState(false);
+  const [search, setSearch]             = useState("");
+  const [category, setCategory]         = useState("");
+  const [district, setDistrict]         = useState("");
+  const [maxPrice, setMaxPrice]         = useState("");
+  const [homeOnly, setHomeOnly]         = useState(false);
+  const [selectedTest, setSelectedTest] = useState<any>(null);
+  const [familyMembers, setFamilyMembers] = useState<any[]>([]);
+  const [selectedMember, setSelectedMember] = useState("");
+  const [hasMembership, setHasMembership]   = useState(false);
+  const [walletBalance, setWalletBalance]   = useState(0);
+  const [booking, setBooking]           = useState(false);
+  const [message, setMessage]           = useState("");
+
+  // Booking form state
+  const [homeCollection, setHomeCollection] = useState(false);
+  const [appointmentDate, setAppointmentDate] = useState("");
+  const [selectedSlot, setSelectedSlot]     = useState("");
+  const [paymentType, setPaymentType]       = useState("counter");
+
+  useEffect(() => {
+    fetchTests();
+    fetchUserData();
+    // Payment callback se aayi success/fail message
+    const params = new URLSearchParams(window.location.search);
+    const payment = params.get("payment");
+    const bId     = params.get("bookingId");
+    if (payment === "success") {
+      setMessage(`✅ Payment successful! Booking confirm ho gayi.${bId ? " Booking ID: " + bId : ""}`);
+      window.history.replaceState({}, "", "/lab-tests");
+    } else if (payment === "failed") {
+      setMessage("❌ Payment fail ho gayi. Dobara try karein.");
+      window.history.replaceState({}, "", "/lab-tests");
+    }
+  }, []);
+
+  async function fetchTests() {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (search)   params.append("search", search);
+      if (category) params.append("category", category);
+      if (district) params.append("district", district);
+      if (maxPrice) params.append("maxPrice", maxPrice);
+      if (homeOnly) params.append("homeCollection", "true");
+      const res  = await fetch(`/api/lab-tests?${params}`);
+      const data = await res.json();
+      if (data.success) setTests(data.tests);
+    } catch (e) { console.error(e); }
+    setLoading(false);
+  }
+
+  async function fetchUserData() {
+    const userId = localStorage.getItem("userId");
+    if (!userId) return;
+    try {
+      const res  = await fetch(`/api/profile?userId=${userId}`);
+      const data = await res.json();
+      if (data.success) {
+        setFamilyMembers(data.familyMembers || []);
+        setHasMembership(!!data.familyCard);
+        setWalletBalance(data.familyCard?.walletBalance || 0);
+        if (data.familyMembers?.length > 0) setSelectedMember(data.familyMembers[0]._id);
+      }
+    } catch (e) { console.error(e); }
+  }
+
+  function getPrice(test: any) {
+    if (hasMembership && test.membershipPrice) return test.membershipPrice;
+    return test.offerPrice;
+  }
+
+  function getTotalAmount(test: any) {
+    let total = getPrice(test);
+    if (homeCollection && test.homeCollectionCharge > 0) total += test.homeCollectionCharge;
+    return total;
+  }
+
+  function openBooking(test: any) {
+    setSelectedTest(test);
+    setHomeCollection(false);
+    setAppointmentDate("");
+    setSelectedSlot("");
+    setPaymentType("online");
+    setMessage("");
+  }
+
+  async function handleBooking() {
+    if (!selectedTest) return;
+    setBooking(true);
+    try {
+      const userId = localStorage.getItem("userId");
+      if (!userId) { setMessage("❌ Login karein pehle"); setBooking(false); return; }
+
+      // Online payment — PhonePe pe redirect karo
+      if (paymentType === "online") {
+        const res = await fetch("/api/create-lab-order", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId,
+            memberId: selectedMember || userId,
+            labTestId: selectedTest._id,
+            appointmentDate: appointmentDate || null,
+            slot: homeCollection ? "Home Collection" : selectedSlot,
+            homeCollection,
+            amount: getTotalAmount(selectedTest),
+          }),
+        });
+        const data = await res.json();
+        if (data.success && data.redirectUrl) {
+          window.location.href = data.redirectUrl;
+        } else {
+          setMessage("❌ " + (data.message || "Payment shuru nahi ho saka"));
+        }
+        setBooking(false);
+        return;
+      }
+
+      // Counter / Wallet payment
+      const res = await fetch("/api/book-lab", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          memberId: selectedMember || userId,
+          labTestId: selectedTest._id,
+          appointmentDate: appointmentDate || null,
+          slot: homeCollection ? "Home Collection" : selectedSlot,
+          homeCollection,
+          paymentType,
+          amount: getTotalAmount(selectedTest),
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setMessage(`✅ ${data.message} Booking ID: ${data.bookingId}`);
+        setSelectedTest(null);
+        if (paymentType === "wallet") {
+          setWalletBalance((prev) => prev - data.amount);
+        }
+      } else {
+        setMessage("❌ " + data.message);
+      }
+    } catch {
+      setMessage("❌ Network error");
+    }
+    setBooking(false);
+  }
+
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const minDate = tomorrow.toISOString().split("T")[0];
+
+  return (
+    <main className="min-h-screen bg-gray-50">
+      <Header />
+      <div className="max-w-4xl mx-auto py-8 px-4">
+
+        <h1 className="text-2xl font-bold text-gray-800 mb-1">🧪 Lab Tests</h1>
+        <p className="text-gray-500 text-sm mb-6">Ghar baithe ya lab mein — affordable tests book karein</p>
+
+        {message && (
+          <div className={`mb-4 p-4 rounded-xl text-sm font-medium ${
+            message.startsWith("✅")
+              ? "bg-green-50 border border-green-200 text-green-700"
+              : "bg-red-50 border border-red-200 text-red-700"
+          }`}>{message}</div>
+        )}
+
+        {/* Search & Filters */}
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 mb-6">
+          <input value={search} onChange={(e) => setSearch(e.target.value)}
+            placeholder="🔍 Test ka naam ya category search karein..."
+            className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-teal-500 mb-3" />
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <select value={category} onChange={(e) => setCategory(e.target.value)}
+              className="border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500">
+              <option value="">Sabhi Categories</option>
+              {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <select value={district} onChange={(e) => setDistrict(e.target.value)}
+              className="border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500">
+              <option value="">Sabhi Zile</option>
+              {biharDistricts.map((d) => <option key={d} value={d}>{d}</option>)}
+            </select>
+            <select value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)}
+              className="border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500">
+              <option value="">Koi bhi price</option>
+              <option value="300">₹300 tak</option>
+              <option value="500">₹500 tak</option>
+              <option value="1000">₹1,000 tak</option>
+              <option value="5000">₹5,000 tak</option>
+            </select>
+            <label className="flex items-center gap-2 border border-gray-300 rounded-lg px-3 py-2.5 cursor-pointer hover:border-teal-400 transition">
+              <input type="checkbox" checked={homeOnly} onChange={(e) => setHomeOnly(e.target.checked)}
+                className="accent-teal-600" />
+              <span className="text-sm text-gray-700">🏠 Home Collection Only</span>
+            </label>
+          </div>
+          <button onClick={fetchTests}
+            className="w-full bg-teal-600 hover:bg-teal-700 text-white font-semibold py-3 rounded-lg transition">
+            Search Karein
+          </button>
+        </div>
+
+        {/* Membership Banner */}
+        {!hasMembership && (
+          <div className="bg-gradient-to-r from-teal-600 to-teal-700 rounded-2xl p-4 text-white mb-6 flex justify-between items-center">
+            <div>
+              <p className="font-bold">💳 Family Card se extra discount!</p>
+              <p className="text-sm text-teal-100">Lab tests par 10–20% extra off milta hai</p>
+            </div>
+            <a href="/dashboard" className="bg-white text-teal-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-teal-50">
+              Activate
+            </a>
+          </div>
+        )}
+
+        {/* Tests List */}
+        {loading ? (
+          <div className="text-center py-10 text-teal-600">Tests dhundh rahe hain...</div>
+        ) : tests.length === 0 ? (
+          <div className="text-center py-10 text-gray-400">
+            <p className="text-4xl mb-3">🧪</p>
+            <p>Koi test nahi mila. Filter change karke try karein.</p>
+            <button onClick={() => fetch("/api/seed-labs").then(() => fetchTests())}
+              className="mt-4 text-teal-600 text-sm underline">
+              Sample data load karein
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {tests.map((test) => (
+              <div key={test._id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <div className="p-5">
+                  <div className="flex justify-between items-start mb-3">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <span className="text-xs bg-yellow-50 text-yellow-700 px-2 py-0.5 rounded-full font-medium">
+                          {test.category}
+                        </span>
+                        {test.homeCollection && (
+                          <span className="text-xs bg-green-50 text-green-600 px-2 py-0.5 rounded-full font-medium">
+                            🏠 Home Collection
+                          </span>
+                        )}
+                        {test.fastingRequired && (
+                          <span className="text-xs bg-orange-50 text-orange-600 px-2 py-0.5 rounded-full font-medium">
+                            ⚠️ Fasting Required
+                          </span>
+                        )}
+                      </div>
+                      <h3 className="font-bold text-gray-800 text-lg">{test.name}</h3>
+                      <p className="text-sm text-gray-500">🏥 {test.hospitalName}</p>
+                      {test.address?.district && (
+                        <p className="text-xs text-gray-400">📍 {test.address.district}</p>
+                      )}
+                    </div>
+                    <div className="text-right ml-4">
+                      <p className="text-xs text-gray-400 line-through">₹{test.mrp.toLocaleString()}</p>
+                      <p className="text-xl font-bold text-teal-600">₹{getPrice(test).toLocaleString()}</p>
+                      {hasMembership && test.membershipDiscount > 0 && (
+                        <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
+                          {test.membershipDiscount}% off
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 mb-4 text-sm text-gray-600">
+                    <span>🧫 Sample: {test.sampleType || "N/A"}</span>
+                    <span>⏱️ Report: {test.turnaroundTime}</span>
+                    <span>📄 Delivery: {test.reportDelivery}</span>
+                    {test.homeCollection && (
+                      <span>
+                        🏠 Home:{" "}
+                        {test.homeCollectionCharge === 0
+                          ? "FREE"
+                          : `+₹${test.homeCollectionCharge}`}
+                      </span>
+                    )}
+                  </div>
+
+                  {test.description && (
+                    <p className="text-xs text-gray-500 mb-3 line-clamp-2">{test.description}</p>
+                  )}
+
+                  <button onClick={() => openBooking(test)}
+                    className="w-full bg-teal-600 hover:bg-teal-700 text-white font-semibold py-3 rounded-lg transition text-sm">
+                    Book Karein — ₹{getPrice(test).toLocaleString()}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Booking Modal */}
+        {selectedTest && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
+            <div className="bg-white rounded-2xl w-full max-w-md max-h-[92vh] overflow-y-auto">
+              <div className="p-5 border-b border-gray-100 flex justify-between items-center sticky top-0 bg-white z-10">
+                <h2 className="font-bold text-gray-800">Lab Test Book Karein</h2>
+                <button onClick={() => setSelectedTest(null)} className="text-gray-400 text-xl">✕</button>
+              </div>
+
+              <div className="p-5 space-y-4">
+                {/* Test Summary */}
+                <div className="bg-yellow-50 rounded-xl p-4">
+                  <p className="font-bold text-gray-800">{selectedTest.name}</p>
+                  <p className="text-sm text-gray-500">{selectedTest.hospitalName} • {selectedTest.address?.district}</p>
+                  {selectedTest.fastingRequired && (
+                    <p className="text-xs text-orange-600 mt-1">
+                      ⚠️ {selectedTest.fastingHours} ghante ka fast zaruri hai
+                    </p>
+                  )}
+                  {selectedTest.preparationNotes && (
+                    <p className="text-xs text-gray-500 mt-1">💡 {selectedTest.preparationNotes}</p>
+                  )}
+                </div>
+
+                {/* Home Collection Toggle */}
+                {selectedTest.homeCollection && (
+                  <label className="flex items-center justify-between p-3 border border-gray-200 rounded-xl cursor-pointer hover:border-teal-400 transition">
+                    <div>
+                      <p className="text-sm font-medium text-gray-800">🏠 Home Collection</p>
+                      <p className="text-xs text-gray-500">
+                        {selectedTest.homeCollectionCharge === 0
+                          ? "FREE home collection"
+                          : `+₹${selectedTest.homeCollectionCharge} extra charge`}
+                      </p>
+                    </div>
+                    <input type="checkbox" checked={homeCollection}
+                      onChange={(e) => { setHomeCollection(e.target.checked); setSelectedSlot(""); }}
+                      className="w-5 h-5 accent-teal-600" />
+                  </label>
+                )}
+
+                {/* Date & Slot */}
+                <div>
+                  <p className="text-sm font-medium text-gray-700 mb-2">
+                    {homeCollection ? "Collection Date Choose Karein" : "Visit Date & Time"}
+                  </p>
+                  <input type="date" value={appointmentDate} min={minDate}
+                    onChange={(e) => setAppointmentDate(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 mb-3" />
+                  {!homeCollection && (
+                    <div className="grid grid-cols-2 gap-2">
+                      {timeSlots.map((slot) => (
+                        <button key={slot} onClick={() => setSelectedSlot(slot)}
+                          className={`py-2 px-3 rounded-lg text-xs font-medium border transition ${
+                            selectedSlot === slot
+                              ? "bg-teal-600 text-white border-teal-600"
+                              : "border-gray-200 text-gray-700 hover:border-teal-400"
+                          }`}>
+                          {slot}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Family Member */}
+                {familyMembers.length > 0 && (
+                  <div>
+                    <p className="text-sm font-medium text-gray-700 mb-2">Kiske liye test hai?</p>
+                    <div className="flex gap-2 overflow-x-auto pb-1">
+                      {familyMembers.map((m: any) => (
+                        <button key={m._id} onClick={() => setSelectedMember(m._id)}
+                          className={`flex flex-col items-center p-2 rounded-xl border min-w-[68px] transition ${
+                            selectedMember === m._id
+                              ? "border-teal-500 bg-teal-50"
+                              : "border-gray-200"
+                          }`}>
+                          <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center mb-1 overflow-hidden">
+                            {m.photo
+                              ? <img src={m.photo} alt={m.name} className="w-full h-full object-cover" />
+                              : <span>👤</span>}
+                          </div>
+                          <p className="text-xs text-center">{m.name.split(" ")[0]}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Payment */}
+                <div>
+                  <p className="text-sm font-medium text-gray-700 mb-2">Payment Method</p>
+                  <div className="space-y-2">
+
+                    {/* Online */}
+                    <label className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition ${
+                      paymentType === "online" ? "border-teal-500 bg-teal-50" : "border-gray-200"
+                    }`}>
+                      <input type="radio" name="payment" value="online"
+                        checked={paymentType === "online"}
+                        onChange={() => setPaymentType("online")}
+                        className="accent-teal-600" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium">💳 Online Payment Karein</p>
+                        <p className="text-xs text-gray-500">PhonePe / UPI / Debit / Credit Card</p>
+                      </div>
+                      <div className="flex gap-1">
+                        <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-medium">PhonePe</span>
+                        <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">UPI</span>
+                      </div>
+                    </label>
+
+                    {/* Counter */}
+                    <label className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition ${
+                      paymentType === "counter" ? "border-teal-500 bg-teal-50" : "border-gray-200"
+                    }`}>
+                      <input type="radio" name="payment" value="counter"
+                        checked={paymentType === "counter"}
+                        onChange={() => setPaymentType("counter")}
+                        className="accent-teal-600" />
+                      <div>
+                        <p className="text-sm font-medium">🏦 Counter par Pay Karein</p>
+                        <p className="text-xs text-gray-500">Lab mein jaake payment karein</p>
+                      </div>
+                    </label>
+
+                    {/* Wallet */}
+                    {hasMembership && (
+                      <label className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition ${
+                        paymentType === "wallet" ? "border-teal-500 bg-teal-50" : "border-gray-200"
+                      }`}>
+                        <div className="flex items-center gap-3">
+                          <input type="radio" name="payment" value="wallet"
+                            checked={paymentType === "wallet"}
+                            onChange={() => setPaymentType("wallet")}
+                            className="accent-teal-600" />
+                          <div>
+                            <p className="text-sm font-medium">💰 Wallet se Pay Karein</p>
+                            <p className="text-xs text-gray-500">Balance: ₹{walletBalance}</p>
+                          </div>
+                        </div>
+                        <span className={`text-xs font-medium ${
+                          walletBalance >= getTotalAmount(selectedTest) ? "text-green-600" : "text-red-500"
+                        }`}>
+                          {walletBalance >= getTotalAmount(selectedTest) ? "✓ Enough" : "Low"}
+                        </span>
+                      </label>
+                    )}
+                  </div>
+                </div>
+
+                {/* Total */}
+                <div className="bg-teal-50 rounded-xl p-4">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <p className="text-sm text-gray-600">Total Amount</p>
+                      <p className="text-xs text-gray-400 line-through">MRP: ₹{selectedTest.mrp.toLocaleString()}</p>
+                    </div>
+                    <p className="text-2xl font-bold text-teal-700">
+                      ₹{getTotalAmount(selectedTest).toLocaleString()}
+                    </p>
+                  </div>
+                  {hasMembership && selectedTest.membershipDiscount > 0 && (
+                    <p className="text-xs text-green-600 mt-1">
+                      ✅ {selectedTest.membershipDiscount}% membership discount applied!
+                    </p>
+                  )}
+                  {homeCollection && selectedTest.homeCollectionCharge > 0 && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Home collection charge: +₹{selectedTest.homeCollectionCharge}
+                    </p>
+                  )}
+                </div>
+
+                {message && (
+                  <div className={`p-3 rounded-lg text-sm ${
+                    message.startsWith("✅") ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
+                  }`}>{message}</div>
+                )}
+
+                <button onClick={handleBooking} disabled={booking}
+                  className="w-full bg-teal-600 hover:bg-teal-700 text-white font-semibold py-3.5 rounded-xl transition disabled:opacity-50 text-base">
+                  {booking
+                    ? (paymentType === "online" ? "Payment page pe ja rahe hain..." : "Booking ho rahi hai...")
+                    : paymentType === "online"
+                      ? `💳 Pay Karein — ₹${getTotalAmount(selectedTest).toLocaleString()}`
+                      : `Book Karein — ₹${getTotalAmount(selectedTest).toLocaleString()}`
+                  }
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </main>
+  );
+}

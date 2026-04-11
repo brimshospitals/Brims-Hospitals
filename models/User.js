@@ -126,13 +126,17 @@ const userSchema = new mongoose.Schema(
     // Role
     role: {
       type: String,
-      enum: ["user", "doctor", "hospital", "admin"],
+      enum: ["user", "member", "doctor", "hospital", "staff", "admin"],
       default: "user",
     },
 
     // OTP Login
     otp: { type: String },
     otpExpiry: { type: Date },
+
+    // Linked entity IDs
+    doctorId:   { type: mongoose.Schema.Types.ObjectId, ref: "Doctor"   },
+    hospitalId: { type: mongoose.Schema.Types.ObjectId, ref: "Hospital" },
 
     isActive: { type: Boolean, default: true },
   },
