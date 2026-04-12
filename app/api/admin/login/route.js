@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import connectDB from "../../../../lib/mongodb";
 import User from "../../../../models/User";
+import { createSession } from "../../../../lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +39,14 @@ export async function POST(request) {
       user.role = "admin";
       await user.save();
     }
+
+    // Create session cookie so admin API routes (requireAuth) work
+    await createSession({
+      userId: user._id.toString(),
+      role:   "admin",
+      name:   user.name,
+      mobile: user.mobile,
+    });
 
     return NextResponse.json({
       success: true,

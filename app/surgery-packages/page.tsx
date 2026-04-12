@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import Header from "../components/header";
+import PatientSelector, { SelectedPatient } from "../components/PatientSelector";
 
 const categories = [
   "General Surgery", "Laparoscopic Surgery", "Cardiac Surgery",
@@ -21,8 +22,9 @@ export default function SurgeryPackagesPage() {
   const [maxPrice, setMaxPrice] = useState("");
   const [selectedPackage, setSelectedPackage] = useState<any>(null);
   const [selectedRoom, setSelectedRoom] = useState("");
+  const [profile, setProfile]           = useState<any>(null);
   const [familyMembers, setFamilyMembers] = useState<any[]>([]);
-  const [selectedMember, setSelectedMember] = useState("");
+  const [selectedPatient, setSelectedPatient] = useState<SelectedPatient | null>(null);
   const [hasMembership, setHasMembership] = useState(false);
   const [booking, setBooking] = useState(false);
   const [message, setMessage] = useState("");
@@ -55,11 +57,9 @@ export default function SurgeryPackagesPage() {
       const res = await fetch(`/api/profile?userId=${userId}`);
       const data = await res.json();
       if (data.success) {
+        setProfile(data.user);
         setFamilyMembers(data.familyMembers || []);
         setHasMembership(!!data.familyCard);
-        if (data.familyMembers?.length > 0) {
-          setSelectedMember(data.familyMembers[0]._id);
-        }
       }
     } catch (e) { console.error(e); }
   }
@@ -77,24 +77,38 @@ export default function SurgeryPackagesPage() {
 
   async function handleBooking() {
     if (!selectedPackage) return;
+    if (!selectedPatient) { setMessage("❌ Patient select karein"); return; }
     setBooking(true);
     try {
       const userId = localStorage.getItem("userId");
-      const res = await fetch("/api/book-surgery", {
+      const familyCardId = localStorage.getItem("familyCardId") || null;
+      const res = await fetch("/api/bookings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userId,
-          memberId: selectedMember,
+          type: "Surgery",
           packageId: selectedPackage._id,
+          hospitalId: selectedPackage.hospitalId || null,
+          appointmentDate: new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0],
+          slot: "",
           roomType: selectedRoom || selectedPackage.roomType,
+          patientUserId: selectedPatient.userId,
+          patientName: selectedPatient.name,
+          patientMobile: selectedPatient.mobile,
+          patientAge: selectedPatient.age,
+          patientGender: selectedPatient.gender,
+          symptoms: selectedPatient.symptoms,
+          isNewPatient: selectedPatient.isNewPatient,
+          paymentMode: "counter",
           amount: getPrice(selectedPackage) + getRoomPrice(selectedPackage),
+          familyCardId,
         }),
       });
       const data = await res.json();
       if (data.success) {
-        setMessage(`✅ ${data.message} Booking ID: ${data.bookingId}`);
+        setMessage(`✅ Booking request submit ho gayi! Booking ID: ${data.booking.bookingId}. Hamari team 24 hours mein contact karegi.`);
         setSelectedPackage(null);
+        setSelectedPatient(null);
       } else {
         setMessage("❌ " + data.message);
       }
@@ -235,7 +249,7 @@ export default function SurgeryPackagesPage() {
                     </div>
                   </div>
 
-                  <button onClick={() => { setSelectedPackage(pkg); setSelectedRoom(pkg.roomType); setMessage(""); }}
+                  <button onClick={() => { setSelectedPackage(pkg); setSelectedRoom(pkg.roomType); setMessage(""); setSelectedPatient(null); }}
                     className="w-full bg-teal-600 hover:bg-teal-700 text-white font-semibold py-3 rounded-lg transition text-sm">
                     Details Dekhein & Book Karein
                   </button>
@@ -316,26 +330,28 @@ export default function SurgeryPackagesPage() {
                   </div>
                 )}
 
-                {/* Family Member */}
-                {familyMembers.length > 0 && (
-                  <div className="mb-4">
-                    <p className="text-sm font-medium text-gray-700 mb-2">Kiske liye booking hai?</p>
-                    <div className="flex gap-2 overflow-x-auto pb-1">
-                      {familyMembers.map((m) => (
-                        <button key={m._id} onClick={() => setSelectedMember(m._id)}
-                          className={`flex flex-col items-center p-2 rounded-xl border min-w-[70px] transition ${
-                            selectedMember === m._id ? "border-teal-500 bg-teal-50" : "border-gray-200"
-                          }`}>
-                          <div className="w-10 h-10 rounded-full overflow-hidden bg-gray-100 mb-1">
-                            {m.photo ? <img src={m.photo} alt={m.name} className="w-full h-full object-cover" />
-                              : <div className="w-full h-full flex items-center justify-center">👤</div>}
-                          </div>
-                          <p className="text-xs text-center">{m.name.split(" ")[0]}</p>
-                        </button>
-                      ))}
+                {/* Patient Selector */}
+                <div className="mb-4">
+                  <p className="text-sm font-semibold text-gray-700 mb-2">Patient kaun hai?</p>
+                  {selectedPatient ? (
+                    <div className="flex items-center gap-3 p-3 bg-teal-50 rounded-2xl border border-teal-200">
+                      <div className="w-10 h-10 rounded-xl bg-teal-100 flex items-center justify-center font-bold text-teal-700 flex-shrink-0">
+                        {selectedPatient.name[0]}
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-bold text-gray-800 text-sm">{selectedPatient.name}</p>
+                        <p className="text-xs text-gray-400">{selectedPatient.age} yrs · {selectedPatient.gender}</p>
+                      </div>
+                      <button onClick={() => setSelectedPatient(null)} className="text-gray-400 text-sm hover:text-red-400">✕</button>
                     </div>
-                  </div>
-                )}
+                  ) : (
+                    <PatientSelector
+                      primaryUser={profile}
+                      familyMembers={familyMembers}
+                      onSelect={setSelectedPatient}
+                    />
+                  )}
+                </div>
 
                 {/* Total Price */}
                 <div className="bg-teal-50 rounded-xl p-4 mb-4">

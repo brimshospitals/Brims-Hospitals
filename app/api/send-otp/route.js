@@ -22,15 +22,83 @@ function maskEmail(email) {
 }
 
 async function sendSmsOTP(mobile, otp) {
-  // TODO: Fast2SMS / MSG91 integrate karein
-  console.log(`📱 SMS OTP for ${mobile}: ${otp}`);
-  return true;
+  const apiKey = process.env.FAST2SMS_API_KEY;
+
+  if (!apiKey) {
+    // No key configured — log and continue (dev mode or testing)
+    console.log(`📱 [DEV] SMS OTP for ${mobile}: ${otp}`);
+    return true;
+  }
+
+  try {
+    const res = await fetch("https://www.fast2sms.com/dev/bulkV2", {
+      method: "POST",
+      headers: {
+        authorization: apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        route:    "otp",
+        variables_values: otp,
+        flash:    0,
+        numbers:  mobile,
+      }),
+    });
+    const data = await res.json();
+    if (!data.return) {
+      console.error("Fast2SMS error:", data.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error("Fast2SMS network error:", err.message);
+    return false;
+  }
 }
 
 async function sendEmailOTP(email, otp) {
-  // TODO: Resend / Nodemailer integrate karein
-  console.log(`📧 Email OTP for ${email}: ${otp}`);
-  return true;
+  const apiKey = process.env.RESEND_API_KEY;
+
+  if (!apiKey) {
+    console.log(`📧 [DEV] Email OTP for ${email}: ${otp}`);
+    return true;
+  }
+
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from:    "Brims Hospitals <noreply@brimshospitals.com>",
+        to:      [email],
+        subject: `Your Brims Login OTP: ${otp}`,
+        html: `
+          <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;background:#f8fafc;border-radius:16px;">
+            <div style="text-align:center;margin-bottom:24px;">
+              <h1 style="color:#0d9488;font-size:24px;margin:0;">Brims Hospitals</h1>
+            </div>
+            <div style="background:white;border-radius:12px;padding:24px;text-align:center;">
+              <p style="color:#64748b;margin-bottom:16px;">Your login OTP is:</p>
+              <div style="font-size:40px;font-weight:bold;letter-spacing:12px;color:#0f172a;padding:16px;background:#f1f5f9;border-radius:8px;">${otp}</div>
+              <p style="color:#94a3b8;font-size:13px;margin-top:16px;">Valid for 10 minutes. Do not share with anyone.</p>
+            </div>
+          </div>
+        `,
+      }),
+    });
+    const data = await res.json();
+    if (data.statusCode && data.statusCode >= 400) {
+      console.error("Resend error:", data.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error("Resend network error:", err.message);
+    return false;
+  }
 }
 
 export async function POST(request) {

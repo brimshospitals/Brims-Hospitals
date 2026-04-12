@@ -30,14 +30,18 @@ export async function GET(request) {
     const [
       totalUsers,
       totalHospitals,
+      pendingHospitals,
       totalDoctors,
+      pendingDoctors,
       totalPackages,
       totalLabTests,
       bookingStats,
     ] = await Promise.all([
-      User.countDocuments({ role: "user", isActive: true }),
-      Hospital.countDocuments({ isActive: true }),
+      User.countDocuments({ role: { $in: ["user", "member"] }, isActive: true }),
+      Hospital.countDocuments({ isVerified: true, isActive: true }),
+      Hospital.countDocuments({ isVerified: false }),
       Doctor.countDocuments({ isActive: true }),
+      Doctor.countDocuments({ isActive: false }),
       SurgeryPackage.countDocuments({ isActive: true }),
       LabTest.countDocuments({ isActive: true }),
       Booking.aggregate([
@@ -48,7 +52,9 @@ export async function GET(request) {
     const stats = {
       totalUsers,
       totalHospitals,
+      pendingHospitals,
       totalDoctors,
+      pendingDoctors,
       totalPackages,
       totalLabTests,
       bookings: { total: 0, pending: 0, confirmed: 0, completed: 0, cancelled: 0 },

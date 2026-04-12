@@ -66,6 +66,43 @@ function IconEdit() {
     </svg>
   );
 }
+function IconAddMoney() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6" stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 8h18v11a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 8V6a2 2 0 012-2h14a2 2 0 012 2v2" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 11v4M10 13h4" />
+    </svg>
+  );
+}
+function IconMyBookings() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6" stroke="currentColor" strokeWidth={1.8}>
+      <rect x="3" y="4" width="18" height="18" rx="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M16 2v4M8 2v4M3 10h18" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M8 14h.01M12 14h.01M16 14h.01" />
+    </svg>
+  );
+}
+function IconMembers() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6" stroke="currentColor" strokeWidth={1.8}>
+      <circle cx="9" cy="7" r="3" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6" />
+      <circle cx="18" cy="8" r="2.5" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M21 20c0-2.8-2-5-4.5-5" />
+    </svg>
+  );
+}
+function IconReports() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className="w-7 h-7" stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M14 2v6h6" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M8 13h8M8 17h5" />
+    </svg>
+  );
+}
 
 /* ── Services config ── */
 const services = [
@@ -108,6 +145,16 @@ const services = [
     color: "text-rose-500",
     border: "border-rose-100",
     badge: "EMI",
+  },
+  {
+    href: "/reports",
+    label: "My Reports",
+    sub: "Lab & medical reports",
+    icon: <IconReports />,
+    bg: "bg-teal-50",
+    color: "text-teal-600",
+    border: "border-teal-100",
+    badge: "",
   },
 ];
 
@@ -273,7 +320,7 @@ function DashboardContent() {
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
+      <div className="max-w-4xl mx-auto px-4 py-6 pb-28 space-y-6">
 
         {/* ── Family Health Card ── */}
         {familyCard ? (
@@ -521,6 +568,67 @@ function DashboardContent() {
           </a>
         </div>
 
+      </div>
+
+      {/* ── Bottom Navigation Bar ── */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-gray-100 shadow-[0_-4px_20px_rgba(0,0,0,0.06)]">
+        <div className="max-w-md mx-auto flex items-stretch h-16">
+
+          {/* Add Money */}
+          {familyCard ? (
+            <a href="/wallet" className="flex-1 flex flex-col items-center justify-center gap-0.5 text-teal-600 hover:bg-teal-50 transition">
+              <IconAddMoney />
+              <span className="text-[10px] font-semibold">Add Money</span>
+            </a>
+          ) : (
+            <button
+              onClick={handleActivateCard}
+              disabled={paymentLoading}
+              className="flex-1 flex flex-col items-center justify-center gap-0.5 text-gray-300 cursor-not-allowed"
+              title="Card activate karein pehle"
+            >
+              <IconAddMoney />
+              <span className="text-[10px] font-semibold">Add Money</span>
+            </button>
+          )}
+
+          {/* Divider */}
+          <div className="w-px bg-gray-100 my-3" />
+
+          {/* Bookings — always enabled */}
+          <a href="/my-bookings" className="flex-1 flex flex-col items-center justify-center gap-0.5 text-indigo-600 hover:bg-indigo-50 transition">
+            <IconMyBookings />
+            <span className="text-[10px] font-semibold">Bookings</span>
+          </a>
+
+          {/* Divider */}
+          <div className="w-px bg-gray-100 my-3" />
+
+          {/* Members */}
+          {familyCard ? (
+            <a href="/add-member" className="flex-1 flex flex-col items-center justify-center gap-0.5 text-emerald-600 hover:bg-emerald-50 transition">
+              <IconMembers />
+              <span className="text-[10px] font-semibold">Members</span>
+            </a>
+          ) : (
+            <button
+              onClick={handleActivateCard}
+              disabled={paymentLoading}
+              className="flex-1 flex flex-col items-center justify-center gap-0.5 text-gray-400 hover:bg-amber-50 hover:text-amber-600 transition"
+              title="Card activate karein Members add karne ke liye"
+            >
+              <div className="relative">
+                <IconMembers />
+                <span className="absolute -top-1 -right-2 w-4 h-4 bg-amber-400 rounded-full flex items-center justify-center text-[8px] font-bold text-white">!</span>
+              </div>
+              <span className="text-[10px] font-semibold">Members</span>
+            </button>
+          )}
+
+        </div>
+
+        {/* Safe area for iPhone home indicator */}
+        <div className="h-safe-area-inset-bottom" />
       </div>
     </main>
   );

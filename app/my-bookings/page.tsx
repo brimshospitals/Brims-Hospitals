@@ -1,218 +1,366 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Header from "../components/header";
 
-const typeLabels: Record<string, { label: string; icon: string; color: string }> = {
-  OPD:     { label: "OPD",     icon: "🩺", color: "bg-blue-100 text-blue-700"   },
-  Surgery: { label: "Surgery", icon: "🏥", color: "bg-purple-100 text-purple-700" },
-  Lab:     { label: "Lab",     icon: "🧪", color: "bg-yellow-100 text-yellow-700" },
-  IPD:     { label: "IPD",     icon: "🛏️", color: "bg-pink-100 text-pink-700"   },
+const TYPE_CONFIG: Record<string, { label: string; icon: string; bg: string; text: string; border: string }> = {
+  OPD:          { label: "OPD",           icon: "🩺", bg: "bg-blue-50",   text: "text-blue-700",   border: "border-blue-400"   },
+  Surgery:      { label: "Surgery",        icon: "🏥", bg: "bg-purple-50", text: "text-purple-700", border: "border-purple-400" },
+  Lab:          { label: "Lab Test",       icon: "🧪", bg: "bg-yellow-50", text: "text-yellow-700", border: "border-yellow-400" },
+  Consultation: { label: "Teleconsult",    icon: "💻", bg: "bg-indigo-50", text: "text-indigo-700", border: "border-indigo-400" },
+  IPD:          { label: "IPD",            icon: "🛏️", bg: "bg-pink-50",   text: "text-pink-700",   border: "border-pink-400"   },
 };
 
-const statusConfig: Record<string, { label: string; color: string }> = {
-  pending:   { label: "Pending",   color: "bg-yellow-100 text-yellow-700" },
-  confirmed: { label: "Confirmed", color: "bg-green-100 text-green-700"  },
-  completed: { label: "Completed", color: "bg-teal-100 text-teal-700"    },
-  cancelled: { label: "Cancelled", color: "bg-red-100 text-red-700"      },
+const STATUS_CONFIG: Record<string, { label: string; icon: string; bg: string; text: string; dot: string }> = {
+  pending:   { label: "Pending",   icon: "⏳", bg: "bg-amber-100",  text: "text-amber-700",  dot: "bg-amber-500"  },
+  confirmed: { label: "Confirmed", icon: "✅", bg: "bg-green-100",  text: "text-green-700",  dot: "bg-green-500"  },
+  completed: { label: "Completed", icon: "🏁", bg: "bg-teal-100",   text: "text-teal-700",   dot: "bg-teal-500"   },
+  cancelled: { label: "Cancelled", icon: "❌", bg: "bg-red-100",    text: "text-red-700",    dot: "bg-red-400"    },
 };
 
+const PAY_MODE: Record<string, string> = {
+  counter: "Counter Pay", online: "Online / UPI", wallet: "Wallet", insurance: "Insurance",
+};
+
+function fmtDate(d: string) {
+  if (!d) return "—";
+  return new Date(d).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+}
+function fmtTime(d: string) {
+  if (!d) return "";
+  return new Date(d).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+}
+
+function getTitle(b: any) {
+  if (b.type === "OPD" || b.type === "Consultation") return b.doctorName ? `Dr. ${b.doctorName}` : b.type === "Consultation" ? "Teleconsultation" : "OPD Appointment";
+  if (b.type === "Surgery") return b.packageName ?? "Surgery Package";
+  if (b.type === "Lab")     return b.testName    ?? "Lab Test";
+  return b.type;
+}
+function getSubtitle(b: any) {
+  const parts: string[] = [];
+  if (b.speciality)   parts.push(b.speciality);
+  if (b.category)     parts.push(b.category);
+  if (b.hospitalName) parts.push(b.hospitalName);
+  return parts.join(" · ");
+}
+
+// ── Cancel Confirmation Modal ────────────────────────────────────────────────
+function CancelModal({ booking, onConfirm, onClose, loading }: { booking: any; onConfirm: () => void; onClose: () => void; loading: boolean }) {
+  const notes = (() => { try { return booking.notes ? JSON.parse(booking.notes) : {}; } catch { return {}; } })();
+  const isWallet = notes.paymentMode === "wallet" && booking.paymentStatus === "paid" && booking.amount > 0;
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={onClose} />
+      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
+        <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-6">
+          <div className="text-center mb-5">
+            <p className="text-4xl mb-2">🚫</p>
+            <h3 className="font-bold text-gray-800 text-lg">Booking Cancel Karein?</h3>
+            <p className="text-sm text-gray-500 mt-1">{getTitle(booking)}</p>
+          </div>
+          {isWallet && (
+            <div className="bg-teal-50 border border-teal-200 rounded-xl p-3 mb-4 text-center">
+              <p className="text-sm font-semibold text-teal-700">₹{booking.amount.toLocaleString()} wallet mein wapas aa jayenge</p>
+              <p className="text-xs text-teal-600 mt-0.5">Kyunki payment wallet se hua tha</p>
+            </div>
+          )}
+          <div className="flex gap-3">
+            <button onClick={onClose} className="flex-1 border border-gray-200 text-gray-600 py-3 rounded-xl text-sm font-semibold">Vapas Jaao</button>
+            <button onClick={onConfirm} disabled={loading} className="flex-1 bg-red-600 hover:bg-red-700 text-white py-3 rounded-xl text-sm font-semibold transition disabled:opacity-50">
+              {loading ? "Cancelling..." : "Haan, Cancel Karein"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── Booking Card ─────────────────────────────────────────────────────────────
+function BookingCard({ b, onCancel }: { b: any; onCancel: (b: any) => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const tc = TYPE_CONFIG[b.type]   ?? { label: b.type, icon: "📄", bg: "bg-gray-50", text: "text-gray-700", border: "border-gray-300" };
+  const sc = STATUS_CONFIG[b.status] ?? { label: b.status, icon: "●", bg: "bg-gray-100", text: "text-gray-600", dot: "bg-gray-400" };
+  const notes = (() => { try { return b.notes ? JSON.parse(b.notes) : {}; } catch { return {}; } })();
+  const canCancel = ["pending", "confirmed"].includes(b.status);
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      {/* Color bar */}
+      <div className={`h-1 w-full ${tc.border.replace("border-", "bg-")}`} />
+
+      <div className="p-4">
+        {/* Row 1: Icon + Title + Status */}
+        <div className="flex items-start gap-3 mb-3">
+          <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-xl flex-shrink-0 ${tc.bg}`}>
+            {tc.icon}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-bold text-gray-800 text-sm leading-tight truncate">{getTitle(b)}</p>
+            {getSubtitle(b) && <p className="text-xs text-gray-500 mt-0.5 truncate">{getSubtitle(b)}</p>}
+            <div className="flex flex-wrap gap-1.5 mt-1.5">
+              <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${sc.bg} ${sc.text}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${sc.dot}`} />
+                {sc.label}
+              </span>
+              {b.paymentStatus === "paid" && (
+                <span className="inline-flex items-center text-xs px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-medium border border-emerald-100">✓ Paid</span>
+              )}
+              {b.paymentStatus === "refunded" && (
+                <span className="inline-flex items-center text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium border border-blue-100">↩ Refunded</span>
+              )}
+            </div>
+          </div>
+          <div className="text-right flex-shrink-0">
+            {b.amount > 0 && <p className="font-bold text-teal-700">₹{b.amount.toLocaleString()}</p>}
+            <p className="text-[10px] text-gray-400 mt-0.5">{fmtDate(b.createdAt)}</p>
+          </div>
+        </div>
+
+        {/* Appointment Date + Patient Name quick row */}
+        <div className="flex items-center gap-3 mb-3">
+          {b.appointmentDate && (
+            <div className="flex items-center gap-1.5 text-xs text-gray-600 bg-gray-50 rounded-lg px-2.5 py-1.5 border border-gray-100">
+              <span>📅</span>
+              <span className="font-medium">{fmtDate(b.appointmentDate)}</span>
+              {b.slot && <><span className="text-gray-300">·</span><span className="text-teal-600 font-medium">🕐 {b.slot}</span></>}
+            </div>
+          )}
+          {notes.patientName && notes.patientName !== b.userName && (
+            <div className="flex items-center gap-1.5 text-xs text-gray-600 bg-blue-50 rounded-lg px-2.5 py-1.5 border border-blue-100">
+              <span>👤</span>
+              <span className="font-medium">{notes.patientName}</span>
+              {notes.patientAge && <span className="text-gray-400">{notes.patientAge}y</span>}
+            </div>
+          )}
+        </div>
+
+        {/* Expand details */}
+        {expanded && (
+          <div className="border-t border-gray-50 pt-3 mt-1 space-y-2">
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              {notes.patientName && (
+                <div className="bg-gray-50 rounded-xl p-2.5 border border-gray-100">
+                  <p className="text-gray-400 font-semibold uppercase tracking-wide text-[10px] mb-1">Patient</p>
+                  <p className="font-semibold text-gray-800">{notes.patientName}</p>
+                  {notes.patientMobile && <p className="text-gray-500 mt-0.5">📱 {notes.patientMobile}</p>}
+                  {(notes.patientAge || notes.patientGender) && (
+                    <p className="text-gray-500 mt-0.5">
+                      {notes.patientAge && `${notes.patientAge} yrs`}{notes.patientAge && notes.patientGender && " · "}{notes.patientGender && <span className="capitalize">{notes.patientGender}</span>}
+                    </p>
+                  )}
+                </div>
+              )}
+              <div className="bg-gray-50 rounded-xl p-2.5 border border-gray-100">
+                <p className="text-gray-400 font-semibold uppercase tracking-wide text-[10px] mb-1">Payment</p>
+                {b.amount > 0 && <p className="font-bold text-gray-800">₹{b.amount.toLocaleString()}</p>}
+                {notes.paymentMode && <p className="text-gray-500 mt-0.5">{PAY_MODE[notes.paymentMode] || notes.paymentMode}</p>}
+                <p className={`mt-0.5 font-medium ${b.paymentStatus === "paid" ? "text-emerald-600" : b.paymentStatus === "refunded" ? "text-blue-600" : "text-amber-600"}`}>
+                  {b.paymentStatus === "paid" ? "✓ Paid" : b.paymentStatus === "refunded" ? "↩ Refunded" : "● Pending"}
+                </p>
+              </div>
+            </div>
+            {notes.symptoms && (
+              <div className="bg-amber-50 rounded-xl px-3 py-2.5 border border-amber-100">
+                <p className="text-[10px] font-bold text-amber-500 uppercase tracking-wide mb-1">Symptoms</p>
+                <p className="text-xs text-gray-700">{notes.symptoms}</p>
+              </div>
+            )}
+            {b.type === "Surgery" && b.status === "pending" && (
+              <div className="bg-purple-50 rounded-xl px-3 py-2.5 border border-purple-100 text-xs text-purple-700">
+                ⏳ Hamari team 24 ghante mein aapse contact karegi appointment confirm karne ke liye.
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Footer: BookingID + actions */}
+        <div className="flex items-center justify-between pt-3 mt-2 border-t border-gray-50">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-mono text-gray-400 bg-gray-100 px-2 py-0.5 rounded-md">{b.bookingId}</span>
+            <button onClick={() => setExpanded(!expanded)} className="text-[10px] text-teal-600 font-semibold hover:underline">
+              {expanded ? "▲ Less" : "▼ Details"}
+            </button>
+          </div>
+          {canCancel && (
+            <button
+              onClick={() => onCancel(b)}
+              className="text-xs text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 hover:bg-red-50 px-3 py-1.5 rounded-lg font-semibold transition"
+            >
+              ✕ Cancel
+            </button>
+          )}
+          {b.type === "Consultation" && b.status === "confirmed" && (
+            <a href={`/consultation/${b.bookingId}`}
+              className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg font-semibold transition">
+              📹 Join Call
+            </a>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Main Page ─────────────────────────────────────────────────────────────────
 export default function MyBookingsPage() {
-  const [bookings, setBookings] = useState<any[]>([]);
-  const [summary, setSummary] = useState<any>({});
-  const [loading, setLoading] = useState(true);
+  const [bookings, setBookings]     = useState<any[]>([]);
+  const [summary, setSummary]       = useState<any>({});
+  const [loading, setLoading]       = useState(true);
   const [activeType, setActiveType] = useState("");
   const [activeStatus, setActiveStatus] = useState("");
+  const [cancelTarget, setCancelTarget] = useState<any>(null);
+  const [cancelling, setCancelling]     = useState(false);
+  const [toast, setToast]               = useState("");
 
-  useEffect(() => {
-    fetchBookings();
-  }, [activeType, activeStatus]);
-
-  async function fetchBookings() {
+  const fetchBookings = useCallback(async () => {
     const userId = localStorage.getItem("userId");
     if (!userId) { setLoading(false); return; }
     setLoading(true);
     try {
-      const params = new URLSearchParams({ userId });
-      if (activeType) params.append("type", activeType);
-      if (activeStatus) params.append("status", activeStatus);
-      const res = await fetch(`/api/my-bookings?${params}`);
+      const p = new URLSearchParams({ userId });
+      if (activeType)   p.set("type",   activeType);
+      if (activeStatus) p.set("status", activeStatus);
+      const res  = await fetch(`/api/my-bookings?${p}`);
+      const data = await res.json();
+      if (data.success) { setBookings(data.bookings); setSummary(data.summary); }
+    } catch {}
+    setLoading(false);
+  }, [activeType, activeStatus]);
+
+  useEffect(() => { fetchBookings(); }, [fetchBookings]);
+
+  async function handleCancel() {
+    if (!cancelTarget) return;
+    const userId = localStorage.getItem("userId");
+    setCancelling(true);
+    try {
+      const res  = await fetch("/api/my-bookings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bookingId: cancelTarget.bookingId, userId }),
+      });
       const data = await res.json();
       if (data.success) {
-        setBookings(data.bookings);
-        setSummary(data.summary);
+        setToast(data.message);
+        setCancelTarget(null);
+        fetchBookings();
+      } else {
+        setToast(data.message || "Cancel nahi hua");
       }
-    } catch (e) { console.error(e); }
-    setLoading(false);
+    } catch {
+      setToast("Network error. Dobara try karein.");
+    }
+    setCancelling(false);
+    setTimeout(() => setToast(""), 4000);
   }
 
-  function formatDate(d: string) {
-    if (!d) return "—";
-    return new Date(d).toLocaleDateString("en-IN", {
-      day: "numeric", month: "short", year: "numeric",
-    });
-  }
-
-  function getBookingTitle(b: any) {
-    if (b.type === "OPD")     return b.doctorName  ? `Dr. ${b.doctorName}` : "OPD Appointment";
-    if (b.type === "Surgery") return b.packageName ?? "Surgery Package";
-    if (b.type === "Lab")     return b.testName    ?? "Lab Test";
-    return b.notes ?? b.type;
-  }
-
-  function getBookingSubtitle(b: any) {
-    if (b.type === "OPD") {
-      const parts = [];
-      if (b.speciality)   parts.push(b.speciality);
-      if (b.hospitalName) parts.push(b.hospitalName);
-      if (b.appointmentDate) parts.push(formatDate(b.appointmentDate));
-      if (b.slot) parts.push(b.slot);
-      return parts.join(" • ");
-    }
-    if (b.type === "Surgery") {
-      const parts = [];
-      if (b.category)     parts.push(b.category);
-      if (b.hospitalName) parts.push(b.hospitalName);
-      if (b.roomType)     parts.push(b.roomType + " Room");
-      return parts.join(" • ");
-    }
-    if (b.type === "Lab") {
-      const parts = [];
-      if (b.category)     parts.push(b.category);
-      if (b.hospitalName) parts.push(b.hospitalName);
-      if (b.appointmentDate) parts.push(formatDate(b.appointmentDate));
-      if (b.slot) parts.push(b.slot);
-      return parts.join(" • ");
-    }
-    return "";
-  }
+  const TYPES = ["", "OPD", "Surgery", "Lab", "Consultation"];
+  const STATUSES = ["", "pending", "confirmed", "completed", "cancelled"];
 
   return (
-    <main className="min-h-screen bg-gray-50">
+    <main className="min-h-screen bg-gray-50 pb-24">
       <Header />
-      <div className="max-w-2xl mx-auto py-8 px-4">
 
-        <h1 className="text-2xl font-bold text-gray-800 mb-1">📋 Meri Bookings</h1>
-        <p className="text-sm text-gray-500 mb-6">Aapki aur family ki sabhi bookings</p>
+      {/* Toast */}
+      {toast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-teal-700 text-white px-5 py-3 rounded-xl text-sm font-semibold shadow-lg max-w-xs text-center">
+          {toast}
+        </div>
+      )}
 
-        {/* Summary Cards */}
-        {!loading && summary.total > 0 && (
-          <div className="grid grid-cols-4 gap-3 mb-6">
+      {/* Cancel Modal */}
+      {cancelTarget && (
+        <CancelModal
+          booking={cancelTarget}
+          onConfirm={handleCancel}
+          onClose={() => setCancelTarget(null)}
+          loading={cancelling}
+        />
+      )}
+
+      <div className="max-w-2xl mx-auto py-6 px-4">
+
+        {/* Header */}
+        <div className="mb-5">
+          <h1 className="text-2xl font-bold text-gray-800">📋 Meri Bookings</h1>
+          <p className="text-sm text-gray-500 mt-0.5">Aapki aur family ki sabhi appointments</p>
+        </div>
+
+        {/* Summary Stats */}
+        {!loading && (summary.total ?? 0) > 0 && (
+          <div className="grid grid-cols-4 gap-2 mb-5">
             {[
-              { key: "total",     label: "Total",     color: "bg-gray-100 text-gray-700"      },
-              { key: "pending",   label: "Pending",   color: "bg-yellow-100 text-yellow-700"  },
-              { key: "confirmed", label: "Confirmed", color: "bg-green-100 text-green-700"    },
-              { key: "completed", label: "Completed", color: "bg-teal-100 text-teal-700"      },
-            ].map(({ key, label, color }) => (
-              <div key={key} className={`${color} rounded-2xl p-3 text-center`}>
-                <p className="text-2xl font-bold">{summary[key] ?? 0}</p>
-                <p className="text-xs font-medium">{label}</p>
-              </div>
+              { key: "total",     label: "Total",     bg: "bg-white border border-gray-100",        text: "text-gray-800"  },
+              { key: "pending",   label: "Pending",   bg: "bg-amber-50 border border-amber-100",    text: "text-amber-700" },
+              { key: "confirmed", label: "Confirmed", bg: "bg-green-50 border border-green-100",    text: "text-green-700" },
+              { key: "completed", label: "Done",      bg: "bg-teal-50 border border-teal-100",      text: "text-teal-700"  },
+            ].map(({ key, label, bg, text }) => (
+              <button key={key} onClick={() => setActiveStatus(key === "total" ? "" : key)}
+                className={`${bg} rounded-2xl p-3 text-center shadow-sm transition hover:shadow-md`}>
+                <p className={`text-2xl font-bold ${text}`}>{summary[key] ?? 0}</p>
+                <p className={`text-xs font-medium mt-0.5 ${text} opacity-75`}>{label}</p>
+              </button>
             ))}
           </div>
         )}
 
         {/* Filters */}
-        <div className="flex gap-2 mb-5 overflow-x-auto pb-1">
-          {/* Type filter */}
-          {["", "OPD", "Surgery", "Lab"].map((t) => (
+        <div className="flex gap-2 mb-5 overflow-x-auto pb-1 scrollbar-hide">
+          {TYPES.map((t) => (
             <button key={t} onClick={() => setActiveType(t)}
-              className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition ${
-                activeType === t
-                  ? "bg-teal-600 text-white"
-                  : "bg-white border border-gray-200 text-gray-600 hover:border-teal-400"
+              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition ${
+                activeType === t ? "bg-teal-600 text-white shadow-sm" : "bg-white border border-gray-200 text-gray-600 hover:border-teal-400"
               }`}>
-              {t === "" ? "Sabhi" : `${typeLabels[t]?.icon} ${typeLabels[t]?.label}`}
+              {t === "" ? "Sabhi" : `${TYPE_CONFIG[t]?.icon} ${TYPE_CONFIG[t]?.label}`}
             </button>
           ))}
-          <div className="w-px bg-gray-200 mx-1" />
-          {/* Status filter */}
-          {["", "pending", "confirmed", "completed", "cancelled"].map((s) => (
+          <div className="w-px bg-gray-200 mx-0.5 flex-shrink-0" />
+          {STATUSES.map((s) => (
             <button key={s} onClick={() => setActiveStatus(s)}
-              className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition ${
-                activeStatus === s
-                  ? "bg-teal-600 text-white"
-                  : "bg-white border border-gray-200 text-gray-600 hover:border-teal-400"
+              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition ${
+                activeStatus === s ? "bg-teal-600 text-white shadow-sm" : "bg-white border border-gray-200 text-gray-600 hover:border-teal-400"
               }`}>
-              {s === "" ? "All Status" : statusConfig[s]?.label}
+              {s === "" ? "All Status" : STATUS_CONFIG[s]?.label}
             </button>
           ))}
         </div>
 
-        {/* Bookings List */}
+        {/* Content */}
         {loading ? (
-          <div className="text-center py-16 text-teal-600">Bookings load ho rahi hain...</div>
+          <div className="space-y-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="bg-white rounded-2xl p-4 border border-gray-100 animate-pulse">
+                <div className="flex gap-3">
+                  <div className="w-11 h-11 rounded-xl bg-gray-100" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-4 bg-gray-100 rounded-lg w-3/4" />
+                    <div className="h-3 bg-gray-100 rounded-lg w-1/2" />
+                    <div className="h-3 bg-gray-100 rounded-lg w-1/3" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         ) : bookings.length === 0 ? (
-          <div className="text-center py-16">
-            <p className="text-5xl mb-4">📭</p>
-            <p className="text-gray-500 font-medium">Koi booking nahi mili</p>
-            <p className="text-sm text-gray-400 mt-1">
-              {activeType || activeStatus ? "Filter change kar ke dekhein" : "Abhi koi service book karein"}
+          <div className="text-center py-16 bg-white rounded-2xl border border-gray-100 shadow-sm">
+            <p className="text-5xl mb-3">📭</p>
+            <p className="text-gray-600 font-semibold">Koi booking nahi mili</p>
+            <p className="text-sm text-gray-400 mt-1 mb-6">
+              {activeType || activeStatus ? "Filter change kar ke dekhein" : "Abhi pehli appointment book karein"}
             </p>
-            <div className="flex gap-3 justify-center mt-5">
-              <a href="/opd-booking"
-                className="bg-teal-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-teal-700 transition">
-                OPD Book Karein
-              </a>
-              <a href="/lab-tests"
-                className="bg-white border border-teal-600 text-teal-600 px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-teal-50 transition">
-                Lab Test
-              </a>
+            <div className="flex gap-3 justify-center">
+              <a href="/opd-booking" className="bg-teal-600 text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-teal-700 transition">🩺 OPD Book</a>
+              <a href="/lab-tests"   className="bg-white border border-teal-200 text-teal-700 px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-teal-50 transition">🧪 Lab Test</a>
+              <a href="/surgery-packages" className="bg-white border border-purple-200 text-purple-700 px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-purple-50 transition">🏥 Surgery</a>
             </div>
           </div>
         ) : (
           <div className="space-y-3">
-            {bookings.map((b) => {
-              const typeInfo   = typeLabels[b.type]   ?? { label: b.type, icon: "📄", color: "bg-gray-100 text-gray-700" };
-              const statusInfo = statusConfig[b.status] ?? { label: b.status, color: "bg-gray-100 text-gray-600" };
-              return (
-                <div key={b._id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    {/* Left */}
-                    <div className="flex items-start gap-3 flex-1 min-w-0">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0 ${typeInfo.color}`}>
-                        {typeInfo.icon}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="font-semibold text-gray-800 truncate">{getBookingTitle(b)}</p>
-                        <p className="text-xs text-gray-500 mt-0.5 truncate">{getBookingSubtitle(b)}</p>
-                        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${typeInfo.color}`}>
-                            {typeInfo.label}
-                          </span>
-                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusInfo.color}`}>
-                            {statusInfo.label}
-                          </span>
-                          {b.paymentStatus === "paid" && (
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-green-50 text-green-600 font-medium">
-                              ✓ Paid
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Right */}
-                    <div className="text-right flex-shrink-0">
-                      {b.amount > 0 && (
-                        <p className="font-bold text-teal-700 text-base">₹{b.amount.toLocaleString()}</p>
-                      )}
-                      <p className="text-xs text-gray-400 mt-0.5">{formatDate(b.createdAt)}</p>
-                    </div>
-                  </div>
-
-                  {/* Booking ID */}
-                  <div className="mt-3 pt-3 border-t border-gray-50 flex justify-between items-center">
-                    <p className="text-xs text-gray-400 font-mono">{b.bookingId}</p>
-                    {b.type === "Surgery" && b.status === "pending" && (
-                      <p className="text-xs text-orange-600">⏳ Team 24h mein contact karegi</p>
-                    )}
-                    {b.type === "Lab" && b.status === "confirmed" && b.slot === "Home Collection" && (
-                      <p className="text-xs text-blue-600">🚗 Home collection scheduled</p>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+            {bookings.map((b) => (
+              <BookingCard key={b._id} b={b} onCancel={setCancelTarget} />
+            ))}
+            <p className="text-center text-xs text-gray-400 pt-2">{bookings.length} booking{bookings.length !== 1 ? "s" : ""} found</p>
           </div>
         )}
       </div>

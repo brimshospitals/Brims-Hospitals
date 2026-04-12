@@ -1,185 +1,294 @@
 "use client";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter } from "next/navigation";
 import Header from "../components/header";
-import { useState } from "react";
+import PatientSelector, { SelectedPatient } from "../components/PatientSelector";
 
-const doctors = [
-  { id: 1, name: "Dr. Rajesh Kumar", specialization: "General Physician", fees: 300, time: "9:00 AM - 2:00 PM", available: ["Mon","Tue","Wed","Thu","Fri"] },
-  { id: 2, name: "Dr. Priya Sharma", specialization: "Gynaecologist", fees: 500, time: "10:00 AM - 3:00 PM", available: ["Mon","Wed","Fri","Sat"] },
-  { id: 3, name: "Dr. Amit Verma", specialization: "Orthopaedic Surgeon", fees: 600, time: "11:00 AM - 4:00 PM", available: ["Tue","Thu","Sat"] },
-  { id: 4, name: "Dr. Sunita Singh", specialization: "Paediatrician", fees: 350, time: "9:00 AM - 1:00 PM", available: ["Mon","Tue","Wed","Thu","Fri","Sat"] },
-  { id: 5, name: "Dr. Mohd. Faiz", specialization: "Cardiologist", fees: 800, time: "2:00 PM - 6:00 PM", available: ["Mon","Wed","Fri"] },
-  { id: 6, name: "Dr. Neha Gupta", specialization: "Dermatologist", fees: 400, time: "10:00 AM - 2:00 PM", available: ["Tue","Thu","Sat"] },
+const timeSlots = [
+  "9:00 AM","9:30 AM","10:00 AM","10:30 AM","11:00 AM","11:30 AM",
+  "12:00 PM","12:30 PM","2:00 PM","2:30 PM","3:00 PM","3:30 PM","4:00 PM","4:30 PM",
 ];
 
-const timeSlots = ["9:00 AM","9:30 AM","10:00 AM","10:30 AM","11:00 AM","11:30 AM","12:00 PM","12:30 PM","2:00 PM","2:30 PM","3:00 PM","3:30 PM","4:00 PM","4:30 PM"];
-const specializations = ["All", "General Physician", "Gynaecologist", "Orthopaedic Surgeon", "Paediatrician", "Cardiologist", "Dermatologist"];
-
-// Registered members (demo data)
-const registeredMembers = [
-  { mobile: "9999999999", name: "Rahul Sharma", dob: "1990-05-15", gender: "Male", city: "Patna" },
-  { mobile: "8888888888", name: "Priya Singh", dob: "1995-08-22", gender: "Female", city: "Patna" },
+const PAYMENT_MODES = [
+  { id: "counter", label: "Pay at Counter", icon: "🏥" },
+  { id: "online",  label: "UPI / Online",   icon: "📱" },
+  { id: "wallet",  label: "Wallet",          icon: "💰" },
+  { id: "insurance", label: "Insurance",     icon: "🛡️" },
 ];
 
-export default function OPDBookingPage() {
-  const [step, setStep] = useState(1); // 1=Doctor, 2=Patient, 3=Confirm, 4=Success
-  const [filterSpec, setFilterSpec] = useState("All");
-  const [selectedDoctor, setSelectedDoctor] = useState<{
-  id: number;
-  name: string;
-  specialization: string;
-  fees: number;
-  time: string;
-  available: string[];
-} | null>(null);
-  const [selectedDate, setSelectedDate] = useState("");
-  const [selectedSlot, setSelectedSlot] = useState("");
-  const [paymentMode, setPaymentMode] = useState("");
-  const [mobileCheck, setMobileCheck] = useState("");
-  const [memberFound, setMemberFound] = useState<{
-  mobile: string;
-  name: string;
-  dob: string;
-  gender: string;
-  city: string;
-} | null>(null);
-  const [isNewPatient, setIsNewPatient] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [form, setForm] = useState({
-    name: "", mobile: "", gender: "", dob: "", city: "", symptoms: "",
-  });
+function OPDBookingContent() {
+  const router = useRouter();
 
-  const filteredDoctors = filterSpec === "All" ? doctors : doctors.filter(d => d.specialization === filterSpec);
+  // Steps: 1=Doctor, 2=Patient, 3=Confirm+Pay, 4=Success
+  const [step, setStep]               = useState(1);
 
-  const handleMobileCheck = () => {
-    const found = registeredMembers.find(m => m.mobile === mobileCheck);
-    if (found) {
-      setMemberFound(found);
-      setForm({ ...form, name: found.name, mobile: found.mobile, gender: found.gender, dob: found.dob, city: found.city });
-      setIsNewPatient(false);
-    } else {
-      setMemberFound(null);
-      setIsNewPatient(true);
-      setForm({ ...form, mobile: mobileCheck });
+  // Profile data
+  const [profile, setProfile]         = useState<any>(null);
+  const [familyMembers, setFamilyMembers] = useState<any[]>([]);
+  const [profileLoading, setProfileLoading] = useState(true);
+
+  // Doctors
+  const [doctors, setDoctors]         = useState<any[]>([]);
+  const [doctorsLoading, setDoctorsLoading] = useState(false);
+  const [filterSpec, setFilterSpec]   = useState("All");
+  const [specs, setSpecs]             = useState<string[]>(["All"]);
+
+  // Selection state
+  const [selectedDoctor, setSelectedDoctor] = useState<any>(null);
+  const [selectedDate, setSelectedDate]     = useState("");
+  const [selectedSlot, setSelectedSlot]     = useState("");
+  const [selectedPatient, setSelectedPatient] = useState<SelectedPatient | null>(null);
+  const [symptoms, setSymptoms]             = useState("");
+  const [paymentMode, setPaymentMode]       = useState("");
+
+  // Booking result
+  const [booking, setBooking]         = useState<any>(null);
+  const [submitting, setSubmitting]   = useState(false);
+  const [error, setError]             = useState("");
+
+  // Load profile + doctors on mount
+  useEffect(() => {
+    const userId = localStorage.getItem("userId");
+    if (!userId) { setProfileLoading(false); return; }
+
+    fetch(`/api/profile?userId=${userId}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.success) {
+          setProfile(data.user);
+          setFamilyMembers(data.familyMembers || []);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setProfileLoading(false));
+
+    fetchDoctors();
+  }, []);
+
+  async function fetchDoctors(spec?: string) {
+    setDoctorsLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (spec && spec !== "All") params.set("department", spec);
+      const res  = await fetch(`/api/doctors?${params}`);
+      const data = await res.json();
+      if (data.success) {
+        setDoctors(data.doctors);
+        // Build spec list
+        const allSpecs = ["All", ...new Set<string>(data.doctors.map((d: any) => d.department).filter(Boolean))];
+        setSpecs(allSpecs as string[]);
+      }
+    } catch {}
+    setDoctorsLoading(false);
+  }
+
+  function handleFilterSpec(s: string) {
+    setFilterSpec(s);
+    fetchDoctors(s);
+  }
+
+  async function handleConfirmBooking() {
+    if (!selectedDoctor || !selectedDate || !selectedSlot || !selectedPatient || !paymentMode) return;
+    setSubmitting(true);
+    setError("");
+    try {
+      const userId = localStorage.getItem("userId");
+      const familyCardId = localStorage.getItem("familyCardId") || null;
+      const res = await fetch("/api/bookings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "OPD",
+          doctorId: selectedDoctor._id,
+          hospitalId: selectedDoctor.hospitalId || null,
+          appointmentDate: selectedDate,
+          slot: selectedSlot,
+          patientUserId: selectedPatient.userId,
+          patientName: selectedPatient.name,
+          patientMobile: selectedPatient.mobile,
+          patientAge: selectedPatient.age,
+          patientGender: selectedPatient.gender,
+          symptoms: symptoms || selectedPatient.symptoms,
+          isNewPatient: selectedPatient.isNewPatient,
+          paymentMode,
+          amount: selectedDoctor.offerFee || selectedDoctor.opdFee,
+          familyCardId,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setBooking(data.booking);
+        setStep(4);
+      } else {
+        setError(data.message || "Booking fail ho gayi");
+      }
+    } catch {
+      setError("Network error. Dobara try karein.");
     }
-  };
+    setSubmitting(false);
+  }
 
-  const handleConfirm = () => {
-    setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      setStep(4);
-    }, 1500);
-  };
+  function reset() {
+    setStep(1);
+    setSelectedDoctor(null);
+    setSelectedDate("");
+    setSelectedSlot("");
+    setSelectedPatient(null);
+    setSymptoms("");
+    setPaymentMode("");
+    setBooking(null);
+    setError("");
+  }
 
-  const bookingId = "BH" + Math.floor(10000 + Math.random() * 90000);
+  const todayStr = new Date().toISOString().split("T")[0];
 
   return (
-    <main className="min-h-screen bg-gray-50">
-
-      {/* Header */}
+    <main className="min-h-screen bg-gray-50 pb-10">
       <Header />
 
+      {/* Hero */}
+      <div className="bg-gradient-to-br from-blue-600 to-blue-800 px-4 py-8 text-center">
+        <h1 className="text-white text-2xl font-bold mb-1">OPD Appointment</h1>
+        <p className="text-blue-200 text-sm">3 simple steps mein book karein</p>
+      </div>
 
-      {/* Page Title */}
-      <section className="bg-teal-50 py-10 text-center px-6">
-        <h2 className="text-3xl font-bold text-teal-700 mb-2">OPD Appointment Booking</h2>
-        <p className="text-gray-500">Book your appointment in 3 simple steps</p>
-      </section>
-
-      {/* Progress Steps */}
-      <div className="max-w-3xl mx-auto px-6 py-6">
-        <div className="flex items-center justify-between mb-8">
-          {[
-            { n: 1, label: "Select Doctor" },
-            { n: 2, label: "Patient Details" },
-            { n: 3, label: "Confirm & Pay" },
-          ].map((s, i) => (
-            <div key={s.n} className="flex items-center flex-1">
-              <div className="flex flex-col items-center">
-                <div className={`h-10 w-10 rounded-full flex items-center justify-center text-sm font-bold border-2 transition ${
-                  step > s.n ? "bg-teal-600 border-teal-600 text-white"
-                  : step === s.n ? "bg-teal-600 border-teal-600 text-white"
-                  : "bg-white border-gray-300 text-gray-400"
-                }`}>
-                  {step > s.n ? "✓" : s.n}
+      {/* Progress */}
+      {step < 4 && (
+        <div className="max-w-lg mx-auto px-4 py-5">
+          <div className="flex items-center justify-between">
+            {[
+              { n: 1, label: "Doctor" },
+              { n: 2, label: "Patient" },
+              { n: 3, label: "Confirm" },
+            ].map((s, i) => (
+              <div key={s.n} className="flex items-center flex-1">
+                <div className="flex flex-col items-center">
+                  <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold border-2 transition ${
+                    step > s.n ? "bg-blue-600 border-blue-600 text-white"
+                    : step === s.n ? "bg-blue-600 border-blue-600 text-white"
+                    : "bg-white border-gray-200 text-gray-400"
+                  }`}>
+                    {step > s.n ? "✓" : s.n}
+                  </div>
+                  <span className={`text-xs mt-1 font-medium ${step >= s.n ? "text-blue-700" : "text-gray-400"}`}>
+                    {s.label}
+                  </span>
                 </div>
-                <span className={`text-xs mt-1 font-medium ${step >= s.n ? "text-teal-700" : "text-gray-400"}`}>
-                  {s.label}
-                </span>
+                {i < 2 && (
+                  <div className={`flex-1 h-1 mx-2 rounded mb-4 ${step > s.n ? "bg-blue-600" : "bg-gray-200"}`} />
+                )}
               </div>
-              {i < 2 && (
-                <div className={`flex-1 h-1 mx-2 rounded ${step > s.n ? "bg-teal-600" : "bg-gray-200"}`} />
-              )}
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
+      )}
 
-        {/* STEP 1 — Select Doctor */}
+      <div className="max-w-lg mx-auto px-4 space-y-4">
+
+        {/* ── STEP 1: Doctor Selection ── */}
         {step === 1 && (
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-            <h3 className="text-lg font-bold text-gray-800 mb-4">Select Doctor & Time Slot</h3>
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+            <h2 className="font-bold text-gray-800 text-base mb-4">Doctor aur Time Slot chunein</h2>
 
-            {/* Specialization Filter */}
-            <div className="flex flex-wrap gap-2 mb-5">
-              {specializations.map(s => (
-                <button key={s} onClick={() => setFilterSpec(s)}
-                  className={`px-3 py-1 rounded-full text-xs font-medium border transition ${
-                    filterSpec === s ? "bg-teal-600 text-white border-teal-600" : "text-gray-500 border-gray-200 hover:border-teal-400"
+            {/* Specialization filter */}
+            <div className="flex flex-wrap gap-2 mb-4">
+              {specs.map((s) => (
+                <button key={s} onClick={() => handleFilterSpec(s)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition ${
+                    filterSpec === s ? "bg-blue-600 text-white border-blue-600" : "text-gray-500 border-gray-200 hover:border-blue-300"
                   }`}>
                   {s}
                 </button>
               ))}
             </div>
 
-            {/* Doctor List */}
-            <div className="space-y-3 mb-5">
-              {filteredDoctors.map(doc => (
-                <div key={doc.id}
-                  onClick={() => setSelectedDoctor(doc)}
-                  className={`p-4 rounded-xl border-2 cursor-pointer transition ${
-                    selectedDoctor?.id === doc.id ? "border-teal-500 bg-teal-50" : "border-gray-100 hover:border-teal-300"
-                  }`}>
-                  <div className="flex justify-between items-center">
+            {/* Doctor list */}
+            {doctorsLoading ? (
+              <div className="flex justify-center py-8">
+                <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : doctors.length === 0 ? (
+              <div className="text-center py-10 text-gray-400">
+                <p className="text-4xl mb-2">🔍</p>
+                <p className="text-sm">Is department mein koi doctor available nahi hai</p>
+              </div>
+            ) : (
+              <div className="space-y-3 mb-4">
+                {doctors.map((doc) => (
+                  <button key={doc._id}
+                    type="button"
+                    onClick={() => setSelectedDoctor(doc)}
+                    className={`w-full p-4 rounded-2xl border-2 text-left transition ${
+                      selectedDoctor?._id === doc._id
+                        ? "border-blue-500 bg-blue-50"
+                        : "border-gray-100 hover:border-blue-200"
+                    }`}
+                  >
                     <div className="flex items-center gap-3">
-                      <div className="h-12 w-12 rounded-xl bg-teal-100 flex items-center justify-center text-lg font-bold text-teal-600">
-                        {doc.name.split(" ")[1][0]}
+                      <div className="w-14 h-14 rounded-xl overflow-hidden bg-blue-100 flex-shrink-0">
+                        {doc.photo
+                          ? <img src={doc.photo} alt={doc.name} className="w-full h-full object-cover" />
+                          : <div className="w-full h-full flex items-center justify-center text-blue-600 font-bold text-xl">
+                              {doc.name?.[0] || "D"}
+                            </div>
+                        }
                       </div>
-                      <div>
+                      <div className="flex-1 min-w-0">
                         <p className="font-bold text-gray-800 text-sm">{doc.name}</p>
-                        <p className="text-teal-600 text-xs">{doc.specialization}</p>
-                        <p className="text-gray-400 text-xs">{doc.time}</p>
+                        <p className="text-blue-600 text-xs">{doc.department}</p>
+                        {doc.speciality && <p className="text-gray-400 text-xs">{doc.speciality}</p>}
+                        {doc.experience && <p className="text-gray-400 text-xs">{doc.experience} yrs exp</p>}
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        {doc.offerFee ? (
+                          <>
+                            <p className="text-xs text-gray-400 line-through">₹{doc.opdFee}</p>
+                            <p className="font-bold text-blue-700 text-base">₹{doc.offerFee}</p>
+                          </>
+                        ) : (
+                          <p className="font-bold text-blue-700 text-base">₹{doc.opdFee}</p>
+                        )}
+                        {doc.rating > 0 && (
+                          <p className="text-xs text-amber-500">⭐ {doc.rating.toFixed(1)}</p>
+                        )}
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="font-bold text-teal-700">Rs. {doc.fees}</p>
-                      <div className="flex gap-1 mt-1 justify-end">
-                        {doc.available.map(d => (
-                          <span key={d} className="text-xs bg-teal-100 text-teal-700 px-1 rounded">{d}</span>
+                    {doc.availableSlots?.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {doc.availableSlots.slice(0, 4).map((s: any) => (
+                          <span key={s.day} className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                            {s.day}
+                          </span>
                         ))}
                       </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
 
-            {/* Date & Time */}
+            {/* Date & Slot — shown after doctor selected */}
             {selectedDoctor && (
-              <div className="space-y-4 border-t pt-4">
+              <div className="space-y-4 border-t border-gray-100 pt-4">
                 <div>
-                  <label className="text-sm font-medium text-gray-600 mb-1 block">Select Date</label>
-                  <input type="date" value={selectedDate}
-                    onChange={e => setSelectedDate(e.target.value)}
-                    min={new Date().toISOString().split("T")[0]}
-                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100" />
+                  <label className="text-xs font-semibold text-gray-600 mb-1.5 block">Date chunein</label>
+                  <input
+                    type="date"
+                    value={selectedDate}
+                    onChange={(e) => setSelectedDate(e.target.value)}
+                    min={todayStr}
+                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  />
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-gray-600 mb-2 block">Select Time Slot</label>
+                  <label className="text-xs font-semibold text-gray-600 mb-1.5 block">Time Slot chunein</label>
                   <div className="flex flex-wrap gap-2">
-                    {timeSlots.map(slot => (
-                      <button key={slot} onClick={() => setSelectedSlot(slot)}
-                        className={`px-3 py-1 rounded-lg text-xs font-medium border transition ${
-                          selectedSlot === slot ? "bg-teal-600 text-white border-teal-600" : "border-gray-200 text-gray-600 hover:border-teal-400"
+                    {timeSlots.map((slot) => (
+                      <button key={slot} type="button" onClick={() => setSelectedSlot(slot)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition ${
+                          selectedSlot === slot
+                            ? "bg-blue-600 text-white border-blue-600"
+                            : "border-gray-200 text-gray-600 hover:border-blue-400"
                         }`}>
                         {slot}
                       </button>
@@ -190,244 +299,203 @@ export default function OPDBookingPage() {
             )}
 
             <button
-              onClick={() => { if (selectedDoctor && selectedDate && selectedSlot) setStep(2); else alert("Please select doctor, date and time slot"); }}
-              className="w-full mt-6 bg-teal-600 text-white py-3 rounded-xl font-semibold hover:bg-teal-700 transition">
-              Next: Patient Details
+              onClick={() => {
+                if (!selectedDoctor) { setError("Doctor select karein"); return; }
+                if (!selectedDate) { setError("Date select karein"); return; }
+                if (!selectedSlot) { setError("Time slot select karein"); return; }
+                setError(""); setStep(2);
+              }}
+              className="w-full mt-5 bg-blue-600 hover:bg-blue-700 text-white py-3.5 rounded-2xl font-bold transition"
+            >
+              Next: Patient Details →
+            </button>
+            {error && <p className="text-red-500 text-xs text-center mt-2">{error}</p>}
+          </div>
+        )}
+
+        {/* ── STEP 2: Patient Selection ── */}
+        {step === 2 && (
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+            <h2 className="font-bold text-gray-800 text-base mb-1">Patient kaun hai?</h2>
+            <p className="text-xs text-gray-400 mb-4">Family member chunein ya naya patient add karein</p>
+
+            {profileLoading ? (
+              <div className="flex justify-center py-8">
+                <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : (
+              <PatientSelector
+                primaryUser={profile}
+                familyMembers={familyMembers}
+                onSelect={(patient) => {
+                  setSelectedPatient(patient);
+                  setStep(3);
+                }}
+              />
+            )}
+
+            {/* Symptoms field if patient already selected */}
+            {selectedPatient && (
+              <div className="mt-4">
+                <label className="text-xs font-semibold text-gray-600 mb-1 block">Symptoms / Visit ka karan</label>
+                <textarea
+                  value={symptoms}
+                  onChange={(e) => setSymptoms(e.target.value)}
+                  placeholder="Takleef describe karein..."
+                  rows={2}
+                  className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-blue-400 resize-none"
+                />
+              </div>
+            )}
+
+            <button
+              onClick={() => setStep(1)}
+              className="w-full mt-4 border border-gray-200 text-gray-600 py-3 rounded-2xl font-semibold text-sm hover:bg-gray-50 transition"
+            >
+              ← Wapas
             </button>
           </div>
         )}
 
-        {/* STEP 2 — Patient Details */}
-        {step === 2 && (
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-            <h3 className="text-lg font-bold text-gray-800 mb-4">Patient Details</h3>
+        {/* ── STEP 3: Confirm & Pay ── */}
+        {step === 3 && selectedDoctor && selectedPatient && (
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+            <h2 className="font-bold text-gray-800 text-base mb-4">Confirm aur Payment</h2>
 
-            {/* Mobile Check */}
-            {!memberFound && !isNewPatient && (
-              <div className="bg-teal-50 rounded-xl p-4 mb-5 border border-teal-100">
-                <p className="text-sm font-medium text-teal-700 mb-2">Already a member? Enter mobile to auto-fill details</p>
-                <div className="flex gap-2">
-                  <div className="flex border border-gray-200 rounded-xl overflow-hidden flex-1 focus-within:border-teal-500">
-                    <span className="bg-gray-50 text-gray-500 px-3 flex items-center text-sm border-r border-gray-200">+91</span>
-                    <input type="tel" maxLength={10} value={mobileCheck}
-                      onChange={e => setMobileCheck(e.target.value.replace(/\D/g, ""))}
-                      placeholder="Mobile number"
-                      className="flex-1 px-3 py-2 outline-none text-sm" />
-                  </div>
-                  <button onClick={handleMobileCheck}
-                    className="bg-teal-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-teal-700 transition">
-                    Check
-                  </button>
-                </div>
-                <button onClick={() => setIsNewPatient(true)}
-                  className="text-xs text-teal-600 mt-2 hover:underline">
-                  New patient? Fill details manually
-                </button>
-              </div>
-            )}
-
-            {/* Member Found */}
-            {memberFound && (
-              <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-5">
-                <p className="text-green-700 font-semibold text-sm">Member found! Details auto-filled.</p>
-                <p className="text-green-600 text-xs mt-1">{memberFound.name} — {memberFound.mobile}</p>
-                <button onClick={() => { setMemberFound(null); setIsNewPatient(false); setMobileCheck(""); setForm({ name:"", mobile:"", gender:"", dob:"", city:"", symptoms:"" }); }}
-                  className="text-xs text-red-400 mt-1 hover:underline">
-                  Clear & use different number
-                </button>
-              </div>
-            )}
-
-            {/* Form Fields */}
-            {(memberFound || isNewPatient) && (
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium text-gray-600 mb-1 block">Full Name *</label>
-                  <input type="text" value={form.name}
-                    onChange={e => setForm({...form, name: e.target.value})}
-                    placeholder="Patient full name"
-                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100" />
+            {/* Booking Summary */}
+            <div className="bg-blue-50 rounded-2xl p-4 border border-blue-100 space-y-2.5 mb-5">
+              <div className="flex items-center gap-3 pb-2 border-b border-blue-100">
+                <div className="w-12 h-12 rounded-xl overflow-hidden bg-blue-100 flex-shrink-0">
+                  {selectedDoctor.photo
+                    ? <img src={selectedDoctor.photo} alt={selectedDoctor.name} className="w-full h-full object-cover" />
+                    : <div className="w-full h-full flex items-center justify-center text-blue-600 font-bold text-lg">{selectedDoctor.name?.[0]}</div>
+                  }
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-gray-600 mb-1 block">Mobile *</label>
-                  <div className="flex border border-gray-200 rounded-xl overflow-hidden focus-within:border-teal-500">
-                    <span className="bg-gray-50 text-gray-500 px-4 flex items-center text-sm border-r border-gray-200">+91</span>
-                    <input type="tel" maxLength={10} value={form.mobile}
-                      onChange={e => setForm({...form, mobile: e.target.value.replace(/\D/g,"")})}
-                      placeholder="10-digit number"
-                      className="flex-1 px-4 py-3 outline-none text-sm" />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-sm font-medium text-gray-600 mb-1 block">Gender *</label>
-                    <div className="flex gap-2">
-                      {["Male","Female","Other"].map(g => (
-                        <button key={g} onClick={() => setForm({...form, gender: g})}
-                          className={`flex-1 py-2 rounded-xl text-xs font-medium border transition ${
-                            form.gender === g ? "bg-teal-600 text-white border-teal-600" : "border-gray-200 text-gray-500 hover:border-teal-400"
-                          }`}>
-                          {g}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-gray-600 mb-1 block">Date of Birth</label>
-                    <input type="date" value={form.dob}
-                      onChange={e => setForm({...form, dob: e.target.value})}
-                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-teal-500" />
-                  </div>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-600 mb-1 block">City</label>
-                  <input type="text" value={form.city}
-                    onChange={e => setForm({...form, city: e.target.value})}
-                    placeholder="Your city"
-                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100" />
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-600 mb-1 block">Symptoms / Notes</label>
-                  <textarea value={form.symptoms}
-                    onChange={e => setForm({...form, symptoms: e.target.value})}
-                    placeholder="Describe your symptoms or reason for visit..."
-                    rows={3}
-                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 resize-none" />
+                  <p className="font-bold text-gray-800 text-sm">{selectedDoctor.name}</p>
+                  <p className="text-blue-600 text-xs">{selectedDoctor.department}</p>
                 </div>
               </div>
-            )}
-
-            <div className="flex gap-3 mt-6">
-              <button onClick={() => setStep(1)}
-                className="flex-1 border border-teal-600 text-teal-600 py-3 rounded-xl font-semibold hover:bg-teal-50 transition">
-                Back
-              </button>
-              <button
-                onClick={() => { if (!form.name || !form.mobile) { alert("Please fill required fields"); return; } setStep(3); }}
-                className="flex-1 bg-teal-600 text-white py-3 rounded-xl font-semibold hover:bg-teal-700 transition">
-                Next: Confirm
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* STEP 3 — Confirm & Pay */}
-        {step === 3 && (
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-            <h3 className="text-lg font-bold text-gray-800 mb-4">Confirm Booking</h3>
-
-            {/* Summary */}
-            <div className="bg-teal-50 rounded-xl p-4 mb-5 space-y-2 border border-teal-100">
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Doctor</span>
-                <span className="font-semibold text-gray-800">{selectedDoctor?.name}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Specialization</span>
-                <span className="text-gray-700">{selectedDoctor?.specialization}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Date</span>
-                <span className="text-gray-700">{selectedDate}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Time Slot</span>
-                <span className="text-gray-700">{selectedSlot}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Patient</span>
-                <span className="text-gray-700">{form.name}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Mobile</span>
-                <span className="text-gray-700">+91 {form.mobile}</span>
-              </div>
-              <div className="flex justify-between text-sm border-t border-teal-200 pt-2 mt-2">
-                <span className="font-bold text-teal-700">Consultation Fees</span>
-                <span className="font-bold text-teal-700">Rs. {selectedDoctor?.fees}</span>
+              <Row label="Date" value={new Date(selectedDate).toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short", year: "numeric" })} />
+              <Row label="Time" value={selectedSlot} />
+              <Row label="Patient" value={`${selectedPatient.name} (${selectedPatient.age} yrs, ${selectedPatient.gender})`} />
+              <Row label="Mobile" value={`+91 ${selectedPatient.mobile}`} />
+              {(symptoms || selectedPatient.symptoms) && (
+                <Row label="Symptoms" value={symptoms || selectedPatient.symptoms} />
+              )}
+              <div className="flex justify-between text-sm border-t border-blue-100 pt-2 mt-1">
+                <span className="font-bold text-blue-800">Fees</span>
+                <span className="font-bold text-blue-800">₹{selectedDoctor.offerFee || selectedDoctor.opdFee}</span>
               </div>
             </div>
 
             {/* Payment Mode */}
             <div className="mb-5">
-              <label className="text-sm font-medium text-gray-600 mb-2 block">Payment Mode</label>
-              <div className="grid grid-cols-3 gap-3">
-                {["Pay at Counter", "UPI / Online", "Insurance"].map(p => (
-                  <button key={p} onClick={() => setPaymentMode(p)}
-                    className={`py-3 rounded-xl text-xs font-medium border transition ${
-                      paymentMode === p ? "bg-teal-600 text-white border-teal-600" : "border-gray-200 text-gray-600 hover:border-teal-400"
+              <label className="text-xs font-semibold text-gray-600 mb-2 block">Payment Mode chunein</label>
+              <div className="grid grid-cols-2 gap-2">
+                {PAYMENT_MODES.map((p) => (
+                  <button key={p.id} type="button" onClick={() => setPaymentMode(p.id)}
+                    className={`py-3 rounded-xl text-xs font-semibold border transition flex items-center justify-center gap-1.5 ${
+                      paymentMode === p.id
+                        ? "bg-blue-600 text-white border-blue-600"
+                        : "border-gray-200 text-gray-600 hover:border-blue-300"
                     }`}>
-                    {p}
+                    <span>{p.icon}</span>
+                    {p.label}
                   </button>
                 ))}
               </div>
             </div>
 
+            {error && (
+              <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-red-700 text-sm mb-4">
+                {error}
+              </div>
+            )}
+
             <div className="flex gap-3">
               <button onClick={() => setStep(2)}
-                className="flex-1 border border-teal-600 text-teal-600 py-3 rounded-xl font-semibold hover:bg-teal-50 transition">
-                Back
+                className="flex-1 border border-gray-200 text-gray-600 py-3 rounded-2xl font-semibold text-sm hover:bg-gray-50 transition">
+                ← Wapas
               </button>
-              <button onClick={handleConfirm} disabled={loading || !paymentMode}
-                className="flex-1 bg-teal-600 text-white py-3 rounded-xl font-semibold hover:bg-teal-700 transition disabled:opacity-60">
-                {loading ? "Booking..." : "Confirm Booking"}
+              <button
+                onClick={handleConfirmBooking}
+                disabled={submitting || !paymentMode}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-2xl font-bold transition disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {submitting ? (
+                  <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Booking...</>
+                ) : "Booking Confirm Karein ✓"}
               </button>
             </div>
           </div>
         )}
 
-        {/* STEP 4 — Success */}
-        {step === 4 && (
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 text-center">
-            <div className="text-6xl mb-4">✓</div>
-            <h3 className="text-2xl font-bold text-teal-700 mb-2">Booking Confirmed!</h3>
-            <p className="text-gray-400 text-sm mb-5">Your OPD appointment has been booked successfully.</p>
+        {/* ── STEP 4: Success ── */}
+        {step === 4 && booking && (
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 text-center">
+            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg viewBox="0 0 24 24" fill="none" className="w-10 h-10 text-green-600" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <h2 className="text-xl font-bold text-gray-800 mb-1">Booking Confirmed!</h2>
+            <p className="text-gray-400 text-sm mb-5">Aapki OPD appointment book ho gayi</p>
 
-            <div className="bg-teal-50 rounded-xl p-4 text-left space-y-2 mb-6 border border-teal-100">
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Booking ID</span>
-                <span className="font-bold text-teal-700">{bookingId}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Doctor</span>
-                <span className="text-gray-700">{selectedDoctor?.name}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Date & Time</span>
-                <span className="text-gray-700">{selectedDate} — {selectedSlot}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Patient</span>
-                <span className="text-gray-700">{form.name}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Payment</span>
-                <span className="text-gray-700">{paymentMode}</span>
-              </div>
+            <div className="bg-blue-50 rounded-2xl p-4 text-left space-y-2.5 mb-5 border border-blue-100">
+              <Row label="Booking ID" value={booking.bookingId} bold />
+              <Row label="Doctor" value={selectedDoctor?.name} />
+              <Row label="Specialization" value={selectedDoctor?.department} />
+              <Row label="Date" value={new Date(booking.appointmentDate).toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short", year: "numeric" })} />
+              <Row label="Time" value={booking.slot} />
+              <Row label="Patient" value={booking.patientName} />
+              <Row label="Fees" value={`₹${booking.amount}`} bold />
             </div>
 
-            <p className="text-xs text-gray-400 mb-6">A confirmation SMS will be sent to +91 {form.mobile}</p>
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-700 mb-5 text-left">
+              📱 Confirmation SMS +91 {booking.patientMobile} par bhej diya gaya hai
+            </div>
 
             <div className="flex gap-3">
-              <a href="/" className="flex-1 border border-teal-600 text-teal-600 py-3 rounded-xl font-semibold hover:bg-teal-50 transition text-center text-sm">
-                Back to Home
+              <a href="/dashboard"
+                className="flex-1 border border-gray-200 text-gray-600 py-3 rounded-2xl font-semibold text-sm hover:bg-gray-50 transition text-center">
+                Dashboard
               </a>
-              <button onClick={() => { setStep(1); setSelectedDoctor(null); setSelectedDate(""); setSelectedSlot(""); setPaymentMode(""); setMobileCheck(""); setMemberFound(null); setIsNewPatient(false); setForm({ name:"", mobile:"", gender:"", dob:"", city:"", symptoms:"" }); }}
-                className="flex-1 bg-teal-600 text-white py-3 rounded-xl font-semibold hover:bg-teal-700 transition text-sm">
-                Book Another
-              </button>
+              <a href="/my-bookings"
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-2xl font-bold text-sm transition text-center">
+                Meri Bookings
+              </a>
             </div>
+
+            <button onClick={reset} className="w-full mt-3 text-xs text-gray-400 hover:text-gray-600">
+              + Naya Appointment Book Karein
+            </button>
           </div>
         )}
 
       </div>
-
-      {/* Footer */}
-      <footer className="bg-teal-700 text-white text-center py-6 mt-10">
-        <p className="text-sm">© 2026 Brims Hospitals. All rights reserved.</p>
-        <p className="text-teal-300 text-xs mt-1">Making Healthcare Affordable</p>
-      </footer>
-
     </main>
+  );
+}
+
+function Row({ label, value, bold }: { label: string; value?: string | number; bold?: boolean }) {
+  return (
+    <div className="flex justify-between items-start gap-2 text-sm">
+      <span className="text-gray-500 flex-shrink-0">{label}</span>
+      <span className={`text-right ${bold ? "font-bold text-blue-800" : "text-gray-700"}`}>{value || "—"}</span>
+    </div>
+  );
+}
+
+export default function OPDBookingPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center gap-3">
+        <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        <p className="text-gray-400 text-sm">Loading...</p>
+      </div>
+    }>
+      <OPDBookingContent />
+    </Suspense>
   );
 }

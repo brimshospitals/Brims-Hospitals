@@ -68,7 +68,11 @@ export async function GET(request) {
           if (test) extra = { testName: test.name, category: test.category, hospitalName: test.hospitalName };
         }
 
-        return { ...b, ...extra };
+        // Parse patient info from notes
+        let notesData = {};
+        try { notesData = b.notes ? JSON.parse(b.notes) : {}; } catch {}
+
+        return { ...b, ...extra, ...notesData };
       })
     );
 
@@ -87,5 +91,51 @@ export async function GET(request) {
       { success: false, message: "Server error: " + error.message },
       { status: 500 }
     );
+  }
+}
+
+// PATCH — Cancel a booking (patient side)
+export async function PATCH(request) {
+  try {
+    const { bookingId, userId } = await request.json();
+    if (!bookingId || !userId) {
+      return NextResponse.json({ success: false, message: "bookingId aur userId zaruri hai" }, { status: 400 });
+    }
+
+    await connectDB();
+
+    const booking = await Booking.findOne({ bookingId, userId });
+    if (!booking) {
+      return NextResponse.json({ success: false, message: "Booking nahi mili" }, { status: 404 });
+    }
+    if (["completed", "cancelled"].includes(booking.status)) {
+      return NextResponse.json({ success: false, message: "Yeh booking already " + booking.status + " hai" }, { status: 400 });
+    }
+
+    booking.status = "cancelled";
+
+    // Wallet refund if payment was via wallet and was paid
+    let refunded = 0;
+    if (booking.paymentStatus === "paid" && booking.amount > 0) {
+      let notesData = {};
+      try { notesData = booking.notes ? JSON.parse(booking.notes) : {}; } catch {}
+      if (notesData.paymentMode === "wallet") {
+        await User.findByIdAndUpdate(userId, { $inc: { walletBalance: booking.amount } });
+        booking.paymentStatus = "refunded";
+        refunded = booking.amount;
+      }
+    }
+
+    await booking.save();
+
+    return NextResponse.json({
+      success: true,
+      message: refunded > 0
+        ? `Booking cancel ho gayi. ₹${refunded} wallet mein wapas aa jayenge.`
+        : "Booking cancel ho gayi.",
+      refunded,
+    });
+  } catch (error) {
+    return NextResponse.json({ success: false, message: "Server error: " + error.message }, { status: 500 });
   }
 }

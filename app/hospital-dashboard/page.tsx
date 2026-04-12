@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 // ───── Types ─────
@@ -20,6 +20,11 @@ type SurgeryPkg = {
   stayDays: number; isActive: boolean;
 };
 type Stats = { doctorCount: number; labTestCount: number; surgeryCount: number; totalBookings: number };
+type Report = {
+  _id: string; reportId: string; title: string; category: string;
+  fileUrl: string; fileType: string; notes?: string; reportDate: string;
+  patientName: string; hospitalName: string;
+};
 
 const LAB_CATEGORIES = ["Blood Test","Urine Test","Stool Test","Imaging","ECG","X-Ray","Ultrasound","MRI","CT Scan","Pathology","Other"];
 
@@ -203,6 +208,263 @@ function SurgeryModal({ hospitalId, onClose, onSaved }: { hospitalId: string; on
   );
 }
 
+// ───── Reports Tab ─────
+const REPORT_CATEGORIES = ["Lab", "Radiology", "OPD", "Surgery", "Prescription", "Other"];
+
+function ReportsTab({ hospitalId }: { hospitalId: string }) {
+  const [reports, setReports]           = useState<Report[]>([]);
+  const [loading, setLoading]           = useState(true);
+  const [showUpload, setShowUpload]     = useState(false);
+  const [searchMobile, setSearchMobile] = useState("");
+  const [filterMobile, setFilterMobile] = useState("");
+
+  // Upload form state
+  const [patientMobile, setPatientMobile] = useState("");
+  const [title, setTitle]               = useState("");
+  const [category, setCategory]         = useState("Lab");
+  const [notes, setNotes]               = useState("");
+  const [reportDate, setReportDate]     = useState(new Date().toISOString().split("T")[0]);
+  const [file, setFile]                 = useState<File | null>(null);
+  const [uploading, setUploading]       = useState(false);
+  const [err, setErr]                   = useState("");
+  const [toast, setToast]               = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { fetchReports(); }, [hospitalId, filterMobile]);
+
+  async function fetchReports() {
+    setLoading(true);
+    try {
+      const url = `/api/hospital/reports?hospitalId=${hospitalId}${filterMobile ? `&mobile=${filterMobile}` : ""}`;
+      const res  = await fetch(url);
+      const data = await res.json();
+      if (data.success) setReports(data.reports);
+    } finally { setLoading(false); }
+  }
+
+  async function handleUpload() {
+    if (!patientMobile || !title || !file) {
+      setErr("Patient mobile, title aur file zaruri hai"); return;
+    }
+    if (!/^\d{10}$/.test(patientMobile)) {
+      setErr("Valid 10-digit mobile number daalo"); return;
+    }
+    setUploading(true); setErr("");
+    try {
+      // 1. Upload file to Cloudinary
+      const fd = new FormData();
+      fd.append("file", file);
+      const upRes  = await fetch("/api/upload-report", { method: "POST", body: fd });
+      const upData = await upRes.json();
+      if (!upData.success) { setErr(upData.message); return; }
+
+      // 2. Save report record
+      const res  = await fetch("/api/hospital/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          hospitalId, patientMobile, title, category, notes, reportDate,
+          fileUrl: upData.url, fileType: upData.fileType,
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) { setErr(data.message); return; }
+
+      setToast("Report upload ho gayi!");
+      setTimeout(() => setToast(""), 3000);
+      setShowUpload(false);
+      setPatientMobile(""); setTitle(""); setNotes(""); setFile(null);
+      setCategory("Lab");
+      setReportDate(new Date().toISOString().split("T")[0]);
+      if (fileRef.current) fileRef.current.value = "";
+      fetchReports();
+    } finally { setUploading(false); }
+  }
+
+  async function deleteReport(id: string) {
+    if (!confirm("Is report ko delete karein?")) return;
+    await fetch("/api/hospital/reports", {
+      method: "DELETE", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reportId: id }),
+    });
+    setReports((p) => p.filter((r) => r._id !== id));
+  }
+
+  const fmtDate = (d: string) => new Date(d).toLocaleDateString("en-IN", { day:"2-digit", month:"short", year:"numeric" });
+
+  return (
+    <div className="space-y-4">
+      {/* Toast */}
+      {toast && (
+        <div className="fixed top-4 right-4 z-50 bg-green-600 text-white px-5 py-3 rounded-xl shadow-lg text-sm font-medium">
+          ✓ {toast}
+        </div>
+      )}
+
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h3 className="font-bold text-gray-800">Lab Reports ({reports.length})</h3>
+        <button onClick={() => { setShowUpload(true); setErr(""); }}
+          className="bg-teal-600 text-white text-sm px-4 py-2 rounded-xl hover:bg-teal-700 transition-colors flex items-center gap-2">
+          + Report Upload Karein
+        </button>
+      </div>
+
+      {/* Search by patient mobile */}
+      <div className="flex gap-2">
+        <input
+          value={searchMobile}
+          onChange={(e) => setSearchMobile(e.target.value)}
+          placeholder="Patient mobile se search karein..."
+          className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-teal-400"
+        />
+        <button onClick={() => setFilterMobile(searchMobile.trim())}
+          className="px-4 py-2 bg-gray-100 rounded-xl text-sm text-gray-700 hover:bg-gray-200 transition-colors">
+          Search
+        </button>
+        {filterMobile && (
+          <button onClick={() => { setFilterMobile(""); setSearchMobile(""); }}
+            className="px-3 py-2 text-xs text-red-500 hover:bg-red-50 rounded-xl transition-colors">
+            Clear
+          </button>
+        )}
+      </div>
+
+      {/* Upload Modal */}
+      {showUpload && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-gray-800 text-lg">Report Upload Karein</h3>
+              <button onClick={() => setShowUpload(false)} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
+            </div>
+            {err && <p className="text-red-500 text-sm bg-red-50 p-3 rounded-xl">{err}</p>}
+
+            <div>
+              <label className="text-xs text-gray-500 font-medium">Patient Mobile *</label>
+              <div className="flex mt-1">
+                <span className="px-3 py-2 bg-gray-100 border border-r-0 border-gray-200 rounded-l-xl text-sm text-gray-500">+91</span>
+                <input type="tel" maxLength={10} value={patientMobile}
+                  onChange={(e) => setPatientMobile(e.target.value.replace(/\D/g, ""))}
+                  placeholder="10-digit mobile"
+                  className="flex-1 border border-gray-200 rounded-r-xl px-3 py-2 text-sm focus:outline-none focus:border-teal-400" />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs text-gray-500 font-medium">Report Title *</label>
+              <input value={title} onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g. CBC Blood Test, X-Ray Chest PA"
+                className="w-full mt-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-teal-400" />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-gray-500 font-medium">Category</label>
+                <select value={category} onChange={(e) => setCategory(e.target.value)}
+                  className="w-full mt-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-teal-400">
+                  {REPORT_CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 font-medium">Report Date</label>
+                <input type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)}
+                  className="w-full mt-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-teal-400" />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs text-gray-500 font-medium">Notes (optional)</label>
+              <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2}
+                placeholder="Doctor ka observation ya special notes..."
+                className="w-full mt-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-teal-400 resize-none" />
+            </div>
+
+            <div>
+              <label className="text-xs text-gray-500 font-medium">File (PDF / Image) *</label>
+              <div
+                onClick={() => fileRef.current?.click()}
+                className="mt-1 border-2 border-dashed border-gray-200 rounded-xl p-5 text-center cursor-pointer hover:border-teal-400 hover:bg-teal-50 transition-colors">
+                {file ? (
+                  <div>
+                    <p className="text-sm font-medium text-teal-700">✓ {file.name}</p>
+                    <p className="text-xs text-gray-400 mt-1">{(file.size / 1024).toFixed(0)} KB</p>
+                  </div>
+                ) : (
+                  <div>
+                    <p className="text-2xl mb-1">📎</p>
+                    <p className="text-sm text-gray-500">Click karke file choose karein</p>
+                    <p className="text-xs text-gray-400 mt-1">PDF, JPG, PNG — max 10 MB</p>
+                  </div>
+                )}
+              </div>
+              <input ref={fileRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp"
+                className="hidden" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+            </div>
+
+            <div className="flex gap-3 pt-1">
+              <button onClick={() => setShowUpload(false)}
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-600">
+                Cancel
+              </button>
+              <button onClick={handleUpload} disabled={uploading}
+                className="flex-1 py-2.5 rounded-xl bg-teal-600 text-white text-sm font-medium disabled:opacity-60 flex items-center justify-center gap-2">
+                {uploading ? (
+                  <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />Uploading...</>
+                ) : "Report Save Karein"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reports list */}
+      {loading ? (
+        <div className="space-y-3">
+          {[1,2,3].map((i) => <div key={i} className="bg-white rounded-2xl h-16 animate-pulse" />)}
+        </div>
+      ) : reports.length === 0 ? (
+        <div className="bg-white rounded-2xl p-10 text-center border border-gray-100">
+          <p className="text-4xl mb-2">🗂️</p>
+          <p className="text-gray-500 text-sm">Koi report nahi mili.</p>
+          {filterMobile && <p className="text-xs text-gray-400 mt-1">Is mobile ke liye koi report nahi.</p>}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {reports.map((r) => (
+            <div key={r._id} className="bg-white rounded-2xl border border-gray-100 p-4 flex items-start gap-3 shadow-sm">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg shrink-0 ${
+                r.fileType === "pdf" ? "bg-red-100" : "bg-blue-100"
+              }`}>
+                {r.fileType === "pdf" ? "📄" : "🖼️"}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-gray-800 text-sm">{r.title}</p>
+                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                  <span className="text-xs bg-teal-50 text-teal-700 px-2 py-0.5 rounded-full">{r.category}</span>
+                  <span className="text-xs text-gray-400">{fmtDate(r.reportDate)}</span>
+                  <span className="text-xs text-gray-500">· {r.patientName}</span>
+                </div>
+                {r.notes && <p className="text-xs text-gray-400 mt-1 line-clamp-1">{r.notes}</p>}
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <a href={r.fileUrl} target="_blank" rel="noopener noreferrer"
+                  className="text-xs text-teal-600 hover:bg-teal-50 px-3 py-1.5 rounded-lg transition-colors">
+                  View
+                </a>
+                <button onClick={() => deleteReport(r._id)}
+                  className="text-xs text-red-500 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors">
+                  Delete
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ───── Main Page ─────
 export default function HospitalDashboard() {
   const router = useRouter();
@@ -212,7 +474,7 @@ export default function HospitalDashboard() {
   const [labTests, setLabTests]     = useState<LabTest[]>([]);
   const [surgeries, setSurgeries]   = useState<SurgeryPkg[]>([]);
   const [stats, setStats]           = useState<Stats>({ doctorCount:0, labTestCount:0, surgeryCount:0, totalBookings:0 });
-  const [tab, setTab]               = useState<"overview"|"doctors"|"lab"|"surgery">("overview");
+  const [tab, setTab]               = useState<"overview"|"doctors"|"lab"|"surgery"|"reports">("overview");
   const [loading, setLoading]       = useState(true);
   const [modal, setModal]           = useState<"doctor"|"lab"|"surgery"|null>(null);
   const [deleting, setDeleting]     = useState<string | null>(null);
@@ -279,6 +541,7 @@ export default function HospitalDashboard() {
     { key:"doctors",  label:"Doctors",   icon:"👨‍⚕️" },
     { key:"lab",      label:"Lab Tests", icon:"🔬" },
     { key:"surgery",  label:"Surgery",   icon:"🏨" },
+    { key:"reports",  label:"Reports",   icon:"🗂️" },
   ] as const;
 
   return (
@@ -450,6 +713,9 @@ export default function HospitalDashboard() {
             )}
           </div>
         )}
+
+        {/* ── Reports tab ── */}
+        {tab === "reports" && <ReportsTab hospitalId={hospitalId} />}
 
         {/* ── Surgery tab ── */}
         {tab === "surgery" && (

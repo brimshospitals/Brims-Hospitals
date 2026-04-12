@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import Header from "../components/header";
+import PatientSelector, { SelectedPatient } from "../components/PatientSelector";
 
 const categories = [
   "Blood Test", "Urine Test", "Stool Test", "Imaging",
@@ -29,8 +30,9 @@ export default function LabTestsPage() {
   const [maxPrice, setMaxPrice]         = useState("");
   const [homeOnly, setHomeOnly]         = useState(false);
   const [selectedTest, setSelectedTest] = useState<any>(null);
+  const [profile, setProfile]           = useState<any>(null);
   const [familyMembers, setFamilyMembers] = useState<any[]>([]);
-  const [selectedMember, setSelectedMember] = useState("");
+  const [selectedPatient, setSelectedPatient] = useState<SelectedPatient | null>(null);
   const [hasMembership, setHasMembership]   = useState(false);
   const [walletBalance, setWalletBalance]   = useState(0);
   const [booking, setBooking]           = useState(false);
@@ -81,10 +83,10 @@ export default function LabTestsPage() {
       const res  = await fetch(`/api/profile?userId=${userId}`);
       const data = await res.json();
       if (data.success) {
+        setProfile(data.user);
         setFamilyMembers(data.familyMembers || []);
         setHasMembership(!!data.familyCard);
         setWalletBalance(data.familyCard?.walletBalance || 0);
-        if (data.familyMembers?.length > 0) setSelectedMember(data.familyMembers[0]._id);
       }
     } catch (e) { console.error(e); }
   }
@@ -106,6 +108,7 @@ export default function LabTestsPage() {
     setAppointmentDate("");
     setSelectedSlot("");
     setPaymentType("online");
+    setSelectedPatient(null);
     setMessage("");
   }
 
@@ -116,6 +119,14 @@ export default function LabTestsPage() {
       const userId = localStorage.getItem("userId");
       if (!userId) { setMessage("❌ Login karein pehle"); setBooking(false); return; }
 
+      if (!selectedPatient) {
+        setMessage("❌ Patient select karein");
+        setBooking(false);
+        return;
+      }
+
+      const familyCardId = localStorage.getItem("familyCardId") || null;
+
       // Online payment — PhonePe pe redirect karo
       if (paymentType === "online") {
         const res = await fetch("/api/create-lab-order", {
@@ -123,12 +134,14 @@ export default function LabTestsPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             userId,
-            memberId: selectedMember || userId,
+            memberId: selectedPatient.userId || userId,
             labTestId: selectedTest._id,
             appointmentDate: appointmentDate || null,
             slot: homeCollection ? "Home Collection" : selectedSlot,
             homeCollection,
             amount: getTotalAmount(selectedTest),
+            patientName: selectedPatient.name,
+            patientMobile: selectedPatient.mobile,
           }),
         });
         const data = await res.json();
@@ -141,27 +154,33 @@ export default function LabTestsPage() {
         return;
       }
 
-      // Counter / Wallet payment
-      const res = await fetch("/api/book-lab", {
+      // Counter / Wallet payment via unified bookings API
+      const res = await fetch("/api/bookings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userId,
-          memberId: selectedMember || userId,
+          type: "Lab",
           labTestId: selectedTest._id,
-          appointmentDate: appointmentDate || null,
+          appointmentDate: appointmentDate || new Date().toISOString().split("T")[0],
           slot: homeCollection ? "Home Collection" : selectedSlot,
-          homeCollection,
-          paymentType,
+          patientUserId: selectedPatient.userId,
+          patientName: selectedPatient.name,
+          patientMobile: selectedPatient.mobile,
+          patientAge: selectedPatient.age,
+          patientGender: selectedPatient.gender,
+          symptoms: selectedPatient.symptoms,
+          isNewPatient: selectedPatient.isNewPatient,
+          paymentMode: paymentType,
           amount: getTotalAmount(selectedTest),
+          familyCardId,
         }),
       });
       const data = await res.json();
       if (data.success) {
-        setMessage(`✅ ${data.message} Booking ID: ${data.bookingId}`);
+        setMessage(`✅ Booking ho gayi! Booking ID: ${data.booking.bookingId}`);
         setSelectedTest(null);
         if (paymentType === "wallet") {
-          setWalletBalance((prev) => prev - data.amount);
+          setWalletBalance((prev) => prev - getTotalAmount(selectedTest));
         }
       } else {
         setMessage("❌ " + data.message);
@@ -385,29 +404,28 @@ export default function LabTestsPage() {
                   )}
                 </div>
 
-                {/* Family Member */}
-                {familyMembers.length > 0 && (
-                  <div>
-                    <p className="text-sm font-medium text-gray-700 mb-2">Kiske liye test hai?</p>
-                    <div className="flex gap-2 overflow-x-auto pb-1">
-                      {familyMembers.map((m: any) => (
-                        <button key={m._id} onClick={() => setSelectedMember(m._id)}
-                          className={`flex flex-col items-center p-2 rounded-xl border min-w-[68px] transition ${
-                            selectedMember === m._id
-                              ? "border-teal-500 bg-teal-50"
-                              : "border-gray-200"
-                          }`}>
-                          <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center mb-1 overflow-hidden">
-                            {m.photo
-                              ? <img src={m.photo} alt={m.name} className="w-full h-full object-cover" />
-                              : <span>👤</span>}
-                          </div>
-                          <p className="text-xs text-center">{m.name.split(" ")[0]}</p>
-                        </button>
-                      ))}
+                {/* Patient Selector */}
+                <div>
+                  <p className="text-sm font-semibold text-gray-700 mb-2">Patient kaun hai?</p>
+                  {selectedPatient ? (
+                    <div className="flex items-center gap-3 p-3 bg-teal-50 rounded-2xl border border-teal-200">
+                      <div className="w-10 h-10 rounded-xl bg-teal-100 flex items-center justify-center font-bold text-teal-700 flex-shrink-0">
+                        {selectedPatient.name[0]}
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-bold text-gray-800 text-sm">{selectedPatient.name}</p>
+                        <p className="text-xs text-gray-400">{selectedPatient.age} yrs · {selectedPatient.gender}</p>
+                      </div>
+                      <button onClick={() => setSelectedPatient(null)} className="text-gray-400 text-sm hover:text-red-400">✕</button>
                     </div>
-                  </div>
-                )}
+                  ) : (
+                    <PatientSelector
+                      primaryUser={profile}
+                      familyMembers={familyMembers}
+                      onSelect={setSelectedPatient}
+                    />
+                  )}
+                </div>
 
                 {/* Payment */}
                 <div>
