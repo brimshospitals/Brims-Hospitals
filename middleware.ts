@@ -34,14 +34,11 @@ const SEED_ROUTES = [
   "/api/test-db",
 ];
 
-function getSecret() {
-  return new TextEncoder().encode(process.env.JWT_SECRET || "");
-}
-
 async function verifySession(token: string) {
   try {
-    const secret = getSecret();
-    if (!secret.length) return null;
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) return null;
+    const secret = new TextEncoder().encode(jwtSecret);
     const { payload } = await jwtVerify(token, secret);
     return payload as { userId: string; role: string; name: string };
   } catch {
