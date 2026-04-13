@@ -6,6 +6,7 @@ import SurgeryPackage from "../../../models/SurgeryPackage";
 import LabTest from "../../../models/LabTest";
 import FamilyCard from "../../../models/FamilyCard";
 import User from "../../../models/User";
+import Review from "../../../models/Review";
 
 export const dynamic = "force-dynamic";
 
@@ -72,7 +73,14 @@ export async function GET(request) {
         let notesData = {};
         try { notesData = b.notes ? JSON.parse(b.notes) : {}; } catch {}
 
-        return { ...b, ...extra, ...notesData };
+        // Check if already reviewed (only for completed bookings)
+        let reviewed = false, reviewRating = 0;
+        if (b.status === "completed") {
+          const rev = await Review.findOne({ bookingId: b._id }).select("rating").lean();
+          if (rev) { reviewed = true; reviewRating = rev.rating; }
+        }
+
+        return { ...b, ...extra, ...notesData, reviewed, reviewRating };
       })
     );
 

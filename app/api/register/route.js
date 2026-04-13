@@ -19,6 +19,7 @@ export async function POST(request) {
       idType, idNumber, email,
       district, prakhand, village,
       preExistingDiseases, height, weight,
+      referralCode: inputReferralCode,
     } = body;
 
     if (!userId || !mobile || !name || !age || !gender || !idType || !idNumber || !district) {
@@ -59,6 +60,24 @@ export async function POST(request) {
     user.height = height ? parseInt(height) : null;
     user.weight = weight ? parseInt(weight) : null;
     user.referralCode = referralCode;
+
+    // Apply incoming referral code if provided and not already set
+    if (inputReferralCode && !user.referredBy) {
+      const code = inputReferralCode.trim().toUpperCase();
+      const referrer = await User.findOne({ referralCode: code });
+      if (referrer && referrer._id.toString() !== userId) {
+        user.referredBy     = code;
+        user.walletBalance  = (user.walletBalance || 0) + 50;
+        referrer.walletBalance = (referrer.walletBalance || 0) + 50;
+        await referrer.save();
+        // Transactions
+        const { default: Transaction } = await import("../../../models/Transaction.js");
+        await Transaction.create([
+          { userId: user._id,    type:"credit", amount:50, description:`Referral cashback — code ${code} use kiya`, referenceId:code,             status:"success" },
+          { userId: referrer._id,type:"credit", amount:50, description:`Referral reward — ${name} ne aapka code use kiya`, referenceId:userId, status:"success" },
+        ]);
+      }
+    }
 
     // Sirf female 18+ ke liye
     if (gender === "female" && parseInt(age) >= 18) {

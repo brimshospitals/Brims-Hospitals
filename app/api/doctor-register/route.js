@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import connectDB from "../../../lib/mongodb";
-import Doctor from "../../../models/Doctor";
+import Doctor   from "../../../models/Doctor";
+import Hospital from "../../../models/Hospital";
 
 export const dynamic = "force-dynamic";
 
@@ -9,8 +10,8 @@ export async function POST(request) {
     const body = await request.json();
     const {
       name, mobile, email, department, speciality,
-      degrees, experience, hospitalName, district, city,
-      opdFee, about,
+      degrees, experience, hospitalId, hospitalName,
+      district, city, opdFee,
     } = body;
 
     if (!name || !mobile || !department || !opdFee) {
@@ -38,6 +39,18 @@ export async function POST(request) {
       );
     }
 
+    // Resolve hospital name from DB if hospitalId provided (Brims network hospital)
+    let resolvedHospitalId  = undefined;
+    let resolvedHospitalName = hospitalName?.trim() || "";
+
+    if (hospitalId) {
+      const hosp = await Hospital.findById(hospitalId).select("name _id").lean();
+      if (hosp) {
+        resolvedHospitalId   = hosp._id;
+        resolvedHospitalName = hosp.name;
+      }
+    }
+
     // Save with isActive: false — admin will review and activate
     const doctor = await Doctor.create({
       name:        name.trim(),
@@ -48,7 +61,8 @@ export async function POST(request) {
       degrees:     degrees     || [],
       experience:  Number(experience) || 0,
       opdFee:      Number(opdFee),
-      hospitalName: hospitalName || "",
+      hospitalId:  resolvedHospitalId,
+      hospitalName: resolvedHospitalName,
       address: {
         district: district || "",
         city:     city     || "",

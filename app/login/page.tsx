@@ -1,6 +1,6 @@
 "use client";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 const ROLE_REDIRECT: Record<string, string> = {
   admin:    "/admin",
@@ -11,26 +11,27 @@ const ROLE_REDIRECT: Record<string, string> = {
   member:   "/dashboard",
 };
 
-function maskEmail(email: string) {
-  if (!email) return "";
-  const [local, domain] = email.split("@");
-  return local.slice(0, 2) + "***@" + domain;
-}
-
-export default function MemberLoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const refFromUrl = searchParams.get("ref") || "";
 
-  const [step, setStep]       = useState<1 | 2>(1); // 1=mobile input, 2=OTP
-  const [mobile, setMobile]   = useState("");
-  const [otp, setOtp]         = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState("");
-  const [success, setSuccess] = useState("");
+  const [step, setStep]             = useState<1 | 2>(1);
+  const [mobile, setMobile]         = useState("");
+  const [otp, setOtp]               = useState("");
+  const [referralCode, setReferralCode] = useState(refFromUrl);
+  const [showReferral, setShowReferral] = useState(!!refFromUrl);
 
-  // Testing: returned from API
-  const [testOtp, setTestOtp]     = useState("");
-  const [otpVia, setOtpVia]       = useState<"mobile" | "both">("mobile");
+  const [loading, setLoading]       = useState(false);
+  const [error, setError]           = useState("");
+  const [success, setSuccess]       = useState("");
+
+  // From send-otp response
+  const [testOtp, setTestOtp]       = useState("");
+  const [otpVia, setOtpVia]         = useState<"mobile" | "both">("mobile");
   const [maskedEmail, setMaskedEmail] = useState("");
+  const [isNewUser, setIsNewUser]   = useState<boolean | null>(null);
+  const [pendingUserId, setPendingUserId] = useState("");
 
   async function handleSendOTP() {
     setError("");
@@ -51,6 +52,8 @@ export default function MemberLoginPage() {
         setTestOtp(data.otp || "");
         setOtpVia(data.via === "both" ? "both" : "mobile");
         setMaskedEmail(data.emailMasked || "");
+        setIsNewUser(data.isNewUser ?? null);
+        setPendingUserId(data.userId || "");
         setSuccess(
           data.via === "both"
             ? `OTP +91 ${val} aur ${data.emailMasked} par bheja gaya!`
@@ -82,12 +85,20 @@ export default function MemberLoginPage() {
         localStorage.setItem("userName", data.name  || "");
         localStorage.setItem("userRole", data.role  || "user");
 
-        const redirect = data.isNewUser
-          ? "/update-profile"
-          : ROLE_REDIRECT[data.role] || "/dashboard";
-
-        setSuccess(`Welcome ${data.name}! Redirect ho rahe hain...`);
-        setTimeout(() => { window.location.href = redirect; }, 800);
+        // New user → registration page (referral code bhi pass karo)
+        if (data.isNewUser) {
+          const params = new URLSearchParams({
+            userId: data.userId,
+            mobile: mobile.trim(),
+            ...(referralCode.trim() && { ref: referralCode.trim().toUpperCase() }),
+          });
+          setSuccess("Aapka account mil gaya! Register karo...");
+          setTimeout(() => { window.location.href = `/register?${params.toString()}`; }, 800);
+        } else {
+          const redirect = ROLE_REDIRECT[data.role] || "/dashboard";
+          setSuccess(`Welcome back, ${data.name}! Redirect ho rahe hain...`);
+          setTimeout(() => { window.location.href = redirect; }, 800);
+        }
       } else {
         setError(data.message);
       }
@@ -128,6 +139,18 @@ export default function MemberLoginPage() {
 
             <div className="px-7 py-6 space-y-4">
 
+              {/* Referral banner if coming from invite link */}
+              {refFromUrl && step === 1 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center gap-3">
+                  <span className="text-2xl">🎁</span>
+                  <div>
+                    <p className="text-xs font-semibold text-amber-800">Referral Invite!</p>
+                    <p className="text-xs text-amber-600">Register karo aur <strong>₹50 wallet cashback</strong> pao</p>
+                    <p className="text-xs text-amber-700 font-mono mt-0.5">Code: <strong>{refFromUrl}</strong></p>
+                  </div>
+                </div>
+              )}
+
               {/* Success message */}
               {success && (
                 <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-green-700 text-sm flex items-start gap-2">
@@ -143,7 +166,7 @@ export default function MemberLoginPage() {
                 </div>
               )}
 
-              {/* Step 1 — Mobile */}
+              {/* ───── Step 1 — Mobile ───── */}
               {step === 1 && (
                 <div className="space-y-4">
                   <div>
@@ -164,8 +187,46 @@ export default function MemberLoginPage() {
                       />
                     </div>
                     <p className="text-xs text-gray-400 mt-1.5">
-                      Pehli baar? Mobile number dale — auto register ho jayega
+                      Pehli baar? Mobile dale — OTP se register ho jaayega
                     </p>
+                  </div>
+
+                  {/* Referral code accordion */}
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setShowReferral(!showReferral)}
+                      className="text-xs text-teal-600 hover:text-teal-700 flex items-center gap-1 font-medium"
+                    >
+                      <span>{showReferral ? "▾" : "▸"}</span>
+                      Kisi ne refer kiya? Referral code daalo (+₹50 cashback)
+                    </button>
+
+                    {showReferral && (
+                      <div className="mt-2">
+                        <div className="flex items-center border border-amber-300 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-amber-200 bg-amber-50">
+                          <span className="px-3 py-2.5 text-lg">🎁</span>
+                          <input
+                            type="text"
+                            value={referralCode}
+                            onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+                            placeholder="BRIMS-XXX000"
+                            maxLength={15}
+                            className="flex-1 px-2 py-2.5 text-sm bg-transparent focus:outline-none font-mono tracking-wide text-amber-900"
+                          />
+                          {referralCode && (
+                            <button
+                              type="button"
+                              onClick={() => setReferralCode("")}
+                              className="px-3 py-2.5 text-gray-400 hover:text-red-400 text-xs"
+                            >✕</button>
+                          )}
+                        </div>
+                        <p className="text-xs text-amber-600 mt-1">
+                          Register hone ke baad dono ko ₹50 wallet mein milenge
+                        </p>
+                      </div>
+                    )}
                   </div>
 
                   <button
@@ -178,14 +239,38 @@ export default function MemberLoginPage() {
                         <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
                         OTP bhej rahe hain...
                       </span>
-                    ) : "OTP Bhejo"}
+                    ) : "OTP Bhejo →"}
                   </button>
                 </div>
               )}
 
-              {/* Step 2 — OTP */}
+              {/* ───── Step 2 — OTP ───── */}
               {step === 2 && (
                 <div className="space-y-4">
+
+                  {/* New / Returning user badge */}
+                  {isNewUser === true && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center gap-3">
+                      <span className="text-2xl">👋</span>
+                      <div>
+                        <p className="text-sm font-semibold text-blue-800">Pehli baar? Swagat hai!</p>
+                        <p className="text-xs text-blue-600">OTP verify karne ke baad hum aapka profile banayenge</p>
+                        {referralCode && (
+                          <p className="text-xs text-amber-600 mt-1 font-medium">🎁 Code <span className="font-mono">{referralCode}</span> apply hoga — ₹50 cashback milega!</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {isNewUser === false && (
+                    <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center gap-3">
+                      <span className="text-2xl">✅</span>
+                      <div>
+                        <p className="text-sm font-semibold text-green-800">Account mil gaya!</p>
+                        <p className="text-xs text-green-600">OTP verify karo — dashboard pe redirect ho jaoge</p>
+                      </div>
+                    </div>
+                  )}
+
                   {/* OTP sent info */}
                   <div className="bg-teal-50 border border-teal-200 rounded-xl p-3 text-sm text-teal-700 space-y-1">
                     <p className="font-medium">OTP bheja gaya:</p>
@@ -227,11 +312,11 @@ export default function MemberLoginPage() {
                         <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
                         Verify ho raha hai...
                       </span>
-                    ) : "Login Karein ✓"}
+                    ) : isNewUser ? "Register Karein →" : "Login Karein ✓"}
                   </button>
 
                   <button
-                    onClick={() => { setStep(1); setOtp(""); setError(""); setSuccess(""); setTestOtp(""); }}
+                    onClick={() => { setStep(1); setOtp(""); setError(""); setSuccess(""); setTestOtp(""); setIsNewUser(null); }}
                     className="w-full text-sm text-gray-500 hover:text-teal-600 transition-colors py-1"
                   >
                     ← Mobile number change karein
@@ -271,5 +356,17 @@ export default function MemberLoginPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function MemberLoginPage() {
+  return (
+    <Suspense fallback={
+      <main className="min-h-screen bg-gradient-to-br from-teal-50 via-white to-teal-50 flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-teal-500 border-t-transparent rounded-full animate-spin" />
+      </main>
+    }>
+      <LoginForm />
+    </Suspense>
   );
 }

@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 const notificationSchema = new mongoose.Schema(
   {
     userId:    { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-    type:      { type: String, enum: ["article", "booking", "system"], default: "article" },
+    type:      { type: String, enum: ["article", "booking", "system", "reminder"], default: "article" },
     title:     { type: String, required: true },
     message:   { type: String, default: "" },
     articleId: { type: mongoose.Schema.Types.ObjectId, ref: "Article" },

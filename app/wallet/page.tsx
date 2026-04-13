@@ -10,8 +10,15 @@ export default function WalletPage() {
   const [adding, setAdding] = useState(false);
   const [message, setMessage] = useState("");
 
+  // Referral
+  const [referralCode, setReferralCode] = useState("");
+  const [referredCount, setReferredCount] = useState(0);
+  const [totalEarned, setTotalEarned] = useState(0);
+  const [copied, setCopied] = useState(false);
+
   useEffect(() => {
     fetchWallet();
+    fetchReferral();
   }, []);
 
   async function fetchWallet() {
@@ -26,6 +33,40 @@ export default function WalletPage() {
       }
     } catch (e) { console.error(e); }
     setLoading(false);
+  }
+
+  async function fetchReferral() {
+    const userId = localStorage.getItem("userId");
+    if (!userId) return;
+    try {
+      const res = await fetch(`/api/referral?userId=${userId}`);
+      const data = await res.json();
+      if (data.success) {
+        setReferralCode(data.referralCode || "");
+        setReferredCount(data.referredCount || 0);
+        setTotalEarned(data.totalEarned || 0);
+      }
+    } catch {}
+  }
+
+  function copyCode() {
+    if (!referralCode) return;
+    navigator.clipboard.writeText(referralCode).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  function shareLink() {
+    const base = process.env.NEXT_PUBLIC_BASE_URL || window.location.origin;
+    const link = `${base}/register?ref=${referralCode}`;
+    if (navigator.share) {
+      navigator.share({ title: "Brims Hospitals", text: `Mera referral code use karo aur ₹50 wallet cashback pao! Code: ${referralCode}`, url: link });
+    } else {
+      navigator.clipboard.writeText(link);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   }
 
   async function handleAddMoney() {
@@ -102,6 +143,53 @@ export default function WalletPage() {
             <p className="mt-3 text-sm text-white/80">{message}</p>
           )}
         </div>
+
+        {/* Referral Card */}
+        {referralCode && (
+          <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-2xl border border-amber-200 p-5 mb-6">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <p className="text-xs text-amber-600 font-medium uppercase tracking-wide">Aapka Referral Code</p>
+                <p className="text-2xl font-bold text-amber-800 tracking-widest mt-0.5">{referralCode}</p>
+              </div>
+              <div className="text-3xl">🎁</div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div className="bg-white rounded-xl p-3 text-center border border-amber-100">
+                <p className="text-2xl font-bold text-amber-700">{referredCount}</p>
+                <p className="text-xs text-gray-500 mt-0.5">Log refer kiye</p>
+              </div>
+              <div className="bg-white rounded-xl p-3 text-center border border-amber-100">
+                <p className="text-2xl font-bold text-green-600">₹{totalEarned}</p>
+                <p className="text-xs text-gray-500 mt-0.5">Referral se kamaya</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-amber-700 mb-3">
+              Apna code share karo — jab koi naya member join kare, dono ko <strong>₹50 wallet cashback</strong> milega!
+            </p>
+
+            <div className="flex gap-2 mb-3">
+              <button onClick={copyCode}
+                className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition border ${
+                  copied
+                    ? "bg-green-100 text-green-700 border-green-200"
+                    : "bg-white text-amber-700 border-amber-300 hover:bg-amber-50"
+                }`}>
+                {copied ? "✅ Copy ho gaya!" : "📋 Code Copy Karein"}
+              </button>
+              <button onClick={shareLink}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-amber-500 hover:bg-amber-600 text-white transition">
+                🔗 Link Share Karein
+              </button>
+            </div>
+            <a href="/referral"
+              className="block w-full text-center py-2 rounded-xl text-xs font-semibold text-amber-700 border border-amber-200 hover:bg-amber-50 transition">
+              Poora Referral Dashboard Dekhein →
+            </a>
+          </div>
+        )}
 
         {/* Transaction History */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100">

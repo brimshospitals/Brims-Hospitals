@@ -104,6 +104,15 @@ function IconReports() {
   );
 }
 
+function IconHospitals() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className="w-7 h-7" stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 21h18M9 21V7l3-4 3 4v14M6 21V11H3v10M18 21V11h3V21" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M10 12h4M12 10v4" />
+    </svg>
+  );
+}
+
 /* ── Services config ── */
 const services = [
   {
@@ -147,6 +156,22 @@ const services = [
     badge: "EMI",
   },
   {
+    href: "/ipd-booking",
+    label: "IPD Admission",
+    sub: "Inpatient / hospital stay",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6" stroke="currentColor" strokeWidth={1.8}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 7h18M3 12h18M3 17h8" />
+        <rect x="13" y="13" width="8" height="6" rx="1" />
+        <path strokeLinecap="round" d="M17 13v-2M15 16h4" />
+      </svg>
+    ),
+    bg: "bg-pink-50",
+    color: "text-pink-600",
+    border: "border-pink-100",
+    badge: "",
+  },
+  {
     href: "/reports",
     label: "My Reports",
     sub: "Lab & medical reports",
@@ -156,23 +181,85 @@ const services = [
     border: "border-teal-100",
     badge: "",
   },
+  {
+    href: "/hospitals",
+    label: "Hospitals",
+    sub: "Verified hospitals dhundho",
+    icon: <IconHospitals />,
+    bg: "bg-green-50",
+    color: "text-green-600",
+    border: "border-green-100",
+    badge: "",
+  },
+  {
+    href: "/ambulance",
+    label: "Ambulance",
+    sub: "Emergency request",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6" stroke="currentColor" strokeWidth={1.8}>
+        <rect x="1" y="8" width="22" height="12" rx="2" />
+        <path strokeLinecap="round" d="M1 12h6M17 12h6" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M7 8V6a3 3 0 016 0v2" />
+        <path strokeLinecap="round" d="M12 13v4M10 15h4" />
+      </svg>
+    ),
+    bg: "bg-red-50",
+    color: "text-red-600",
+    border: "border-red-100",
+    badge: "SOS",
+  },
+  {
+    href: "/referral",
+    label: "Refer & Earn",
+    sub: "₹50 cashback per referral",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6" stroke="currentColor" strokeWidth={1.8}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+      </svg>
+    ),
+    bg: "bg-amber-50",
+    color: "text-amber-600",
+    border: "border-amber-100",
+    badge: "₹50",
+  },
+  {
+    href: "/health-card",
+    label: "Health Card",
+    sub: "Download PDF card",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6" stroke="currentColor" strokeWidth={1.8}>
+        <rect x="2" y="5" width="20" height="14" rx="3" />
+        <circle cx="8" cy="12" r="2.5" />
+        <path strokeLinecap="round" d="M12 9h5M12 12h4M12 15h3" />
+      </svg>
+    ),
+    bg: "bg-cyan-50",
+    color: "text-cyan-600",
+    border: "border-cyan-100",
+    badge: "",
+  },
 ];
 
 function DashboardContent() {
   const searchParams  = useSearchParams();
   const payment       = searchParams.get("payment");
   const cardNumber    = searchParams.get("cardNumber");
+  const renewal       = searchParams.get("renewal");
+  const renewalExpiry = searchParams.get("expiry");
 
   const [user, setUser]               = useState<any>(null);
   const [familyCard, setFamilyCard]   = useState<any>(null);
   const [familyMembers, setFamilyMembers] = useState<any[]>([]);
   const [loading, setLoading]         = useState(true);
   const [toast, setToast]             = useState<{ msg: string; ok: boolean } | null>(null);
-  const [paymentLoading, setPaymentLoading] = useState(false);
+  const [paymentLoading, setPaymentLoading]   = useState(false);
+  const [renewalLoading, setRenewalLoading]   = useState(false);
 
   useEffect(() => {
     if (payment === "success") showToast(`🎉 Family Card activate ho gayi! Card: ${cardNumber}`, true);
     else if (payment === "failed") showToast("❌ Payment fail ho gayi. Dobara try karein.", false);
+    else if (renewal === "success") showToast(`✅ Card renew ho gayi! Valid till: ${renewalExpiry}`, true);
+    else if (renewal === "failed") showToast("❌ Renewal payment fail. Dobara try karein.", false);
     fetchProfile();
   }, []);
 
@@ -212,6 +299,30 @@ function DashboardContent() {
     } catch { showToast("Network error.", false); }
     setPaymentLoading(false);
   }
+
+  async function handleRenewCard() {
+    setRenewalLoading(true);
+    try {
+      const userId = localStorage.getItem("userId");
+      if (!userId) { showToast("Login karein pehle", false); setRenewalLoading(false); return; }
+      const res  = await fetch("/api/renew-card", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+      const data = await res.json();
+      if (data.success && data.redirectUrl) window.location.href = data.redirectUrl;
+      else showToast(data.message || "Error", false);
+    } catch { showToast("Network error.", false); }
+    setRenewalLoading(false);
+  }
+
+  // Card expiry helpers
+  const cardExpired  = familyCard && familyCard.expiryDate && new Date(familyCard.expiryDate) < new Date();
+  const daysToExpiry = familyCard && familyCard.expiryDate
+    ? Math.ceil((new Date(familyCard.expiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+    : null;
+  const expiringSoon = !cardExpired && daysToExpiry !== null && daysToExpiry <= 30;
 
   const isIncomplete = user && (user.age === 0 || user.name === "New User" || !user.name);
   const displayName  = user?.name && user.name !== "New User" ? user.name : "User";
@@ -322,6 +433,41 @@ function DashboardContent() {
 
       <div className="max-w-4xl mx-auto px-4 py-6 pb-28 space-y-6">
 
+        {/* ── Renewal Banner ── */}
+        {familyCard && cardExpired && (
+          <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex items-center gap-3 shadow-sm">
+            <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center text-xl shrink-0">⚠️</div>
+            <div className="flex-1">
+              <p className="font-bold text-red-700 text-sm">Family Card Expire Ho Gayi!</p>
+              <p className="text-xs text-red-500 mt-0.5">Renewal ke baad 1 saal ke liye aage badhaiye — sirf ₹249</p>
+            </div>
+            <button
+              onClick={handleRenewCard}
+              disabled={renewalLoading}
+              className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition disabled:opacity-60 whitespace-nowrap"
+            >
+              {renewalLoading ? "..." : "Renew ₹249"}
+            </button>
+          </div>
+        )}
+
+        {familyCard && expiringSoon && (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center gap-3 shadow-sm">
+            <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center text-xl shrink-0">⏳</div>
+            <div className="flex-1">
+              <p className="font-bold text-amber-700 text-sm">Card {daysToExpiry === 0 ? "Aaj" : `${daysToExpiry} Din Mein`} Expire Ho Rahi Hai</p>
+              <p className="text-xs text-amber-600 mt-0.5">Ab renew karein aur 1 saal aur paayein — sirf ₹249</p>
+            </div>
+            <button
+              onClick={handleRenewCard}
+              disabled={renewalLoading}
+              className="bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition disabled:opacity-60 whitespace-nowrap"
+            >
+              {renewalLoading ? "..." : "Renew ₹249"}
+            </button>
+          </div>
+        )}
+
         {/* ── Family Health Card ── */}
         {familyCard ? (
           <div className="rounded-3xl overflow-hidden shadow-lg">
@@ -339,10 +485,19 @@ function DashboardContent() {
                       {familyCard.cardNumber}
                     </p>
                   </div>
-                  <span className="bg-emerald-400 text-emerald-900 text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 bg-emerald-700 rounded-full animate-pulse" />
-                    Active
-                  </span>
+                  {cardExpired ? (
+                    <span className="bg-red-500 text-white text-xs font-bold px-3 py-1.5 rounded-full">Expired</span>
+                  ) : expiringSoon ? (
+                    <span className="bg-amber-400 text-amber-900 text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 bg-amber-700 rounded-full animate-pulse" />
+                      Expiring Soon
+                    </span>
+                  ) : (
+                    <span className="bg-emerald-400 text-emerald-900 text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 bg-emerald-700 rounded-full animate-pulse" />
+                      Active
+                    </span>
+                  )}
                 </div>
 
                 {/* Member photos row */}

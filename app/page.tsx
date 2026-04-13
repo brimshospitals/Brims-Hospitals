@@ -37,6 +37,12 @@ const services = [
     desc: "Ek card mein poori family ka health coverage. Wallet aur discount milega.",
     href: "/dashboard",
   },
+  {
+    icon: "🏥",
+    title: "Find Hospitals",
+    desc: "Bihar ke verified hospitals district aur specialty ke hisaab se dhundho.",
+    href: "/hospitals",
+  },
 ];
 
 const stats = [
@@ -141,13 +147,9 @@ export default function Home() {
           Family Health Card activate karein aur puri family ko affordable healthcare milega.
         </p>
         <div className="flex justify-center gap-4 flex-wrap">
-          <a href="/register"
-            className="bg-white text-teal-700 font-bold px-8 py-3.5 rounded-full hover:bg-teal-50 transition shadow">
-            Register Now — Free
-          </a>
           <a href="/login"
-            className="border-2 border-white/60 text-white font-semibold px-8 py-3.5 rounded-full hover:bg-white/10 transition">
-            Login
+            className="bg-white text-teal-700 font-bold px-8 py-3.5 rounded-full hover:bg-teal-50 transition shadow">
+            Login / Register — Free
           </a>
         </div>
       </section>

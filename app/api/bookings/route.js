@@ -3,6 +3,7 @@ import connectDB from "../../../lib/mongodb";
 import Booking from "../../../models/Booking";
 import User from "../../../models/User";
 import Notification from "../../../models/Notification";
+import PromoCode from "../../../models/PromoCode";
 import { requireAuth } from "../../../lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -41,6 +42,11 @@ export async function POST(request) {
       paymentMode,    // "counter" | "online" | "wallet" | "insurance"
       amount,
       familyCardId,
+      // Promo
+      promoCode,
+      promoDiscount,
+      // Home collection
+      homeAddress,
     } = body;
 
     if (!type || !appointmentDate || !patientName || !patientMobile) {
@@ -63,7 +69,18 @@ export async function POST(request) {
       symptoms: symptoms || "",
       paymentMode: paymentMode || "counter",
       isNewPatient: !!isNewPatient,
+      ...(promoCode     && { promoCode }),
+      ...(promoDiscount && { promoDiscount }),
+      ...(homeAddress   && { homeAddress }),
     });
+
+    // Increment promo usage count
+    if (promoCode) {
+      await PromoCode.findOneAndUpdate(
+        { code: promoCode.toUpperCase(), isActive: true },
+        { $inc: { usedCount: 1 } }
+      );
+    }
 
     const booking = await Booking.create({
       bookingId,

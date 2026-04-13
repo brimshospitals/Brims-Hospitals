@@ -208,10 +208,16 @@ export default function DoctorsSearchPage() {
                       )}
                     </div>
                   </div>
-                  <button onClick={() => { setSelectedDoctor(doctor); setBookingStep(1); setMessage(""); }}
-                    className="mt-4 w-full bg-teal-600 hover:bg-teal-700 text-white font-semibold py-2.5 rounded-lg transition text-sm">
-                    Appointment Book Karein
-                  </button>
+                  <div className="flex gap-2 mt-4">
+                    <a href={`/doctors/${doctor._id}`}
+                      className="flex-1 border border-teal-600 text-teal-700 font-semibold py-2.5 rounded-lg transition text-sm text-center hover:bg-teal-50">
+                      👁 Profile
+                    </a>
+                    <button onClick={() => { setSelectedDoctor(doctor); setBookingStep(1); setMessage(""); }}
+                      className="flex-1 bg-teal-600 hover:bg-teal-700 text-white font-semibold py-2.5 rounded-lg transition text-sm">
+                      🩺 Book
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}

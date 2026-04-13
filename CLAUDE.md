@@ -446,6 +446,12 @@ API Route Protection:
 | 35 | Fast2SMS OTP integration | ✅ Done (needs API key) |
 | 36 | Resend Email OTP integration | ✅ Done (needs API key) |
 | 37 | Booking cancellation + wallet refund | ✅ Done |
+| 38 | Lab Reports Upload (hospital upload → patient view + download) | ✅ Done |
+| 39 | Membership Renewal (expiry detect → banner → PhonePe ₹249 → 1yr extend) | ✅ Done |
+| 40 | Doctor Profile Edit (photo, slots, fees, hospital from /doctor-profile) | ✅ Done |
+| 41 | Admin Analytics Dashboard (bar chart trend, type breakdown, revenue, status) | ✅ Done |
+| 42 | Prescription Upload (doctor uploads PDF → patient sees in /reports) | ✅ Done |
+| 43 | Hospital-Doctor association enforced (Brims Network / Private Clinic) | ✅ Done |
 
 ---
 
@@ -455,24 +461,27 @@ API Route Protection:
 
 | # | Feature | Priority | Notes |
 |---|---------|----------|-------|
-| P1 | **Lab Reports Upload** | 🔴 High | Hospital/Doctor Cloudinary upload → patient "Reports" tab in dashboard |
-| P2 | **Prescription Upload** | 🟠 High | Doctor attaches prescription PDF/image after consultation |
-| P3 | **Membership Renewal** | 🔴 High | FamilyCard expiry detect → auto-prompt renewal (₹249) at login/dashboard |
-| P4 | **Doctor Profile Edit** | 🟠 High | Doctor apna photo, slots, fees, bio update kare from doctor-dashboard |
-| P5 | **IPD Booking** | 🟡 Medium | Inpatient admission — date, room type, estimate, deposit |
+| P1 | ~~**Lab Reports Upload**~~ | ✅ Done | Hospital uploads PDF/image → patient `/reports` page with category filter |
+| P2 | ~~**Prescription Upload**~~ | ✅ Done | Doctor uploads from dashboard → stored as Report (category: Prescription) → patient views in /reports |
+| P3 | ~~**Membership Renewal**~~ | ✅ Done | Expired/expiring banner on dashboard → PhonePe ₹249 → expiry +1yr |
+| P4 | ~~**Doctor Profile Edit**~~ | ✅ Done | Photo, slots, fees, hospital association from /doctor-profile |
+| P5 | ~~**IPD Booking**~~ | ✅ Done | `/ipd-booking` — 4-step: hospital search → room type + dates → patient → deposit + payment |
 | P6 | **Booking Reminder Notifications** | 🟡 Medium | 1-day + 1-hour pehle SMS/notification |
 | P7 | **Patient Health Card PDF** | 🟡 Medium | QR-code wala downloadable card (react-pdf) |
-| P8 | **Rating & Reviews** | 🟡 Medium | Post-appointment 1–5 stars + comment for doctors/hospitals |
+| P8 | ~~**Rating & Reviews**~~ | ✅ Done | Post-appointment 1–5 stars + comment → doctor/hospital rating auto-update |
 
 ### Phase 7 — Analytics & Growth
 
 | # | Feature | Priority | Notes |
 |---|---------|----------|-------|
 | P9 | **Admin Analytics Dashboard** | 🟠 High | Revenue charts, booking trends, user growth (Recharts) on Overview tab |
-| P10 | **Referral System** | 🟡 Medium | `referralCode` in User model ready — invite link + ₹50 cashback reward |
-| P11 | **Hospital Search Page (Public)** | 🟡 Medium | Browse verified hospitals by district/type with filtering |
-| P12 | **SEO — Hospital/Doctor Profiles** | 🟡 Medium | `/hospitals/[slug]`, `/doctors/[slug]` — Server Components for SEO |
-| P13 | **Push Notifications** | 🟡 Medium | Firebase Cloud Messaging — new booking alert to doctor/hospital |
+| P10 | ~~**Referral System**~~ | ✅ Done | `/referral` — code display, WhatsApp share, stats (referred count, earned), referred people list |
+| P11 | ~~**Hospital Search Page (Public)**~~ | ✅ Done | `/hospitals` — browse verified hospitals, district/type filter, search, Book OPD CTA |
+| P12 | ~~**SEO — Hospital/Doctor Profiles**~~ | ✅ Done | `/hospitals/[slug]`, `/doctors/[slug]` — Server Components, generateMetadata, reviews, slots |
+| P13 | **Push N
+
+
+otifications** | 🟡 Medium | Firebase Cloud Messaging — new booking alert to doctor/hospital |
 | P14 | **WhatsApp OTP / Notifications** | 🟡 Medium | 360Dialog or WATI integration |
 | P15 | **Multi-language (Hindi/English)** | 🟢 Low | Toggle button — simple string map |
 
@@ -480,11 +489,11 @@ API Route Protection:
 
 | # | Feature | Priority | Notes |
 |---|---------|----------|-------|
-| P16 | **Promo Codes / Discounts** | 🟡 Medium | Admin creates codes → validate at booking checkout |
-| P17 | **Home Sample Collection** | 🟡 Medium | `homeCollection: true` lab tests — schedule pickup slot + address |
+| P16 | ~~**Promo Codes / Discounts**~~ | ✅ Done | Admin panel tab → create/edit/delete codes → validate at OPD checkout → usage tracking |
+| P17 | ~~**Home Sample Collection**~~ | ✅ Done | Lab booking modal: toggle → address form (flat/street/landmark/district/pin) + morning pickup slots → stored in notes.homeAddress |
 | P18 | **Insurance Integration** | 🟡 Medium | Insurance payment mode — capture policy no., route to TPA |
-| P19 | **Ambulance Booking** | 🟡 Medium | Emergency ambulance request with GPS location |
-| P20 | **Revenue Reports (Admin)** | 🟡 Medium | Monthly/weekly earnings export to CSV |
+| P19 | ~~**Ambulance Booking**~~ | ✅ Done | `/ambulance` — GPS location, vehicle type, emergency type, track by request ID; Admin 🚑 tab with dispatch/ETA/SMS |
+| P20 | ~~**Revenue Reports (Admin)**~~ | ✅ Done | Monthly/weekly/daily breakdown, bar chart, table, CSV export |
 | P21 | **Medicine Delivery** | 🟢 Low | 3rd-party pharmacy API integration |
 
 ### Phase 9 — Mobile App (Flutter)
@@ -646,6 +655,7 @@ git commit -m "Description of changes"
 git push origin master
 ```
 
+
 **GitHub:** https://github.com/brimshospitals/Brims-Hospitals  
 **Branch:** `master`  
 **Vercel:** Auto-deploys on push to `master`
@@ -657,10 +667,10 @@ git push origin master
 1. ✅ ~~Fast2SMS OTP integration~~ — add `FAST2SMS_API_KEY` to `.env.local`
 2. ✅ ~~My Bookings polish + cancel button~~
 3. ✅ ~~Hospital Onboarding redesign~~
-4. **Lab Reports Upload** — hospital uploads, patient views in dashboard
-5. **Membership Renewal** — expiry detection + ₹249 renewal flow
-6. **Doctor Profile Edit** — slots, fees, photo from doctor-dashboard
-7. **Admin Analytics Charts** — Recharts on Overview tab
+4. ✅ ~~Lab Reports Upload~~ — hospital uploads, patient views in dashboard
+5. ✅ ~~Membership Renewal~~ — expiry detection + ₹249 renewal flow
+6. ✅ ~~Doctor Profile Edit~~ — slots, fees, photo, hospital from /doctor-profile
+7. ✅ ~~Admin Analytics Charts~~ — pure CSS bar charts, trend, revenue, type breakdown
 8. **Referral System** — invite link + ₹50 cashback
 9. **Rating & Reviews** — post-appointment stars
 10. **SEO Profile Pages** — `/hospitals/[slug]`, `/doctors/[slug]`
@@ -670,3 +680,4 @@ git push origin master
 
 *Last Updated: April 2026*  
 *Status: Phase 5 Complete ✅ | Phase 6 In Progress 🔄*
+

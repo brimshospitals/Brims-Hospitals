@@ -191,6 +191,9 @@ export async function POST(request) {
         emailMasked = maskEmail(user.email);
       }
 
+      // New user detection — profile incomplete
+      const isNewUser = user.age === 0 || user.name === "New User";
+
       return NextResponse.json({
         success: true,
         message: via === "both"
@@ -199,6 +202,8 @@ export async function POST(request) {
         ...(IS_DEV && { otp }),  // Only in development — NEVER in production
         via,
         emailMasked,
+        isNewUser,
+        userId: user._id.toString(),
       });
     }
 

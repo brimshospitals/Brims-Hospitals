@@ -52,7 +52,10 @@ export default function Header() {
           <a href="/opd-booking"       className="text-teal-100 hover:text-white hover:bg-teal-500 px-3 py-2 rounded-lg transition">OPD</a>
           <a href="/lab-tests"         className="text-teal-100 hover:text-white hover:bg-teal-500 px-3 py-2 rounded-lg transition">Lab Tests</a>
           <a href="/surgery-packages"  className="text-teal-100 hover:text-white hover:bg-teal-500 px-3 py-2 rounded-lg transition">Surgery</a>
+          <a href="/ipd-booking"       className="text-teal-100 hover:text-white hover:bg-teal-500 px-3 py-2 rounded-lg transition">IPD</a>
           <a href="/teleconsultation"  className="text-teal-100 hover:text-white hover:bg-teal-500 px-3 py-2 rounded-lg transition">Teleconsult</a>
+          <a href="/ambulance"         className="text-red-300 hover:text-white hover:bg-red-500/60 px-3 py-2 rounded-lg transition font-semibold">🚑 Ambulance</a>
+          <a href="/hospitals"         className="text-teal-100 hover:text-white hover:bg-teal-500 px-3 py-2 rounded-lg transition">Hospitals</a>
           <a href="/articles"          className="text-teal-100 hover:text-white hover:bg-teal-500 px-3 py-2 rounded-lg transition">Articles</a>
           <a href="/contact"           className="text-teal-100 hover:text-white hover:bg-teal-500 px-3 py-2 rounded-lg transition">Contact</a>
 
@@ -91,12 +94,8 @@ export default function Header() {
           ) : (
             <>
               <a href="/login"
-                className="bg-white text-teal-700 px-4 py-2 rounded-full text-sm font-bold hover:bg-teal-50 transition">
-                Login
-              </a>
-              <a href="/register"
-                className="bg-teal-800 text-white px-4 py-2 rounded-full text-sm font-bold hover:bg-teal-900 transition">
-                Register
+                className="bg-white text-teal-700 px-5 py-2 rounded-full text-sm font-bold hover:bg-teal-50 transition">
+                Login / Register
               </a>
             </>
           )}
@@ -140,7 +139,10 @@ export default function Header() {
             { href: "/opd-booking",      label: "🩺 OPD Booking"      },
             { href: "/lab-tests",        label: "🧪 Lab Tests"        },
             { href: "/surgery-packages", label: "🔪 Surgery Packages" },
+            { href: "/ipd-booking",      label: "🛏️ IPD Admission"    },
+            { href: "/ambulance",        label: "🚑 Emergency Ambulance" },
             { href: "/teleconsultation", label: "💻 Teleconsultation" },
+            { href: "/hospitals",        label: "🏥 Find Hospitals"   },
             { href: "/articles",         label: "📰 Health Articles"  },
             { href: "/contact",          label: "📞 Contact Us"       },
           ].map(({ href, label }) => (
@@ -183,12 +185,8 @@ export default function Header() {
             ) : (
               <>
                 <a href="/login" onClick={() => setMenuOpen(false)}
-                  className="block text-center bg-white text-teal-700 px-4 py-2.5 rounded-lg font-bold text-sm mb-2">
-                  Login
-                </a>
-                <a href="/register" onClick={() => setMenuOpen(false)}
-                  className="block text-center bg-teal-800 text-white px-4 py-2.5 rounded-lg font-bold text-sm">
-                  Register
+                  className="block text-center bg-white text-teal-700 px-4 py-2.5 rounded-lg font-bold text-sm">
+                  Login / Register
                 </a>
               </>
             )}

@@ -41,6 +41,12 @@ function OPDBookingContent() {
   const [symptoms, setSymptoms]             = useState("");
   const [paymentMode, setPaymentMode]       = useState("");
 
+  // Promo code
+  const [promoInput, setPromoInput]   = useState("");
+  const [promoData, setPromoData]     = useState<any>(null);
+  const [promoLoading, setPromoLoading] = useState(false);
+  const [promoError, setPromoError]   = useState("");
+
   // Booking result
   const [booking, setBooking]         = useState<any>(null);
   const [submitting, setSubmitting]   = useState(false);
@@ -87,6 +93,23 @@ function OPDBookingContent() {
     fetchDoctors(s);
   }
 
+  async function applyPromo() {
+    if (!promoInput.trim() || !selectedDoctor) return;
+    setPromoLoading(true); setPromoError(""); setPromoData(null);
+    try {
+      const baseAmount = selectedDoctor.offerFee || selectedDoctor.opdFee;
+      const res = await fetch("/api/promo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: promoInput.trim(), amount: baseAmount, bookingType: "OPD" }),
+      });
+      const data = await res.json();
+      if (data.success) setPromoData(data);
+      else setPromoError(data.message);
+    } catch { setPromoError("Network error. Dobara try karein."); }
+    setPromoLoading(false);
+  }
+
   async function handleConfirmBooking() {
     if (!selectedDoctor || !selectedDate || !selectedSlot || !selectedPatient || !paymentMode) return;
     setSubmitting(true);
@@ -94,6 +117,8 @@ function OPDBookingContent() {
     try {
       const userId = localStorage.getItem("userId");
       const familyCardId = localStorage.getItem("familyCardId") || null;
+      const baseAmount = selectedDoctor.offerFee || selectedDoctor.opdFee;
+      const finalAmount = promoData ? promoData.finalAmount : baseAmount;
       const res = await fetch("/api/bookings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -111,8 +136,9 @@ function OPDBookingContent() {
           symptoms: symptoms || selectedPatient.symptoms,
           isNewPatient: selectedPatient.isNewPatient,
           paymentMode,
-          amount: selectedDoctor.offerFee || selectedDoctor.opdFee,
+          amount: finalAmount,
           familyCardId,
+          ...(promoData && { promoCode: promoData.code, promoDiscount: promoData.discount }),
         }),
       });
       const data = await res.json();
@@ -138,6 +164,9 @@ function OPDBookingContent() {
     setPaymentMode("");
     setBooking(null);
     setError("");
+    setPromoInput("");
+    setPromoData(null);
+    setPromoError("");
   }
 
   const todayStr = new Date().toISOString().split("T")[0];
@@ -385,7 +414,14 @@ function OPDBookingContent() {
               )}
               <div className="flex justify-between text-sm border-t border-blue-100 pt-2 mt-1">
                 <span className="font-bold text-blue-800">Fees</span>
-                <span className="font-bold text-blue-800">₹{selectedDoctor.offerFee || selectedDoctor.opdFee}</span>
+                <span className="font-bold text-blue-800">
+                  {promoData ? (
+                    <span>
+                      <span className="line-through text-gray-400 font-normal mr-1">₹{selectedDoctor.offerFee || selectedDoctor.opdFee}</span>
+                      ₹{promoData.finalAmount}
+                    </span>
+                  ) : `₹${selectedDoctor.offerFee || selectedDoctor.opdFee}`}
+                </span>
               </div>
             </div>
 
@@ -406,6 +442,55 @@ function OPDBookingContent() {
                 ))}
               </div>
             </div>
+
+            {/* Promo Code */}
+            <div className="mb-5">
+              <label className="text-xs font-semibold text-gray-600 mb-2 block">🎟️ Promo Code (Optional)</label>
+              {promoData ? (
+                <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-bold text-green-700">✅ {promoData.code} applied!</p>
+                    <p className="text-xs text-green-600 mt-0.5">{promoData.message}</p>
+                  </div>
+                  <button onClick={() => { setPromoData(null); setPromoInput(""); setPromoError(""); }}
+                    className="text-red-400 hover:text-red-600 text-sm font-bold px-2">✕</button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={promoInput}
+                    onChange={(e) => { setPromoInput(e.target.value.toUpperCase()); setPromoError(""); }}
+                    placeholder="Code daalo (e.g. BRIMS50)"
+                    className="flex-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400 font-mono tracking-wide uppercase"
+                    onKeyDown={(e) => e.key === "Enter" && applyPromo()}
+                  />
+                  <button onClick={applyPromo} disabled={promoLoading || !promoInput.trim()}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50">
+                    {promoLoading ? "..." : "Apply"}
+                  </button>
+                </div>
+              )}
+              {promoError && <p className="text-red-500 text-xs mt-1.5">{promoError}</p>}
+            </div>
+
+            {/* Final Amount Summary */}
+            {promoData && (
+              <div className="bg-blue-50 rounded-xl p-3 border border-blue-100 mb-4 space-y-1 text-sm">
+                <div className="flex justify-between text-gray-600">
+                  <span>Original fee</span>
+                  <span>₹{selectedDoctor.offerFee || selectedDoctor.opdFee}</span>
+                </div>
+                <div className="flex justify-between text-green-600 font-medium">
+                  <span>Discount ({promoData.code})</span>
+                  <span>− ₹{promoData.discount}</span>
+                </div>
+                <div className="flex justify-between font-bold text-blue-800 border-t border-blue-200 pt-1 mt-1">
+                  <span>Final Amount</span>
+                  <span>₹{promoData.finalAmount}</span>
+                </div>
+              </div>
+            )}
 
             {error && (
               <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-red-700 text-sm mb-4">

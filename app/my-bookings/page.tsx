@@ -25,10 +25,6 @@ function fmtDate(d: string) {
   if (!d) return "—";
   return new Date(d).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
 }
-function fmtTime(d: string) {
-  if (!d) return "";
-  return new Date(d).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
-}
 
 function getTitle(b: any) {
   if (b.type === "OPD" || b.type === "Consultation") return b.doctorName ? `Dr. ${b.doctorName}` : b.type === "Consultation" ? "Teleconsultation" : "OPD Appointment";
@@ -76,13 +72,120 @@ function CancelModal({ booking, onConfirm, onClose, loading }: { booking: any; o
   );
 }
 
+// ── Star Rating component ─────────────────────────────────────────────────────
+function StarRow({ value, onChange, size = "text-2xl" }: { value: number; onChange?: (n: number) => void; size?: string }) {
+  const [hover, setHover] = useState(0);
+  const active = hover || value;
+  return (
+    <div className="flex gap-1">
+      {[1, 2, 3, 4, 5].map((n) => (
+        <button
+          key={n}
+          type="button"
+          onClick={() => onChange?.(n)}
+          onMouseEnter={() => onChange && setHover(n)}
+          onMouseLeave={() => onChange && setHover(0)}
+          className={`${size} leading-none transition-transform ${onChange ? "cursor-pointer hover:scale-110" : "cursor-default"} ${n <= active ? "text-amber-400" : "text-gray-200"}`}
+        >★</button>
+      ))}
+    </div>
+  );
+}
+
+// ── Review Modal ──────────────────────────────────────────────────────────────
+function ReviewModal({ booking, onClose, onDone }: { booking: any; onClose: () => void; onDone: () => void }) {
+  const [rating, setRating]   = useState(0);
+  const [comment, setComment] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError]     = useState("");
+  const [done, setDone]       = useState(false);
+
+  const LABELS = ["", "Bahut Bura", "Theek Nahi", "Theek Hai", "Achha", "Excellent!"];
+  const COLORS = ["", "text-red-500", "text-orange-500", "text-amber-500", "text-teal-500", "text-green-600"];
+
+  async function submit() {
+    if (!rating) { setError("Star rating zaruri hai"); return; }
+    setLoading(true); setError("");
+    try {
+      const res  = await fetch("/api/review", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ bookingId: booking._id, rating, comment }),
+      });
+      const data = await res.json();
+      if (data.success) { setDone(true); setTimeout(() => { onDone(); onClose(); }, 1800); }
+      else setError(data.message);
+    } catch { setError("Network error. Dobara try karein."); }
+    setLoading(false);
+  }
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={onClose} />
+      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
+        <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden">
+          {done ? (
+            <div className="p-8 text-center">
+              <p className="text-5xl mb-3">🙏</p>
+              <p className="text-lg font-bold text-gray-800">Shukriya!</p>
+              <p className="text-sm text-gray-500 mt-1">Aapka review submit ho gaya</p>
+            </div>
+          ) : (
+            <>
+              <div className="bg-gradient-to-br from-amber-400 to-orange-400 px-6 pt-6 pb-5 text-white">
+                <p className="text-xs font-semibold uppercase tracking-wide opacity-80 mb-1">Review Dein</p>
+                <p className="font-bold text-lg leading-tight">{getTitle(booking)}</p>
+                {getSubtitle(booking) && <p className="text-sm opacity-80 mt-0.5">{getSubtitle(booking)}</p>}
+              </div>
+              <div className="p-5 space-y-4">
+                {/* Stars */}
+                <div className="text-center">
+                  <StarRow value={rating} onChange={setRating} size="text-4xl" />
+                  {rating > 0 && (
+                    <p className={`text-sm font-semibold mt-2 ${COLORS[rating]}`}>{LABELS[rating]}</p>
+                  )}
+                </div>
+
+                {/* Comment */}
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Comment (Optional)</label>
+                  <textarea
+                    value={comment}
+                    onChange={(e) => setComment(e.target.value)}
+                    maxLength={500}
+                    rows={3}
+                    placeholder="Apna anubhav likho..."
+                    className="mt-1.5 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300 resize-none"
+                  />
+                  <p className="text-right text-xs text-gray-400">{comment.length}/500</p>
+                </div>
+
+                {error && <p className="text-red-500 text-xs">{error}</p>}
+
+                <div className="flex gap-3">
+                  <button onClick={onClose} className="flex-1 border border-gray-200 text-gray-600 py-3 rounded-xl text-sm font-semibold">Baad Mein</button>
+                  <button onClick={submit} disabled={loading || !rating}
+                    className="flex-1 bg-amber-500 hover:bg-amber-600 text-white py-3 rounded-xl text-sm font-semibold transition disabled:opacity-50">
+                    {loading ? "Submit ho raha hai..." : "Review Submit Karein ★"}
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ── Booking Card ─────────────────────────────────────────────────────────────
-function BookingCard({ b, onCancel }: { b: any; onCancel: (b: any) => void }) {
+function BookingCard({ b, onCancel, onReview }: { b: any; onCancel: (b: any) => void; onReview: (b: any) => void }) {
   const [expanded, setExpanded] = useState(false);
   const tc = TYPE_CONFIG[b.type]   ?? { label: b.type, icon: "📄", bg: "bg-gray-50", text: "text-gray-700", border: "border-gray-300" };
   const sc = STATUS_CONFIG[b.status] ?? { label: b.status, icon: "●", bg: "bg-gray-100", text: "text-gray-600", dot: "bg-gray-400" };
   const notes = (() => { try { return b.notes ? JSON.parse(b.notes) : {}; } catch { return {}; } })();
   const canCancel = ["pending", "confirmed"].includes(b.status);
+  const canReview = b.status === "completed" && !b.reviewed && (b.doctorId || b.hospitalId);
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
@@ -160,6 +263,16 @@ function BookingCard({ b, onCancel }: { b: any; onCancel: (b: any) => void }) {
                 </p>
               </div>
             </div>
+            {notes.homeAddress && (
+              <div className="bg-green-50 rounded-xl px-3 py-2.5 border border-green-200">
+                <p className="text-[10px] font-bold text-green-600 uppercase tracking-wide mb-1">🏠 Home Collection Address</p>
+                <p className="text-xs text-gray-700">
+                  {[notes.homeAddress.flat, notes.homeAddress.street, notes.homeAddress.landmark, notes.homeAddress.district]
+                    .filter(Boolean).join(", ")}
+                  {notes.homeAddress.pincode ? ` — ${notes.homeAddress.pincode}` : ""}
+                </p>
+              </div>
+            )}
             {notes.symptoms && (
               <div className="bg-amber-50 rounded-xl px-3 py-2.5 border border-amber-100">
                 <p className="text-[10px] font-bold text-amber-500 uppercase tracking-wide mb-1">Symptoms</p>
@@ -174,6 +287,14 @@ function BookingCard({ b, onCancel }: { b: any; onCancel: (b: any) => void }) {
           </div>
         )}
 
+        {/* Already reviewed — show stars */}
+        {b.status === "completed" && b.reviewed && (
+          <div className="flex items-center gap-2 pt-2 mt-1 border-t border-gray-50">
+            <StarRow value={b.reviewRating || 0} size="text-base" />
+            <span className="text-xs text-gray-400">Aapne review diya</span>
+          </div>
+        )}
+
         {/* Footer: BookingID + actions */}
         <div className="flex items-center justify-between pt-3 mt-2 border-t border-gray-50">
           <div className="flex items-center gap-2">
@@ -182,20 +303,37 @@ function BookingCard({ b, onCancel }: { b: any; onCancel: (b: any) => void }) {
               {expanded ? "▲ Less" : "▼ Details"}
             </button>
           </div>
-          {canCancel && (
-            <button
-              onClick={() => onCancel(b)}
-              className="text-xs text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 hover:bg-red-50 px-3 py-1.5 rounded-lg font-semibold transition"
+          <div className="flex items-center gap-2">
+            {canCancel && (
+              <button
+                onClick={() => onCancel(b)}
+                className="text-xs text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 hover:bg-red-50 px-3 py-1.5 rounded-lg font-semibold transition"
+              >
+                ✕ Cancel
+              </button>
+            )}
+            {canReview && (
+              <button
+                onClick={() => onReview(b)}
+                className="text-xs bg-amber-100 hover:bg-amber-200 text-amber-700 border border-amber-200 px-3 py-1.5 rounded-lg font-semibold transition flex items-center gap-1"
+              >
+                ★ Rate
+              </button>
+            )}
+            {b.type === "Consultation" && b.status === "confirmed" && (
+              <a href={`/consultation/${b.bookingId}`}
+                className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg font-semibold transition">
+                📹 Join Call
+              </a>
+            )}
+            <a
+              href={`/invoice?id=${b.bookingId}`}
+              className="text-xs text-gray-500 hover:text-teal-600 border border-gray-200 hover:border-teal-300 hover:bg-teal-50 px-3 py-1.5 rounded-lg font-semibold transition"
+              title="Receipt / Invoice"
             >
-              ✕ Cancel
-            </button>
-          )}
-          {b.type === "Consultation" && b.status === "confirmed" && (
-            <a href={`/consultation/${b.bookingId}`}
-              className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg font-semibold transition">
-              📹 Join Call
+              🧾 Receipt
             </a>
-          )}
+          </div>
         </div>
       </div>
     </div>
@@ -211,6 +349,7 @@ export default function MyBookingsPage() {
   const [activeStatus, setActiveStatus] = useState("");
   const [cancelTarget, setCancelTarget] = useState<any>(null);
   const [cancelling, setCancelling]     = useState(false);
+  const [reviewTarget, setReviewTarget] = useState<any>(null);
   const [toast, setToast]               = useState("");
 
   const fetchBookings = useCallback(async () => {
@@ -276,6 +415,15 @@ export default function MyBookingsPage() {
           onConfirm={handleCancel}
           onClose={() => setCancelTarget(null)}
           loading={cancelling}
+        />
+      )}
+
+      {/* Review Modal */}
+      {reviewTarget && (
+        <ReviewModal
+          booking={reviewTarget}
+          onClose={() => setReviewTarget(null)}
+          onDone={() => { fetchBookings(); setToast("Review submit ho gaya! Shukriya 🙏"); setTimeout(() => setToast(""), 3000); }}
         />
       )}
 
@@ -358,7 +506,7 @@ export default function MyBookingsPage() {
         ) : (
           <div className="space-y-3">
             {bookings.map((b) => (
-              <BookingCard key={b._id} b={b} onCancel={setCancelTarget} />
+              <BookingCard key={b._id} b={b} onCancel={setCancelTarget} onReview={setReviewTarget} />
             ))}
             <p className="text-center text-xs text-gray-400 pt-2">{bookings.length} booking{bookings.length !== 1 ? "s" : ""} found</p>
           </div>

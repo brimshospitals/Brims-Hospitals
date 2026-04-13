@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type Tab = "overview" | "members" | "hospitals" | "doctors" | "packages" | "labtests" | "bookings" | "staff";
+type Tab = "overview" | "members" | "hospitals" | "doctors" | "packages" | "labtests" | "bookings" | "staff" | "promo" | "reports" | "accounting" | "ambulance";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   pending:   { label: "Pending",   color: "bg-yellow-100 text-yellow-700 border-yellow-200" },
@@ -363,69 +363,275 @@ function HospitalDrawer({ hospitalId, onClose, onVerify }: { hospitalId: string;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ── TAB: Overview ─────────────────────────────────────────────────────────────
+// ── Mini chart components (pure CSS/SVG — no library) ────────────────────────
+
+function BarChart({ data, valueKey, labelKey, color = "#0d9488", height = 120 }: {
+  data: any[]; valueKey: string; labelKey: string; color?: string; height?: number;
+}) {
+  if (!data?.length) return <div className="h-24 flex items-center justify-center text-gray-300 text-xs">No data</div>;
+  const max = Math.max(...data.map((d) => d[valueKey] || 0), 1);
+  return (
+    <div className="flex items-end gap-0.5 overflow-hidden" style={{ height }}>
+      {data.map((d, i) => {
+        const pct = Math.round(((d[valueKey] || 0) / max) * 100);
+        return (
+          <div key={i} className="flex-1 flex flex-col items-center gap-0.5 group relative" style={{ minWidth: 0 }}>
+            <div className="w-full rounded-t-sm transition-all duration-300"
+              style={{ height: `${Math.max(pct, 2)}%`, backgroundColor: color, opacity: 0.85 }} />
+            {/* Tooltip on hover */}
+            <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-xs px-2 py-1 rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition pointer-events-none z-10">
+              {d[labelKey]}: {typeof d[valueKey] === "number" && d[valueKey] > 999 ? `₹${(d[valueKey]/1000).toFixed(1)}k` : d[valueKey]}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function HorizBar({ label, value, max, color, sub }: { label: string; value: number; max: number; color: string; sub?: string }) {
+  const pct = max > 0 ? Math.round((value / max) * 100) : 0;
+  return (
+    <div className="space-y-1">
+      <div className="flex justify-between text-xs">
+        <span className="text-gray-600 font-medium">{label}</span>
+        <span className="text-gray-500">{value.toLocaleString()}{sub ? ` ${sub}` : ""}</span>
+      </div>
+      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+        <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: color }} />
+      </div>
+    </div>
+  );
+}
+
+// ── Overview Tab ──────────────────────────────────────────────────────────────
 function OverviewTab({ stats, onNavigate }: { stats: any; onNavigate: (tab: Tab) => void }) {
+  const [analytics, setAnalytics]   = useState<any>(null);
+  const [aLoading, setALoading]     = useState(true);
+  const [trendDays, setTrendDays]   = useState(14);
+  const [trendMode, setTrendMode]   = useState<"bookings"|"revenue">("bookings");
+
+  useEffect(() => {
+    setALoading(true);
+    fetch(`/api/admin/analytics?days=${trendDays}`)
+      .then((r) => r.json())
+      .then((d) => { if (d.success) setAnalytics(d.analytics); })
+      .finally(() => setALoading(false));
+  }, [trendDays]);
+
+  const TYPE_COLORS: Record<string, string> = {
+    OPD: "#2563eb", Lab: "#f59e0b", Surgery: "#7c3aed", Consultation: "#0d9488", IPD: "#dc2626",
+  };
+
+  const trendData = analytics?.trend?.slice(-trendDays) || [];
+  const trendFormatted = trendData.map((d: any) => ({
+    ...d,
+    label: new Date(d.date).toLocaleDateString("en-IN", { day:"2-digit", month:"short" }),
+  }));
+
+  const maxBookingType = Math.max(...(analytics?.byType || []).map((t: any) => t.count), 1);
+
+  const fmtINR = (n: number) => n >= 100000 ? `₹${(n/100000).toFixed(1)}L` : n >= 1000 ? `₹${(n/1000).toFixed(1)}k` : `₹${n}`;
+
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-bold text-gray-800">📊 Overview</h1>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h1 className="text-xl font-bold text-gray-800">📊 Analytics Overview</h1>
+        <p className="text-xs text-gray-400">{new Date().toLocaleDateString("en-IN", { day:"2-digit", month:"long", year:"numeric" })}</p>
+      </div>
 
-      {/* Entity counts */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+      {/* ── KPI tiles ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         {[
-          { label: "Members",          value: stats?.totalUsers,     icon: "👥", bg: "bg-blue-50",   text: "text-blue-700",   tab: "members"   as Tab },
-          { label: "Verified Hospitals",value: stats?.totalHospitals, icon: "🏥", bg: "bg-purple-50", text: "text-purple-700", tab: "hospitals" as Tab },
-          { label: "Active Doctors",    value: stats?.totalDoctors,   icon: "🩺", bg: "bg-teal-50",   text: "text-teal-700",   tab: "doctors"   as Tab },
-          { label: "Surgery Packages",  value: stats?.totalPackages,  icon: "📦", bg: "bg-orange-50", text: "text-orange-700", tab: "packages"  as Tab },
-          { label: "Lab Tests",         value: stats?.totalLabTests,  icon: "🧪", bg: "bg-yellow-50", text: "text-yellow-700", tab: "labtests"  as Tab },
+          { label: "Members",           value: stats?.totalUsers,     icon: "👥", bg: "bg-blue-50",    text: "text-blue-700",    tab: "members"   as Tab },
+          { label: "Hospitals",         value: stats?.totalHospitals, icon: "🏥", bg: "bg-purple-50",  text: "text-purple-700",  tab: "hospitals" as Tab },
+          { label: "Active Doctors",    value: stats?.totalDoctors,   icon: "🩺", bg: "bg-teal-50",    text: "text-teal-700",    tab: "doctors"   as Tab },
+          { label: "Surgery Packages",  value: stats?.totalPackages,  icon: "📦", bg: "bg-orange-50",  text: "text-orange-700",  tab: "packages"  as Tab },
+          { label: "Lab Tests",         value: stats?.totalLabTests,  icon: "🧪", bg: "bg-yellow-50",  text: "text-yellow-700",  tab: "labtests"  as Tab },
         ].map(({ label, value, icon, bg, text, tab }) => (
           <button key={label} onClick={() => onNavigate(tab)}
-            className={`${bg} rounded-2xl p-5 text-left hover:shadow-md transition-all group cursor-pointer`}>
-            <p className="text-2xl mb-1">{icon}</p>
-            <p className={`text-3xl font-bold ${text}`}>{value ?? "—"}</p>
-            <p className={`text-xs font-medium mt-1 ${text} opacity-70`}>{label}</p>
-            <p className="text-xs text-gray-400 mt-0.5 opacity-0 group-hover:opacity-100 transition">Click to manage →</p>
+            className={`${bg} rounded-2xl p-4 text-left hover:shadow-md transition-all group`}>
+            <p className="text-xl mb-1">{icon}</p>
+            <p className={`text-2xl font-bold ${text}`}>{value ?? "—"}</p>
+            <p className={`text-xs font-medium mt-0.5 ${text} opacity-70`}>{label}</p>
           </button>
         ))}
       </div>
 
-      {/* Pending alerts */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {stats?.pendingHospitals > 0 && (
-          <button onClick={() => onNavigate("hospitals")}
-            className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center gap-4 hover:bg-amber-100 transition text-left">
-            <div className="w-12 h-12 bg-amber-200 rounded-xl flex items-center justify-center text-2xl flex-shrink-0">🏥</div>
-            <div>
-              <p className="font-bold text-amber-800">{stats.pendingHospitals} Hospital{stats.pendingHospitals > 1 ? "s" : ""} Pending Verification</p>
-              <p className="text-xs text-amber-600 mt-0.5">Click to review and approve →</p>
-            </div>
-          </button>
-        )}
-        {stats?.pendingDoctors > 0 && (
-          <button onClick={() => onNavigate("doctors")}
-            className="bg-blue-50 border border-blue-200 rounded-2xl p-4 flex items-center gap-4 hover:bg-blue-100 transition text-left">
-            <div className="w-12 h-12 bg-blue-200 rounded-xl flex items-center justify-center text-2xl flex-shrink-0">🩺</div>
-            <div>
-              <p className="font-bold text-blue-800">{stats.pendingDoctors} Doctor{stats.pendingDoctors > 1 ? "s" : ""} Pending Approval</p>
-              <p className="text-xs text-blue-600 mt-0.5">Click to review and activate →</p>
-            </div>
-          </button>
-        )}
-      </div>
+      {/* ── Pending alerts ── */}
+      {(stats?.pendingHospitals > 0 || stats?.pendingDoctors > 0) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {stats?.pendingHospitals > 0 && (
+            <button onClick={() => onNavigate("hospitals")}
+              className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center gap-3 hover:bg-amber-100 transition text-left">
+              <div className="w-10 h-10 bg-amber-200 rounded-xl flex items-center justify-center text-xl shrink-0">🏥</div>
+              <div>
+                <p className="font-bold text-amber-800 text-sm">{stats.pendingHospitals} Hospital Pending Verification</p>
+                <p className="text-xs text-amber-600 mt-0.5">Click to review →</p>
+              </div>
+            </button>
+          )}
+          {stats?.pendingDoctors > 0 && (
+            <button onClick={() => onNavigate("doctors")}
+              className="bg-blue-50 border border-blue-200 rounded-2xl p-4 flex items-center gap-3 hover:bg-blue-100 transition text-left">
+              <div className="w-10 h-10 bg-blue-200 rounded-xl flex items-center justify-center text-xl shrink-0">🩺</div>
+              <div>
+                <p className="font-bold text-blue-800 text-sm">{stats.pendingDoctors} Doctor Pending Approval</p>
+                <p className="text-xs text-blue-600 mt-0.5">Click to review →</p>
+              </div>
+            </button>
+          )}
+        </div>
+      )}
 
-      {/* Booking stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+      {/* ── Booking + Revenue summary ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         {[
-          { label: "Total Bookings",  value: stats?.bookings?.total,     bg: "bg-white",      text: "text-gray-800",     tab: "bookings" as Tab },
-          { label: "Pending",         value: stats?.bookings?.pending,   bg: "bg-yellow-50",  text: "text-yellow-700",   tab: "bookings" as Tab },
-          { label: "Confirmed",       value: stats?.bookings?.confirmed, bg: "bg-green-50",   text: "text-green-700",    tab: "bookings" as Tab },
-          { label: "Completed",       value: stats?.bookings?.completed, bg: "bg-teal-50",    text: "text-teal-700",     tab: "bookings" as Tab },
-          { label: "Revenue (Paid)",  value: `₹${(stats?.revenue?.paid || 0).toLocaleString()}`, bg: "bg-emerald-50", text: "text-emerald-700", tab: "bookings" as Tab },
-        ].map(({ label, value, bg, text, tab }) => (
-          <button key={label} onClick={() => onNavigate(tab)}
-            className={`${bg} border border-gray-100 rounded-2xl p-5 shadow-sm text-left hover:shadow-md transition-all`}>
-            <p className={`text-3xl font-bold ${text}`}>{value ?? "—"}</p>
-            <p className={`text-xs font-medium mt-1 ${text} opacity-70`}>{label}</p>
+          { label: "Total Bookings",   value: stats?.bookings?.total,     bg: "bg-white",      text: "text-gray-800"    },
+          { label: "Pending",          value: stats?.bookings?.pending,   bg: "bg-amber-50",   text: "text-amber-700"   },
+          { label: "Confirmed",        value: stats?.bookings?.confirmed, bg: "bg-green-50",   text: "text-green-700"   },
+          { label: "Completed",        value: stats?.bookings?.completed, bg: "bg-teal-50",    text: "text-teal-700"    },
+          { label: "Revenue (Paid)",   value: fmtINR(stats?.revenue?.paid || 0), bg: "bg-emerald-50", text: "text-emerald-700" },
+        ].map(({ label, value, bg, text }) => (
+          <button key={label} onClick={() => onNavigate("bookings")}
+            className={`${bg} border border-gray-100 rounded-2xl p-4 shadow-sm text-left hover:shadow-md transition-all`}>
+            <p className={`text-2xl font-bold ${text}`}>{value ?? "—"}</p>
+            <p className={`text-xs font-medium mt-0.5 ${text} opacity-70`}>{label}</p>
           </button>
         ))}
+      </div>
+
+      {/* ── Trend Chart ── */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+        <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+          <div>
+            <p className="font-bold text-gray-800">
+              {trendMode === "bookings" ? "📅 Booking Trend" : "💰 Revenue Trend"}
+            </p>
+            <p className="text-xs text-gray-400 mt-0.5">Last {trendDays} days</p>
+          </div>
+          <div className="flex gap-2">
+            {/* Mode toggle */}
+            <div className="flex bg-gray-100 rounded-xl p-0.5">
+              {(["bookings","revenue"] as const).map((m) => (
+                <button key={m} onClick={() => setTrendMode(m)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${trendMode === m ? "bg-white text-gray-800 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
+                  {m === "bookings" ? "Bookings" : "Revenue"}
+                </button>
+              ))}
+            </div>
+            {/* Days toggle */}
+            <div className="flex bg-gray-100 rounded-xl p-0.5">
+              {[7, 14, 30].map((d) => (
+                <button key={d} onClick={() => setTrendDays(d)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${trendDays === d ? "bg-white text-gray-800 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
+                  {d}d
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {aLoading ? (
+          <div className="h-32 bg-gray-50 rounded-xl animate-pulse" />
+        ) : trendFormatted.length === 0 ? (
+          <div className="h-32 flex items-center justify-center text-gray-300 text-sm">No data yet</div>
+        ) : (
+          <>
+            <BarChart
+              data={trendFormatted}
+              valueKey={trendMode === "bookings" ? "count" : "revenue"}
+              labelKey="label"
+              color={trendMode === "bookings" ? "#0d9488" : "#10b981"}
+              height={120}
+            />
+            {/* X-axis labels — show first, middle, last */}
+            <div className="flex justify-between mt-1 px-0.5">
+              <span className="text-xs text-gray-400">{trendFormatted[0]?.label}</span>
+              <span className="text-xs text-gray-400">{trendFormatted[Math.floor(trendFormatted.length/2)]?.label}</span>
+              <span className="text-xs text-gray-400">{trendFormatted[trendFormatted.length - 1]?.label}</span>
+            </div>
+            {/* Summary line */}
+            <div className="flex gap-4 mt-3 pt-3 border-t border-gray-50">
+              <div>
+                <p className="text-xs text-gray-400">Total bookings</p>
+                <p className="font-bold text-gray-800">{trendFormatted.reduce((s: number, d: any) => s + d.count, 0)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-400">Revenue</p>
+                <p className="font-bold text-emerald-700">{fmtINR(trendFormatted.reduce((s: number, d: any) => s + d.revenue, 0))}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-400">Peak day</p>
+                <p className="font-bold text-gray-800">{trendFormatted.reduce((a: any, d: any) => d.count > (a?.count || 0) ? d : a, null)?.label || "—"}</p>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* ── Bottom row: Type breakdown + This month ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+
+        {/* Bookings by type */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+          <p className="font-bold text-gray-800 mb-4">🏷️ Bookings by Type</p>
+          {aLoading ? (
+            <div className="space-y-3">{[1,2,3].map((i) => <div key={i} className="h-6 bg-gray-100 rounded animate-pulse" />)}</div>
+          ) : (analytics?.byType || []).length === 0 ? (
+            <p className="text-sm text-gray-400">No bookings yet</p>
+          ) : (
+            <div className="space-y-3">
+              {(analytics?.byType || []).map((t: any) => (
+                <HorizBar
+                  key={t._id}
+                  label={t._id || "Unknown"}
+                  value={t.count}
+                  max={maxBookingType}
+                  color={TYPE_COLORS[t._id] || "#6b7280"}
+                  sub={`· ${fmtINR(t.revenue)}`}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* This month + status donut-style */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
+          <p className="font-bold text-gray-800">📆 This Month</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-teal-50 rounded-xl p-3 text-center">
+              <p className="text-2xl font-bold text-teal-700">{analytics?.summary?.bookingsThisMonth ?? "—"}</p>
+              <p className="text-xs text-teal-600 mt-0.5">New Bookings</p>
+            </div>
+            <div className="bg-blue-50 rounded-xl p-3 text-center">
+              <p className="text-2xl font-bold text-blue-700">{analytics?.summary?.usersThisMonth ?? "—"}</p>
+              <p className="text-xs text-blue-600 mt-0.5">New Users</p>
+            </div>
+          </div>
+
+          <p className="font-bold text-gray-800 pt-1">📋 By Status</p>
+          <div className="space-y-2">
+            {(analytics?.byStatus || []).map((s: any) => {
+              const total = (analytics?.byStatus || []).reduce((sum: number, x: any) => sum + x.count, 0);
+              const pct   = total > 0 ? Math.round((s.count / total) * 100) : 0;
+              const colors: Record<string, string> = { pending:"#f59e0b", confirmed:"#16a34a", completed:"#0d9488", cancelled:"#dc2626" };
+              return (
+                <div key={s._id} className="flex items-center gap-3">
+                  <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: colors[s._id] || "#6b7280" }} />
+                  <span className="text-xs text-gray-600 capitalize flex-1">{s._id}</span>
+                  <span className="text-xs font-semibold text-gray-700">{s.count}</span>
+                  <span className="text-xs text-gray-400 w-8 text-right">{pct}%</span>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="pt-2 border-t border-gray-50">
+            <p className="text-xs text-gray-400">All-time paid revenue</p>
+            <p className="text-xl font-bold text-emerald-700">{fmtINR(analytics?.summary?.totalRevenuePaid || 0)}</p>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -1001,19 +1207,35 @@ const selectCls = "w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm 
 
 // ── Modal: Add Doctor ─────────────────────────────────────────────────────────
 function AddDoctorModal({ hospitals, onClose, onSaved }: { hospitals: any[]; onClose: () => void; onSaved: () => void }) {
-  const [form, setForm] = useState({ name: "", mobile: "", email: "", department: "", speciality: "", degrees: "", experience: "", opdFee: "", hospitalId: "", isActive: true });
+  const [form, setForm]       = useState({ name: "", mobile: "", email: "", department: "", speciality: "", degrees: "", experience: "", opdFee: "", isActive: true });
+  const [hospMode, setHospMode] = useState<"network"|"private">("network");
+  const [hospitalId, setHospitalId] = useState("");
+  const [privateHospName, setPrivateHospName] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError]     = useState("");
   const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
 
   async function submit(e: React.SyntheticEvent) {
-    e.preventDefault(); setError(""); setLoading(true);
-    const res  = await fetch("/api/admin/doctors", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...form, experience: Number(form.experience), opdFee: Number(form.opdFee) }) });
+    e.preventDefault(); setError("");
+    if (!form.name || !form.department || !form.opdFee) { setError("Name, department aur OPD fee zaruri hai"); return; }
+    if (hospMode === "network" && !hospitalId)            { setError("Hospital select karein ya Private choose karein"); return; }
+    if (hospMode === "private" && !privateHospName.trim()){ setError("Private clinic ka naam daalo"); return; }
+    setLoading(true);
+    const payload = {
+      ...form,
+      experience:   Number(form.experience),
+      opdFee:       Number(form.opdFee),
+      hospitalId:   hospMode === "network" ? hospitalId : undefined,
+      hospitalName: hospMode === "private" ? privateHospName.trim() : undefined,
+    };
+    const res  = await fetch("/api/admin/doctors", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     const data = await res.json();
     if (data.success) { onSaved(); onClose(); }
     else setError(data.message);
     setLoading(false);
   }
+
+  const selectedHosp = hospitals.find((h: any) => h._id === hospitalId);
 
   return (
     <>
@@ -1039,12 +1261,33 @@ function AddDoctorModal({ hospitals, onClose, onSaved }: { hospitals: any[]; onC
             </div>
             <FormField label="Degrees (comma-separated)"><input className={inputCls} value={form.degrees} onChange={(e) => set("degrees", e.target.value)} placeholder="MBBS, MD, DM" /></FormField>
             <FormField label="Email"><input className={inputCls} type="email" value={form.email} onChange={(e) => set("email", e.target.value)} placeholder="doctor@email.com" /></FormField>
-            <FormField label="Assign Hospital">
-              <select className={selectCls} value={form.hospitalId} onChange={(e) => set("hospitalId", e.target.value)}>
-                <option value="">— Select Hospital (optional) —</option>
-                {hospitals.map((h: any) => <option key={h._id} value={h._id}>{h.name}</option>)}
-              </select>
-            </FormField>
+
+            {/* Hospital association — required */}
+            <div>
+              <p className="text-xs font-semibold text-gray-600 mb-2">Hospital / Clinic Association *</p>
+              <div className="flex gap-2 mb-2">
+                {(["network","private"] as const).map((m) => (
+                  <button key={m} type="button" onClick={() => setHospMode(m)}
+                    className={`flex-1 py-2 rounded-xl border text-xs font-medium transition-all ${hospMode === m ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-200 hover:border-blue-300"}`}>
+                    {m === "network" ? "🏥 Brims Network" : "🏠 Private Clinic"}
+                  </button>
+                ))}
+              </div>
+              {hospMode === "network" ? (
+                <>
+                  <select className={selectCls} value={hospitalId} onChange={(e) => setHospitalId(e.target.value)}>
+                    <option value="">— Hospital chunein —</option>
+                    {hospitals.map((h: any) => <option key={h._id} value={h._id}>{h.name}{h.address?.district ? ` (${h.address.district})` : ""}</option>)}
+                  </select>
+                  {selectedHosp && (
+                    <p className="text-xs text-blue-600 mt-1 pl-1">✓ {selectedHosp.name}</p>
+                  )}
+                </>
+              ) : (
+                <input className={inputCls} value={privateHospName} onChange={(e) => setPrivateHospName(e.target.value)} placeholder="Clinic / Hospital naam" />
+              )}
+            </div>
+
             <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
               <input type="checkbox" checked={form.isActive} onChange={(e) => set("isActive", e.target.checked)} className="rounded" />
               Directly activate (skip pending approval)
@@ -1443,6 +1686,1032 @@ function BookingsTab({ onOpenPatient }: { onOpenPatient: (id: string) => void })
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// ── PROMO CODES TAB ───────────────────────────────────────────────────────────
+const BOOKING_TYPES = ["OPD","Lab","Surgery","Consultation"];
+
+function PromoCodesTab() {
+  const [promos, setPromos]     = useState<any[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [saving, setSaving]     = useState(false);
+  const [toast, setToast]       = useState("");
+  const [showForm, setShowForm] = useState(false);
+  const [editItem, setEditItem] = useState<any>(null);
+
+  const emptyForm = {
+    code: "", description: "", discountType: "flat", discountValue: "",
+    maxDiscount: "", minAmount: "", usageLimit: "", validFrom: "", validUntil: "",
+    applicableOn: ["OPD","Lab","Surgery","Consultation"], isActive: true,
+  };
+  const [form, setForm] = useState<any>(emptyForm);
+
+  useEffect(() => { fetchPromos(); }, []);
+
+  async function fetchPromos() {
+    setLoading(true);
+    try {
+      const res  = await fetch("/api/promo");
+      const data = await res.json();
+      if (data.success) setPromos(data.promos);
+    } catch {}
+    setLoading(false);
+  }
+
+  function openCreate() { setForm(emptyForm); setEditItem(null); setShowForm(true); }
+  function openEdit(p: any) {
+    setForm({
+      _id: p._id, code: p.code, description: p.description || "",
+      discountType: p.discountType, discountValue: String(p.discountValue),
+      maxDiscount: p.maxDiscount ? String(p.maxDiscount) : "",
+      minAmount: p.minAmount ? String(p.minAmount) : "",
+      usageLimit: p.usageLimit ? String(p.usageLimit) : "",
+      validFrom: p.validFrom ? p.validFrom.split("T")[0] : "",
+      validUntil: p.validUntil ? p.validUntil.split("T")[0] : "",
+      applicableOn: p.applicableOn || ["OPD","Lab","Surgery","Consultation"],
+      isActive: p.isActive,
+    });
+    setEditItem(p);
+    setShowForm(true);
+  }
+
+  function toggleType(t: string) {
+    setForm((prev: any) => ({
+      ...prev,
+      applicableOn: prev.applicableOn.includes(t)
+        ? prev.applicableOn.filter((x: string) => x !== t)
+        : [...prev.applicableOn, t],
+    }));
+  }
+
+  async function handleSave() {
+    if (!form.code || !form.discountType || !form.discountValue) {
+      setToast("❌ Code, type aur value zaruri hain"); setTimeout(() => setToast(""), 3000); return;
+    }
+    setSaving(true);
+    try {
+      const res  = await fetch("/api/promo", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setToast("✅ " + data.message);
+        setShowForm(false);
+        fetchPromos();
+      } else { setToast("❌ " + data.message); }
+    } catch { setToast("❌ Network error"); }
+    setSaving(false);
+    setTimeout(() => setToast(""), 3000);
+  }
+
+  async function handleDelete(id: string) {
+    if (!confirm("Yeh code delete karein?")) return;
+    try {
+      const res  = await fetch(`/api/promo?id=${id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) { setToast("✅ Deleted"); fetchPromos(); }
+      else setToast("❌ " + data.message);
+    } catch { setToast("❌ Network error"); }
+    setTimeout(() => setToast(""), 3000);
+  }
+
+  async function toggleActive(p: any) {
+    try {
+      const res  = await fetch("/api/promo", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...p, isActive: !p.isActive }),
+      });
+      const data = await res.json();
+      if (data.success) fetchPromos();
+    } catch {}
+  }
+
+  return (
+    <div>
+      {toast && (
+        <div className="fixed top-4 right-4 z-50 bg-teal-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold shadow-lg">{toast}</div>
+      )}
+
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h2 className="text-xl font-bold text-gray-800">🎟️ Promo Codes</h2>
+          <p className="text-sm text-gray-500 mt-0.5">Discount codes banao — bookings pe apply honge</p>
+        </div>
+        <button onClick={openCreate}
+          className="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition">
+          + New Promo Code
+        </button>
+      </div>
+
+      {/* Create/Edit Form Modal */}
+      {showForm && (
+        <>
+          <div className="fixed inset-0 bg-black/40 z-40" onClick={() => setShowForm(false)} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-y-auto max-h-[90vh]">
+              <div className="p-5 border-b border-gray-100 flex justify-between items-center">
+                <h3 className="font-bold text-gray-800">{editItem ? "Code Edit Karein" : "Naya Promo Code"}</h3>
+                <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+              </div>
+              <div className="p-5 space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 mb-1 block">Code *</label>
+                    <input value={form.code} onChange={(e) => setForm({...form, code: e.target.value.toUpperCase()})}
+                      placeholder="e.g. BRIMS50" className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 font-mono uppercase" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 mb-1 block">Discount Type *</label>
+                    <select value={form.discountType} onChange={(e) => setForm({...form, discountType: e.target.value})}
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400">
+                      <option value="flat">Flat (₹)</option>
+                      <option value="percent">Percent (%)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 mb-1 block">
+                      {form.discountType === "flat" ? "Discount Amount (₹) *" : "Discount % *"}
+                    </label>
+                    <input type="number" value={form.discountValue} onChange={(e) => setForm({...form, discountValue: e.target.value})}
+                      placeholder={form.discountType === "flat" ? "100" : "10"}
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                  </div>
+                  {form.discountType === "percent" && (
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 mb-1 block">Max Discount (₹)</label>
+                      <input type="number" value={form.maxDiscount} onChange={(e) => setForm({...form, maxDiscount: e.target.value})}
+                        placeholder="Optional cap" className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                    </div>
+                  )}
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 mb-1 block">Min Amount (₹)</label>
+                    <input type="number" value={form.minAmount} onChange={(e) => setForm({...form, minAmount: e.target.value})}
+                      placeholder="0 = no minimum" className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 mb-1 block">Description</label>
+                  <input value={form.description} onChange={(e) => setForm({...form, description: e.target.value})}
+                    placeholder="e.g. New year offer - ₹50 off on OPD"
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 mb-1 block">Usage Limit</label>
+                    <input type="number" value={form.usageLimit} onChange={(e) => setForm({...form, usageLimit: e.target.value})}
+                      placeholder="Blank = unlimited" className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 mb-1 block">Valid Until</label>
+                    <input type="date" value={form.validUntil} onChange={(e) => setForm({...form, validUntil: e.target.value})}
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 mb-2 block">Applicable On</label>
+                  <div className="flex flex-wrap gap-2">
+                    {BOOKING_TYPES.map((t) => (
+                      <button key={t} type="button" onClick={() => toggleType(t)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition ${
+                          form.applicableOn.includes(t) ? "bg-teal-600 text-white border-teal-600" : "border-gray-200 text-gray-500 hover:border-teal-400"
+                        }`}>{t}</button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-semibold text-gray-700">Active</label>
+                  <Toggle value={form.isActive} onChange={(v) => setForm({...form, isActive: v})} />
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button onClick={() => setShowForm(false)} className="flex-1 border border-gray-200 text-gray-600 py-3 rounded-xl text-sm font-semibold">Rद karo</button>
+                  <button onClick={handleSave} disabled={saving}
+                    className="flex-1 bg-teal-600 hover:bg-teal-700 text-white py-3 rounded-xl text-sm font-semibold transition disabled:opacity-50">
+                    {saving ? "Save ho raha hai..." : editItem ? "Update Karein" : "Create Karein"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Promo List */}
+      {loading ? <Spinner /> : promos.length === 0 ? (
+        <EmptyState icon="🎟️" message="Koi promo code nahi hai. Pehla code banao!" />
+      ) : (
+        <div className="space-y-3">
+          {promos.map((p) => {
+            const expired = p.validUntil && new Date() > new Date(p.validUntil);
+            const limitHit = p.usageLimit && p.usedCount >= p.usageLimit;
+            return (
+              <div key={p._id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1">
+                    <div className="flex flex-wrap items-center gap-2 mb-1">
+                      <span className="font-mono font-bold text-teal-700 text-lg tracking-widest">{p.code}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-semibold border ${
+                        !p.isActive || expired || limitHit
+                          ? "bg-red-100 text-red-600 border-red-200"
+                          : "bg-green-100 text-green-700 border-green-200"
+                      }`}>
+                        {!p.isActive ? "Inactive" : expired ? "Expired" : limitHit ? "Limit Hit" : "Active"}
+                      </span>
+                      <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full border border-blue-200">
+                        {p.discountType === "flat" ? `₹${p.discountValue} off` : `${p.discountValue}% off${p.maxDiscount ? ` (max ₹${p.maxDiscount})` : ""}`}
+                      </span>
+                    </div>
+                    {p.description && <p className="text-xs text-gray-500 mb-2">{p.description}</p>}
+                    <div className="flex flex-wrap gap-3 text-xs text-gray-400">
+                      <span>Used: <strong className="text-gray-600">{p.usedCount}</strong>{p.usageLimit ? `/${p.usageLimit}` : ""}</span>
+                      {p.minAmount > 0 && <span>Min: ₹{p.minAmount}</span>}
+                      {p.validUntil && <span>Expires: {new Date(p.validUntil).toLocaleDateString("en-IN", { day:"2-digit", month:"short", year:"numeric" })}</span>}
+                      <span>For: {(p.applicableOn || []).join(", ")}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <Toggle value={p.isActive} onChange={() => toggleActive(p)} />
+                    <button onClick={() => openEdit(p)} className="text-xs text-blue-600 hover:text-blue-800 font-semibold px-2 py-1 border border-blue-200 rounded-lg hover:bg-blue-50 transition">Edit</button>
+                    <button onClick={() => handleDelete(p._id)} className="text-xs text-red-500 hover:text-red-700 font-semibold px-2 py-1 border border-red-200 rounded-lg hover:bg-red-50 transition">Del</button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ── REVENUE REPORTS TAB ───────────────────────────────────────────────────────
+const MONTHS_LIST = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const TYPE_COLORS_MAP: Record<string, string> = {
+  OPD: "bg-blue-500", Lab: "bg-yellow-500", Surgery: "bg-purple-500", Consultation: "bg-indigo-500",
+};
+
+function fmtINR(n: number) {
+  if (n >= 100000) return `₹${(n / 100000).toFixed(1)}L`;
+  if (n >= 1000)   return `₹${(n / 1000).toFixed(1)}k`;
+  return `₹${n}`;
+}
+
+function RevenueReportsTab() {
+  const curYear  = new Date().getFullYear();
+  const curMonth = new Date().getMonth() + 1;
+
+  const [period,   setPeriod]   = useState<"monthly"|"weekly"|"daily">("monthly");
+  const [year,     setYear]     = useState(curYear);
+  const [month,    setMonth]    = useState(curMonth);
+  const [data,     setData]     = useState<any>(null);
+  const [loading,  setLoading]  = useState(false);
+  const [exporting,setExporting]= useState(false);
+  const [metric,   setMetric]   = useState<"revenue"|"bookings">("revenue");
+
+  useEffect(() => { fetchReport(); }, [period, year, month]);
+
+  async function fetchReport() {
+    setLoading(true);
+    try {
+      const p = new URLSearchParams({ period, year: String(year), month: String(month) });
+      const res  = await fetch(`/api/admin/reports?${p}`);
+      const json = await res.json();
+      if (json.success) setData(json);
+    } catch {}
+    setLoading(false);
+  }
+
+  async function downloadCSV() {
+    setExporting(true);
+    try {
+      const p = new URLSearchParams({ period, year: String(year), month: String(month), export: "csv" });
+      const res  = await fetch(`/api/admin/reports?${p}`);
+      const blob = await res.blob();
+      const cd   = res.headers.get("Content-Disposition") || "";
+      const match = cd.match(/filename="(.+)"/);
+      const fname = match ? match[1] : "report.csv";
+      const url   = URL.createObjectURL(blob);
+      const a     = document.createElement("a");
+      a.href = url; a.download = fname; a.click();
+      URL.revokeObjectURL(url);
+    } catch {}
+    setExporting(false);
+  }
+
+  const rows   = data?.rows || [];
+  const summary= data?.summary || {};
+  const maxVal = rows.length
+    ? Math.max(...rows.map((r: any) => metric === "revenue" ? r.revenue : r.total), 1)
+    : 1;
+
+  return (
+    <div>
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+        <div>
+          <h2 className="text-xl font-bold text-gray-800">📈 Revenue Reports</h2>
+          <p className="text-sm text-gray-500 mt-0.5">Bookings aur earnings ka breakdown</p>
+        </div>
+        <button onClick={downloadCSV} disabled={exporting || !data}
+          className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50">
+          {exporting ? "Export ho raha hai..." : "⬇ CSV Export"}
+        </button>
+      </div>
+
+      {/* Controls */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-5 flex flex-wrap gap-3 items-center">
+        {/* Period toggle */}
+        <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
+          {(["monthly","weekly","daily"] as const).map((p) => (
+            <button key={p} onClick={() => setPeriod(p)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition capitalize ${period === p ? "bg-white shadow text-teal-700" : "text-gray-500 hover:text-gray-700"}`}>
+              {p}
+            </button>
+          ))}
+        </div>
+
+        {/* Year */}
+        <select value={year} onChange={(e) => setYear(Number(e.target.value))}
+          className="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400">
+          {[curYear - 1, curYear, curYear + 1].map((y) => (
+            <option key={y} value={y}>{y}</option>
+          ))}
+        </select>
+
+        {/* Month (only for weekly/daily) */}
+        {period !== "monthly" && (
+          <select value={month} onChange={(e) => setMonth(Number(e.target.value))}
+            className="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400">
+            {MONTHS_LIST.map((m, i) => (
+              <option key={i} value={i + 1}>{m}</option>
+            ))}
+          </select>
+        )}
+
+        {/* Metric toggle */}
+        <div className="ml-auto flex gap-1 bg-gray-100 rounded-xl p-1">
+          {(["revenue","bookings"] as const).map((m) => (
+            <button key={m} onClick={() => setMetric(m)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition capitalize ${metric === m ? "bg-white shadow text-teal-700" : "text-gray-500 hover:text-gray-700"}`}>
+              {m === "revenue" ? "₹ Revenue" : "# Bookings"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {loading ? <div className="flex justify-center py-20"><Spinner /></div> : !data ? null : (
+        <>
+          {/* Summary Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+            {[
+              { label: "Total Bookings", value: summary.totalBookings?.toLocaleString() || "0",  color: "text-gray-800",   bg: "bg-white" },
+              { label: "Total Revenue",  value: fmtINR(summary.totalRevenue || 0),               color: "text-teal-700",   bg: "bg-teal-50 border-teal-100" },
+              { label: "Paid Revenue",   value: fmtINR(summary.totalPaid || 0),                  color: "text-green-700",  bg: "bg-green-50 border-green-100" },
+              { label: "New Users",      value: summary.newUsers?.toLocaleString() || "0",        color: "text-blue-700",   bg: "bg-blue-50 border-blue-100" },
+            ].map(({ label, value, color, bg }) => (
+              <div key={label} className={`rounded-2xl border p-4 shadow-sm ${bg}`}>
+                <p className={`text-2xl font-bold ${color}`}>{value}</p>
+                <p className="text-xs text-gray-500 mt-0.5 font-medium">{label}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Bar Chart */}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 mb-5">
+            <h3 className="text-sm font-bold text-gray-700 mb-4">{data.title}</h3>
+            <div className="flex items-end gap-1 h-44 overflow-x-auto pb-2">
+              {rows.map((r: any, i: number) => {
+                const val  = metric === "revenue" ? r.revenue : r.total;
+                const pct  = maxVal > 0 ? Math.max((val / maxVal) * 100, val > 0 ? 4 : 0) : 0;
+                return (
+                  <div key={i} className="flex flex-col items-center flex-1 min-w-[28px] group">
+                    <div className="relative w-full flex justify-center">
+                      {val > 0 && (
+                        <div className="absolute -top-6 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity bg-gray-800 text-white text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap z-10">
+                          {metric === "revenue" ? fmtINR(val) : val}
+                        </div>
+                      )}
+                      <div
+                        className={`w-full rounded-t-md transition-all ${val > 0 ? "bg-teal-500 hover:bg-teal-600" : "bg-gray-100"}`}
+                        style={{ height: `${pct}%`, minHeight: "4px" }}
+                      />
+                    </div>
+                    <p className="text-[9px] text-gray-400 mt-1 text-center truncate w-full">{r.period}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Breakdown Table */}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="p-4 border-b border-gray-50">
+              <h3 className="text-sm font-bold text-gray-700">Detailed Breakdown</h3>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-gray-50 text-gray-500 font-semibold uppercase tracking-wide">
+                    <th className="text-left px-4 py-3">Period</th>
+                    <th className="text-right px-3 py-3">Bookings</th>
+                    <th className="text-right px-3 py-3">Revenue</th>
+                    <th className="text-right px-3 py-3">Paid</th>
+                    <th className="text-right px-3 py-3">OPD</th>
+                    <th className="text-right px-3 py-3">Lab</th>
+                    <th className="text-right px-3 py-3">Surgery</th>
+                    <th className="text-right px-3 py-3">Consult</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {rows.map((r: any, i: number) => (
+                    <tr key={i} className={`hover:bg-gray-50 transition ${r.total === 0 ? "opacity-40" : ""}`}>
+                      <td className="px-4 py-3 font-medium text-gray-700">{r.period}</td>
+                      <td className="px-3 py-3 text-right font-semibold text-gray-800">{r.total || 0}</td>
+                      <td className="px-3 py-3 text-right font-semibold text-teal-700">{r.revenue > 0 ? fmtINR(r.revenue) : "—"}</td>
+                      <td className="px-3 py-3 text-right font-semibold text-green-600">{r.paid > 0 ? fmtINR(r.paid) : "—"}</td>
+                      <td className="px-3 py-3 text-right text-blue-600">{r.OPD || "—"}</td>
+                      <td className="px-3 py-3 text-right text-yellow-600">{r.Lab || "—"}</td>
+                      <td className="px-3 py-3 text-right text-purple-600">{r.Surgery || "—"}</td>
+                      <td className="px-3 py-3 text-right text-indigo-600">{r.Consultation || "—"}</td>
+                    </tr>
+                  ))}
+                  {/* Totals row */}
+                  <tr className="bg-teal-50 font-bold">
+                    <td className="px-4 py-3 text-teal-800">TOTAL</td>
+                    <td className="px-3 py-3 text-right text-teal-800">{summary.totalBookings || 0}</td>
+                    <td className="px-3 py-3 text-right text-teal-800">{fmtINR(summary.totalRevenue || 0)}</td>
+                    <td className="px-3 py-3 text-right text-green-700">{fmtINR(summary.totalPaid || 0)}</td>
+                    <td className="px-3 py-3 text-right text-blue-700">{rows.reduce((s: number, r: any) => s + (r.OPD || 0), 0) || "—"}</td>
+                    <td className="px-3 py-3 text-right text-yellow-700">{rows.reduce((s: number, r: any) => s + (r.Lab || 0), 0) || "—"}</td>
+                    <td className="px-3 py-3 text-right text-purple-700">{rows.reduce((s: number, r: any) => s + (r.Surgery || 0), 0) || "—"}</td>
+                    <td className="px-3 py-3 text-right text-indigo-700">{rows.reduce((s: number, r: any) => s + (r.Consultation || 0), 0) || "—"}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ── ACCOUNTING TAB ────────────────────────────────────────────────────────────
+function AccountingTab() {
+  const [view,       setView]       = useState<"summary"|"commissions">("summary");
+  const [summary,    setSummary]    = useState<any>(null);
+  const [byHospital, setByHospital] = useState<any[]>([]);
+  const [commissions,setCommissions]= useState<any[]>([]);
+  const [total,      setTotal]      = useState(0);
+  const [page,       setPage]       = useState(1);
+  const [loading,    setLoading]    = useState(false);
+  const [syncing,    setSyncing]    = useState(false);
+  const [toast,      setToast]      = useState("");
+  const [filterHosp, setFilterHosp]= useState("");
+  const [filterStatus,setFilterStatus] = useState("");
+  const [payoutModal,setPayoutModal] = useState<any>(null); // { hospitalId, hospitalName, pendingAmt }
+  const [payoutRef,  setPayoutRef]  = useState("");
+  const [payoutDate, setPayoutDate] = useState(new Date().toISOString().split("T")[0]);
+  const [payoutLoading,setPayoutLoading] = useState(false);
+
+  const PAYOUT_STATUS_COLORS: Record<string,string> = {
+    pending: "bg-amber-100 text-amber-700 border-amber-200",
+    paid:    "bg-green-100 text-green-700 border-green-200",
+    on_hold: "bg-gray-100 text-gray-600 border-gray-200",
+  };
+
+  function showToast(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(""), 3000);
+  }
+
+  function fmtAmt(n: number) {
+    return "₹" + (n || 0).toLocaleString("en-IN");
+  }
+  function fmtDate(d: string) {
+    if (!d) return "—";
+    return new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  }
+
+  async function fetchSummary() {
+    setLoading(true);
+    try {
+      const res  = await fetch("/api/admin/accounting?view=summary");
+      const data = await res.json();
+      if (data.success) { setSummary(data.summary); setByHospital(data.byHospital || []); }
+    } finally { setLoading(false); }
+  }
+
+  async function fetchCommissions(p = 1) {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ view: "commissions", page: String(p) });
+      if (filterHosp)   params.set("hospitalId", filterHosp);
+      if (filterStatus) params.set("status",     filterStatus);
+      const res  = await fetch(`/api/admin/accounting?${params}`);
+      const data = await res.json();
+      if (data.success) { setCommissions(data.commissions); setTotal(data.total); }
+    } finally { setLoading(false); }
+  }
+
+  async function syncCommissions() {
+    setSyncing(true);
+    try {
+      const res  = await fetch("/api/admin/accounting", { method: "POST" });
+      const data = await res.json();
+      showToast(data.message || "Sync ho gaya");
+      fetchSummary();
+    } finally { setSyncing(false); }
+  }
+
+  async function markPaid() {
+    if (!payoutModal) return;
+    setPayoutLoading(true);
+    try {
+      const res  = await fetch("/api/admin/accounting", {
+        method:  "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          hospitalId:  payoutModal.hospitalId,
+          payoutStatus:"paid",
+          payoutRef,
+          payoutDate,
+        }),
+      });
+      const data = await res.json();
+      showToast(data.message || "Payout mark ho gaya");
+      setPayoutModal(null);
+      setPayoutRef("");
+      fetchSummary();
+      if (view === "commissions") fetchCommissions(page);
+    } finally { setPayoutLoading(false); }
+  }
+
+  useEffect(() => { fetchSummary(); }, []);
+  useEffect(() => {
+    if (view === "commissions") fetchCommissions(1);
+  }, [view, filterHosp, filterStatus]);
+
+  return (
+    <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-5">
+
+      {/* Toast */}
+      {toast && (
+        <div className="fixed top-4 right-4 z-50 bg-teal-700 text-white px-4 py-2.5 rounded-xl shadow-lg text-sm">
+          {toast}
+        </div>
+      )}
+
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-gray-800">💰 Accounting</h2>
+          <p className="text-sm text-gray-500">Hospital commissions aur payouts manage karein</p>
+        </div>
+        <button
+          onClick={syncCommissions}
+          disabled={syncing}
+          className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold rounded-xl transition disabled:opacity-50 flex items-center gap-2"
+        >
+          {syncing ? (
+            <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Syncing...</>
+          ) : (
+            <>🔄 Sync Bookings</>
+          )}
+        </button>
+      </div>
+
+      {/* Summary cards */}
+      {summary && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[
+            { label: "Total Revenue",      value: fmtAmt(summary.totalGross),    icon: "💵", color: "text-teal-700 bg-teal-50 border-teal-100" },
+            { label: "Brims Commission",   value: fmtAmt(summary.totalComm),     icon: "🏢", color: "text-blue-700 bg-blue-50 border-blue-100" },
+            { label: "Hospital Earnings",  value: fmtAmt(summary.totalHospital), icon: "🏥", color: "text-purple-700 bg-purple-50 border-purple-100" },
+            { label: "Pending Payout",     value: fmtAmt(summary.pendingPayout), icon: "⏳", color: "text-amber-700 bg-amber-50 border-amber-100" },
+          ].map((c) => (
+            <div key={c.label} className={`rounded-2xl border p-4 ${c.color}`}>
+              <p className="text-2xl mb-1">{c.icon}</p>
+              <p className="text-xl font-black">{c.value}</p>
+              <p className="text-xs font-semibold mt-0.5 opacity-70">{c.label}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* View toggle */}
+      <div className="flex gap-2 border-b border-gray-100 pb-3">
+        {(["summary", "commissions"] as const).map((v) => (
+          <button key={v} onClick={() => setView(v)}
+            className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${view === v ? "bg-teal-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+          >
+            {v === "summary" ? "🏥 Hospital-wise" : "📋 Commission Records"}
+          </button>
+        ))}
+      </div>
+
+      {loading && (
+        <div className="flex justify-center py-10">
+          <div className="w-8 h-8 border-4 border-teal-500 border-t-transparent rounded-full animate-spin" />
+        </div>
+      )}
+
+      {/* ── Summary View: hospital breakdown ── */}
+      {!loading && view === "summary" && (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="px-5 py-3 border-b border-gray-50 bg-gray-50">
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Hospital-wise Breakdown</p>
+          </div>
+          {byHospital.length === 0 ? (
+            <div className="py-10 text-center text-gray-400 text-sm">
+              <p className="text-3xl mb-2">📊</p>
+              Koi data nahi — "Sync Bookings" button dabayein pehle
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-[11px] font-bold text-gray-400 uppercase tracking-wide border-b border-gray-100">
+                    <th className="px-4 py-3 text-left">Hospital</th>
+                    <th className="px-4 py-3 text-right">Bookings</th>
+                    <th className="px-4 py-3 text-right">Gross Revenue</th>
+                    <th className="px-4 py-3 text-right">Brims Commission</th>
+                    <th className="px-4 py-3 text-right">Hospital Amt</th>
+                    <th className="px-4 py-3 text-right">Pending Payout</th>
+                    <th className="px-4 py-3 text-center">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {byHospital.map((h: any) => (
+                    <tr key={h._id} className="hover:bg-gray-50 transition">
+                      <td className="px-4 py-3 font-semibold text-gray-800">{h.hospitalName || "Unknown"}</td>
+                      <td className="px-4 py-3 text-right text-gray-600">{h.bookings}</td>
+                      <td className="px-4 py-3 text-right font-semibold text-gray-800">{fmtAmt(h.gross)}</td>
+                      <td className="px-4 py-3 text-right text-blue-700 font-semibold">{fmtAmt(h.commission)}</td>
+                      <td className="px-4 py-3 text-right text-purple-700 font-semibold">{fmtAmt(h.hospitalAmt)}</td>
+                      <td className="px-4 py-3 text-right">
+                        {h.pendingAmt > 0 ? (
+                          <span className="text-amber-700 font-bold">{fmtAmt(h.pendingAmt)}</span>
+                        ) : (
+                          <span className="text-green-600 text-xs font-semibold">✓ Cleared</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {h.pendingAmt > 0 && (
+                          <button
+                            onClick={() => setPayoutModal({ hospitalId: h._id, hospitalName: h.hospitalName, pendingAmt: h.pendingAmt })}
+                            className="bg-green-600 hover:bg-green-700 text-white text-xs px-3 py-1.5 rounded-lg font-semibold transition"
+                          >
+                            Mark Paid
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Commission Records View ── */}
+      {!loading && view === "commissions" && (
+        <div className="space-y-3">
+          {/* Filters */}
+          <div className="flex flex-wrap gap-2">
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+            >
+              <option value="">All Status</option>
+              <option value="pending">Pending</option>
+              <option value="paid">Paid</option>
+              <option value="on_hold">On Hold</option>
+            </select>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-[11px] font-bold text-gray-400 uppercase tracking-wide border-b border-gray-100 bg-gray-50">
+                    <th className="px-4 py-3 text-left">Booking</th>
+                    <th className="px-4 py-3 text-left">Hospital</th>
+                    <th className="px-4 py-3 text-right">Gross</th>
+                    <th className="px-4 py-3 text-right">Commission</th>
+                    <th className="px-4 py-3 text-right">Hospital Amt</th>
+                    <th className="px-4 py-3 text-center">Payout</th>
+                    <th className="px-4 py-3 text-right">Date</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {commissions.length === 0 ? (
+                    <tr><td colSpan={7} className="px-4 py-10 text-center text-gray-400">Koi records nahi</td></tr>
+                  ) : (
+                    commissions.map((c: any) => (
+                      <tr key={c._id} className="hover:bg-gray-50 transition">
+                        <td className="px-4 py-3">
+                          <p className="font-mono text-xs text-gray-600">{c.bookingRef}</p>
+                          <p className="text-[11px] text-gray-400 mt-0.5">{c.type}</p>
+                        </td>
+                        <td className="px-4 py-3 text-gray-700 text-xs">{c.hospitalName || "—"}</td>
+                        <td className="px-4 py-3 text-right font-semibold text-gray-800">{fmtAmt(c.grossAmount)}</td>
+                        <td className="px-4 py-3 text-right text-blue-700 text-xs">
+                          {fmtAmt(c.commissionAmt)}
+                          <span className="text-gray-400 ml-1">({c.commissionPct}%)</span>
+                        </td>
+                        <td className="px-4 py-3 text-right text-purple-700 font-semibold">{fmtAmt(c.hospitalAmt)}</td>
+                        <td className="px-4 py-3 text-center">
+                          <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold border ${PAYOUT_STATUS_COLORS[c.payoutStatus]}`}>
+                            {c.payoutStatus}
+                          </span>
+                          {c.payoutRef && <p className="text-[10px] text-gray-400 mt-0.5">{c.payoutRef}</p>}
+                        </td>
+                        <td className="px-4 py-3 text-right text-xs text-gray-400">{fmtDate(c.createdAt)}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination */}
+            {total > 20 && (
+              <div className="px-4 py-3 border-t border-gray-50 flex items-center justify-between text-sm text-gray-500">
+                <span>{total} records</span>
+                <div className="flex gap-2">
+                  <button disabled={page <= 1} onClick={() => { const p = page - 1; setPage(p); fetchCommissions(p); }}
+                    className="px-3 py-1.5 border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-50 transition">← Prev</button>
+                  <button disabled={page >= Math.ceil(total/20)} onClick={() => { const p = page + 1; setPage(p); fetchCommissions(p); }}
+                    className="px-3 py-1.5 border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-50 transition">Next →</button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Payout Modal ── */}
+      {payoutModal && (
+        <>
+          <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={() => setPayoutModal(null)} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-6 space-y-4">
+              <div>
+                <h3 className="font-bold text-gray-800 text-lg">💸 Payout Mark Karein</h3>
+                <p className="text-sm text-gray-500 mt-1">{payoutModal.hospitalName}</p>
+                <p className="text-2xl font-black text-green-600 mt-2">{fmtAmt(payoutModal.pendingAmt)}</p>
+                <p className="text-xs text-gray-400">Pending payout amount</p>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">UTR / Reference No.</label>
+                  <input
+                    value={payoutRef}
+                    onChange={(e) => setPayoutRef(e.target.value)}
+                    placeholder="Bank transfer UTR ya UPI ref"
+                    className="mt-1.5 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Payout Date</label>
+                  <input
+                    type="date"
+                    value={payoutDate}
+                    onChange={(e) => setPayoutDate(e.target.value)}
+                    className="mt-1.5 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-3 pt-1">
+                <button onClick={() => setPayoutModal(null)}
+                  className="flex-1 border border-gray-200 text-gray-600 py-3 rounded-xl text-sm font-semibold">Cancel</button>
+                <button onClick={markPaid} disabled={payoutLoading || !payoutRef}
+                  className="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl text-sm font-semibold transition disabled:opacity-50">
+                  {payoutLoading ? "Saving..." : "✓ Mark as Paid"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ── AMBULANCE TAB ─────────────────────────────────────────────────────────────
+function AmbulanceTab() {
+  const [requests,  setRequests]  = useState<any[]>([]);
+  const [total,     setTotal]     = useState(0);
+  const [loading,   setLoading]   = useState(false);
+  const [filter,    setFilter]    = useState("");
+  const [selected,  setSelected]  = useState<any>(null);
+  const [updating,  setUpdating]  = useState(false);
+  const [toast,     setToast]     = useState("");
+
+  // Dispatch form
+  const [driverName,  setDriverName]  = useState("");
+  const [vehicleNo,   setVehicleNo]   = useState("");
+  const [eta,         setEta]         = useState("");
+  const [newStatus,   setNewStatus]   = useState("dispatched");
+  const [adminNotes,  setAdminNotes]  = useState("");
+
+  const STATUS_COLORS: Record<string, string> = {
+    pending:    "bg-amber-100 text-amber-700 border-amber-200",
+    dispatched: "bg-blue-100  text-blue-700  border-blue-200",
+    arrived:    "bg-green-100 text-green-700 border-green-200",
+    completed:  "bg-teal-100  text-teal-700  border-teal-200",
+    cancelled:  "bg-red-100   text-red-700   border-red-200",
+  };
+
+  function showToast(msg: string) { setToast(msg); setTimeout(() => setToast(""), 3000); }
+
+  function fmtDt(d: string) {
+    if (!d) return "—";
+    return new Date(d).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+  }
+
+  async function fetchRequests() {
+    setLoading(true);
+    try {
+      const p = new URLSearchParams({ view: "list" });
+      if (filter) p.set("status", filter);
+      const res  = await fetch(`/api/ambulance?${p}`);
+      const data = await res.json();
+      if (data.success) { setRequests(data.requests); setTotal(data.total); }
+    } finally { setLoading(false); }
+  }
+
+  async function handleUpdate() {
+    if (!selected) return;
+    setUpdating(true);
+    try {
+      const res  = await fetch("/api/ambulance", {
+        method:  "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requestId:     selected.requestId,
+          status:        newStatus,
+          assignedDriver:driverName || undefined,
+          vehicleNumber: vehicleNo  || undefined,
+          estimatedETA:  eta        || undefined,
+          adminNotes:    adminNotes || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast("Request update ho gayi");
+        setSelected(null);
+        fetchRequests();
+      } else {
+        showToast(data.message || "Update nahi hua");
+      }
+    } finally { setUpdating(false); }
+  }
+
+  useEffect(() => { fetchRequests(); }, [filter]);
+
+  return (
+    <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-5">
+      {toast && (
+        <div className="fixed top-4 right-4 z-50 bg-teal-700 text-white px-4 py-2.5 rounded-xl shadow-lg text-sm">{toast}</div>
+      )}
+
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-gray-800">🚑 Ambulance Requests</h2>
+          <p className="text-sm text-gray-500">{total} total requests</p>
+        </div>
+        <button onClick={fetchRequests} className="px-4 py-2 border border-gray-200 rounded-xl text-sm font-semibold hover:bg-gray-50 transition">
+          🔄 Refresh
+        </button>
+      </div>
+
+      {/* Filter */}
+      <div className="flex flex-wrap gap-2">
+        {["", "pending", "dispatched", "arrived", "completed", "cancelled"].map((s) => (
+          <button key={s} onClick={() => setFilter(s)}
+            className={`px-4 py-2 rounded-xl text-sm font-semibold border transition ${filter === s ? "bg-red-600 text-white border-red-600" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}>
+            {s === "" ? "All" : s.charAt(0).toUpperCase() + s.slice(1)}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-10"><div className="w-8 h-8 border-4 border-red-500 border-t-transparent rounded-full animate-spin" /></div>
+      ) : requests.length === 0 ? (
+        <div className="text-center py-12 text-gray-400"><p className="text-3xl mb-2">🚑</p><p>Koi request nahi</p></div>
+      ) : (
+        <div className="space-y-3">
+          {requests.map((r: any) => (
+            <div key={r._id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                    <span className="font-mono text-sm font-bold text-red-700">{r.requestId}</span>
+                    <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-bold border ${STATUS_COLORS[r.status]}`}>
+                      {r.status}
+                    </span>
+                    <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full border border-gray-200">
+                      {r.vehicleType}
+                    </span>
+                  </div>
+                  <p className="font-bold text-gray-800">{r.callerName} — <span className="font-mono text-sm">{r.callerMobile}</span></p>
+                  {r.emergency && <p className="text-xs text-red-600 font-semibold mt-0.5">⚕️ {r.emergency}</p>}
+                  <p className="text-xs text-gray-500 mt-0.5">📍 {r.address}{r.landmark ? ` (${r.landmark})` : ""}, {r.district}</p>
+                  {r.assignedDriver && (
+                    <p className="text-xs text-blue-600 mt-0.5">🚑 {r.assignedDriver} · {r.vehicleNumber} · ETA: {r.estimatedETA}</p>
+                  )}
+                  <p className="text-[11px] text-gray-400 mt-1">{fmtDt(r.createdAt)}</p>
+                </div>
+                <button onClick={() => { setSelected(r); setNewStatus(r.status); setDriverName(r.assignedDriver||""); setVehicleNo(r.vehicleNumber||""); setEta(r.estimatedETA||""); setAdminNotes(r.adminNotes||""); }}
+                  className="flex-shrink-0 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 px-3 py-2 rounded-xl text-xs font-bold transition">
+                  Update
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Update modal */}
+      {selected && (
+        <>
+          <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={() => setSelected(null)} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-6 space-y-4">
+              <div>
+                <h3 className="font-bold text-gray-800 text-lg">Update Request</h3>
+                <p className="text-sm text-gray-500 font-mono">{selected.requestId}</p>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</label>
+                  <select value={newStatus} onChange={(e) => setNewStatus(e.target.value)}
+                    className="mt-1.5 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-400">
+                    {["pending","dispatched","arrived","completed","cancelled"].map((s) => (
+                      <option key={s} value={s}>{s.charAt(0).toUpperCase()+s.slice(1)}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Driver Name</label>
+                  <input value={driverName} onChange={(e) => setDriverName(e.target.value)}
+                    placeholder="Driver ka naam"
+                    className="mt-1.5 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-400" />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Vehicle No.</label>
+                    <input value={vehicleNo} onChange={(e) => setVehicleNo(e.target.value)}
+                      placeholder="BR01-XY-1234"
+                      className="mt-1.5 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-400" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">ETA</label>
+                    <input value={eta} onChange={(e) => setEta(e.target.value)}
+                      placeholder="10-15 mins"
+                      className="mt-1.5 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-400" />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Admin Notes</label>
+                  <input value={adminNotes} onChange={(e) => setAdminNotes(e.target.value)}
+                    placeholder="Internal note"
+                    className="mt-1.5 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-400" />
+                </div>
+              </div>
+              <div className="flex gap-3 pt-1">
+                <button onClick={() => setSelected(null)}
+                  className="flex-1 border border-gray-200 text-gray-600 py-3 rounded-xl text-sm font-semibold">Cancel</button>
+                <button onClick={handleUpdate} disabled={updating}
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white py-3 rounded-xl text-sm font-semibold transition disabled:opacity-50">
+                  {updating ? "Saving..." : "Update Karein"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // ── MAIN PAGE ─────────────────────────────────────────────────────────────────
 export default function AdminPage() {
   const [authed, setAuthed]     = useState(false);
@@ -1483,6 +2752,10 @@ export default function AdminPage() {
     { key: "labtests",  icon: "🧪", label: "Lab Tests",  badge: stats?.totalLabTests     },
     { key: "bookings",  icon: "📋", label: "Bookings",   badge: stats?.bookings?.pending },
     { key: "staff",     icon: "👔", label: "Staff"                                       },
+    { key: "promo",       icon: "🎟️", label: "Promo Codes"                              },
+    { key: "reports",     icon: "📈", label: "Revenue Reports"                          },
+    { key: "accounting",  icon: "💰", label: "Accounting"                               },
+    { key: "ambulance",   icon: "🚑", label: "Ambulance"                                },
   ];
 
   return (
@@ -1547,6 +2820,10 @@ export default function AdminPage() {
         {activeTab === "labtests"  && <LabTestsTab />}
         {activeTab === "bookings"  && <BookingsTab onOpenPatient={setDrawerUserId} />}
         {activeTab === "staff"     && <StaffTab />}
+        {activeTab === "promo"       && <PromoCodesTab />}
+        {activeTab === "reports"     && <RevenueReportsTab />}
+        {activeTab === "accounting"  && <AccountingTab />}
+        {activeTab === "ambulance"   && <AmbulanceTab />}
       </main>
     </div>
   );

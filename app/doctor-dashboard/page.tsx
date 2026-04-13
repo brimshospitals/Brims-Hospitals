@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type Booking = {
@@ -64,6 +64,116 @@ function Initials({ name, photo }: { name: string; photo: string }) {
   );
 }
 
+// ── Prescription Upload Modal ─────────────────────────────────────────────────
+function PrescriptionModal({ booking, onClose }: { booking: Booking; onClose: () => void }) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [file, setFile]       = useState<File | null>(null);
+  const [notes, setNotes]     = useState("");
+  const [title, setTitle]     = useState(`Prescription — ${new Date().toLocaleDateString("en-IN")}`);
+  const [uploading, setUploading] = useState(false);
+  const [done, setDone]       = useState(false);
+  const [err, setErr]         = useState("");
+
+  async function handleUpload() {
+    if (!file) { setErr("File choose karein"); return; }
+    setUploading(true); setErr("");
+    try {
+      // 1. Upload to Cloudinary
+      const fd = new FormData();
+      fd.append("file", file);
+      const upRes  = await fetch("/api/upload-report", { method: "POST", body: fd });
+      const upData = await upRes.json();
+      if (!upData.success) { setErr(upData.message); return; }
+
+      // 2. Save prescription record
+      const res  = await fetch("/api/doctor/prescription", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bookingId: booking._id,
+          fileUrl:   upData.url,
+          fileType:  upData.fileType,
+          title,
+          notes,
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) { setErr(data.message); return; }
+      setDone(true);
+    } finally { setUploading(false); }
+  }
+
+  if (done) {
+    return (
+      <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl w-full max-w-sm p-8 text-center space-y-3">
+          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto text-3xl">✓</div>
+          <p className="font-bold text-gray-800">Prescription Upload Ho Gayi!</p>
+          <p className="text-sm text-gray-500">Patient apni reports mein dekh sakta hai.</p>
+          <button onClick={onClose} className="w-full py-3 bg-blue-600 text-white rounded-xl font-medium text-sm">Done</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-md p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-bold text-gray-800">Prescription Upload</h3>
+            <p className="text-xs text-gray-400 mt-0.5">{booking.patientName}</p>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 transition">×</button>
+        </div>
+
+        {err && <p className="text-red-600 text-sm bg-red-50 rounded-xl px-3 py-2">{err}</p>}
+
+        <div>
+          <label className="text-xs text-gray-500 font-medium">Title</label>
+          <input value={title} onChange={(e) => setTitle(e.target.value)}
+            className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400" />
+        </div>
+
+        <div>
+          <label className="text-xs text-gray-500 font-medium">Notes / Diagnosis (optional)</label>
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2}
+            placeholder="Patient ko kya bataya, medicines, follow-up..."
+            className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400 resize-none" />
+        </div>
+
+        <div
+          onClick={() => fileRef.current?.click()}
+          className="border-2 border-dashed border-gray-200 rounded-xl p-5 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors">
+          {file ? (
+            <div>
+              <p className="text-sm font-medium text-blue-700">✓ {file.name}</p>
+              <p className="text-xs text-gray-400 mt-1">{(file.size/1024).toFixed(0)} KB</p>
+            </div>
+          ) : (
+            <div>
+              <p className="text-2xl mb-1">📋</p>
+              <p className="text-sm text-gray-500">Prescription file choose karein</p>
+              <p className="text-xs text-gray-400 mt-1">PDF, JPG, PNG — max 10 MB</p>
+            </div>
+          )}
+        </div>
+        <input ref={fileRef} type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden"
+          onChange={(e) => setFile(e.target.files?.[0] || null)} />
+
+        <div className="flex gap-3">
+          <button onClick={onClose}
+            className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-600">Cancel</button>
+          <button onClick={handleUpload} disabled={uploading || !file}
+            className="flex-1 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-medium disabled:opacity-60 flex items-center justify-center gap-2">
+            {uploading ? <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />Uploading...</> : "Upload Karein"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function DoctorDashboard() {
   const router = useRouter();
   const [doctorId, setDoctorId]     = useState("");
@@ -73,7 +183,8 @@ export default function DoctorDashboard() {
   const [tab, setTab]               = useState("today");
   const [typeFilter, setTypeFilter] = useState("all");
   const [loading, setLoading]       = useState(true);
-  const [updating, setUpdating]     = useState<string | null>(null);
+  const [updating, setUpdating]         = useState<string | null>(null);
+  const [prescriptionBooking, setPrescriptionBooking] = useState<Booking | null>(null);
 
   useEffect(() => {
     const role = localStorage.getItem("userRole");
@@ -151,11 +262,18 @@ export default function DoctorDashboard() {
               <p className="text-xs text-gray-500">{doctor?.department} · {doctor?.hospitalName}</p>
             </div>
           </div>
+          <a href="/doctor-profile" className="text-xs text-blue-600 hover:bg-blue-50 transition-colors px-3 py-1.5 rounded-lg font-medium border border-blue-100">
+            Edit Profile
+          </a>
           <button onClick={logout} className="text-xs text-gray-500 hover:text-red-500 transition-colors px-3 py-1.5 rounded-lg hover:bg-red-50">
             Logout
           </button>
         </div>
       </header>
+
+      {prescriptionBooking && (
+        <PrescriptionModal booking={prescriptionBooking} onClose={() => setPrescriptionBooking(null)} />
+      )}
 
       <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
         {/* Stats */}
@@ -270,6 +388,14 @@ export default function DoctorDashboard() {
                         className="text-xs bg-teal-500 text-white px-3 py-1 rounded-lg hover:bg-teal-600 transition-colors disabled:opacity-50"
                       >
                         {updating === b._id ? "..." : "Done"}
+                      </button>
+                    )}
+                    {(b.status === "confirmed" || b.status === "completed") && (
+                      <button
+                        onClick={() => setPrescriptionBooking(b)}
+                        className="text-xs bg-indigo-50 text-indigo-700 border border-indigo-100 px-3 py-1 rounded-lg hover:bg-indigo-100 transition-colors"
+                      >
+                        📋 Prescription
                       </button>
                     )}
                   </div>

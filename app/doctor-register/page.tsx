@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const DEPARTMENTS = [
   "General Medicine","General Surgery","Pediatrics","Gynecology & Obstetrics",
@@ -15,12 +15,26 @@ const BIHAR_DISTRICTS = [
   "East Champaran","Sheikhpura","Lakhisarai","Jamui","Banka","Munger","Samastipur","Other",
 ];
 
+type HospitalOption = {
+  _id: string;
+  name: string;
+  hospitalId?: string;
+  address?: { district?: string; city?: string };
+};
+
 type Step = "form" | "success";
+type HospitalMode = "network" | "private";
 
 export default function DoctorRegisterPage() {
-  const [step, setStep] = useState<Step>("form");
+  const [step, setStep]   = useState<Step>("form");
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState("");
+
+  // Hospital selection
+  const [hospitalMode, setHospitalMode]   = useState<HospitalMode>("network");
+  const [hospitals, setHospitals]         = useState<HospitalOption[]>([]);
+  const [hospitalsLoading, setHospitalsLoading] = useState(true);
+  const [selectedHospitalId, setSelectedHospitalId] = useState("");
 
   const [form, setForm] = useState({
     name:         "",
@@ -28,14 +42,21 @@ export default function DoctorRegisterPage() {
     email:        "",
     department:   "",
     speciality:   "",
-    degreesStr:   "",   // comma separated → split on submit
+    degreesStr:   "",
     experience:   "",
     opdFee:       "",
+    // private clinic fields
     hospitalName: "",
     district:     "",
     city:         "",
-    about:        "",
   });
+
+  useEffect(() => {
+    fetch("/api/hospitals-public")
+      .then((r) => r.json())
+      .then((d) => { if (d.success) setHospitals(d.hospitals); })
+      .finally(() => setHospitalsLoading(false));
+  }, []);
 
   function setF(key: string, val: string) {
     setForm((p) => ({ ...p, [key]: val }));
@@ -43,37 +64,51 @@ export default function DoctorRegisterPage() {
 
   async function handleSubmit() {
     setError("");
-    const required = ["name","mobile","department","opdFee"];
-    for (const k of required) {
-      if (!(form as any)[k].trim()) {
-        setError("Naam, Mobile, Department aur OPD Fee zaruri hai"); return;
-      }
+
+    // Validate required fields
+    const { name, mobile, department, opdFee } = form;
+    if (!name.trim() || !mobile.trim() || !department || !opdFee) {
+      setError("Naam, Mobile, Department aur OPD Fee zaruri hai"); return;
     }
-    if (!/^\d{10}$/.test(form.mobile.trim())) {
+    if (!/^\d{10}$/.test(mobile.trim())) {
       setError("Valid 10-digit mobile number daalo"); return;
     }
-    if (Number(form.opdFee) <= 0) {
+    if (Number(opdFee) <= 0) {
       setError("Valid OPD fee daalo"); return;
+    }
+
+    // Hospital validation
+    if (hospitalMode === "network" && !selectedHospitalId) {
+      setError("Brims network mein se hospital select karein ya Private Clinic choose karein"); return;
+    }
+    if (hospitalMode === "private" && !form.hospitalName.trim()) {
+      setError("Clinic / Hospital ka naam daalo"); return;
     }
 
     setLoading(true);
     try {
+      const payload: Record<string, unknown> = {
+        ...form,
+        degrees:    form.degreesStr ? form.degreesStr.split(",").map((s) => s.trim()).filter(Boolean) : [],
+        experience: Number(form.experience) || 0,
+        opdFee:     Number(form.opdFee),
+      };
+
+      if (hospitalMode === "network") {
+        payload.hospitalId = selectedHospitalId;
+        // hospitalName will be resolved server-side from hospitalId
+        payload.hospitalName = "";
+      }
+      // private mode: hospitalName, district, city are already in form
+
       const res  = await fetch("/api/doctor-register", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({
-          ...form,
-          degrees:    form.degreesStr ? form.degreesStr.split(",").map((s) => s.trim()).filter(Boolean) : [],
-          experience: Number(form.experience) || 0,
-          opdFee:     Number(form.opdFee),
-        }),
+        body:    JSON.stringify(payload),
       });
       const data = await res.json();
-      if (data.success) {
-        setStep("success");
-      } else {
-        setError(data.message);
-      }
+      if (data.success) setStep("success");
+      else setError(data.message);
     } catch {
       setError("Network error. Dobara try karein.");
     }
@@ -116,6 +151,8 @@ export default function DoctorRegisterPage() {
     );
   }
 
+  const selectedHospital = hospitals.find((h) => h._id === selectedHospitalId);
+
   return (
     <main className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50">
 
@@ -156,7 +193,7 @@ export default function DoctorRegisterPage() {
             </div>
           )}
 
-          {/* Section: Personal Info */}
+          {/* ── Section 1: Personal Info ── */}
           <div>
             <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wide mb-4 flex items-center gap-2">
               <span className="w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-bold">1</span>
@@ -188,10 +225,9 @@ export default function DoctorRegisterPage() {
             </div>
           </div>
 
-          {/* Divider */}
           <div className="border-t border-gray-100" />
 
-          {/* Section: Professional Info */}
+          {/* ── Section 2: Professional Info ── */}
           <div>
             <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wide mb-4 flex items-center gap-2">
               <span className="w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-bold">2</span>
@@ -233,43 +269,125 @@ export default function DoctorRegisterPage() {
             </div>
           </div>
 
-          {/* Divider */}
           <div className="border-t border-gray-100" />
 
-          {/* Section: Location */}
+          {/* ── Section 3: Hospital / Clinic ── */}
           <div>
             <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wide mb-4 flex items-center gap-2">
               <span className="w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-bold">3</span>
-              Practice Location
+              Hospital / Clinic Association *
             </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="sm:col-span-2">
-                <label className="text-xs font-medium text-gray-500">Hospital / Clinic ka Naam</label>
-                <input value={form.hospitalName} onChange={(e) => setF("hospitalName", e.target.value)}
-                  placeholder="Ram Hospital, Chapra"
-                  className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400 transition-all" />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-gray-500">District</label>
-                <select value={form.district} onChange={(e) => setF("district", e.target.value)}
-                  className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400 bg-white transition-all">
-                  <option value="">-- District --</option>
-                  {BIHAR_DISTRICTS.map((d) => <option key={d}>{d}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-gray-500">City / Town</label>
-                <input value={form.city} onChange={(e) => setF("city", e.target.value)}
-                  placeholder="Chapra"
-                  className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400 transition-all" />
-              </div>
-              <div className="sm:col-span-2">
-                <label className="text-xs font-medium text-gray-500">About / Kuch aur batayein</label>
-                <textarea value={form.about} onChange={(e) => setF("about", e.target.value)}
-                  rows={3} placeholder="Apne baare mein kuch likhen..."
-                  className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400 transition-all resize-none" />
-              </div>
+
+            {/* Toggle: Network vs Private */}
+            <div className="flex gap-3 mb-4">
+              <button
+                type="button"
+                onClick={() => setHospitalMode("network")}
+                className={`flex-1 py-3 rounded-xl border text-sm font-medium transition-all flex items-center justify-center gap-2 ${
+                  hospitalMode === "network"
+                    ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                    : "bg-white text-gray-600 border-gray-200 hover:border-blue-300"
+                }`}
+              >
+                🏥 Brims Network Hospital
+              </button>
+              <button
+                type="button"
+                onClick={() => setHospitalMode("private")}
+                className={`flex-1 py-3 rounded-xl border text-sm font-medium transition-all flex items-center justify-center gap-2 ${
+                  hospitalMode === "private"
+                    ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                    : "bg-white text-gray-600 border-gray-200 hover:border-blue-300"
+                }`}
+              >
+                🏠 Private Clinic / New
+              </button>
             </div>
+
+            {/* Network: dropdown from verified hospitals */}
+            {hospitalMode === "network" && (
+              <div className="space-y-3">
+                {hospitalsLoading ? (
+                  <div className="h-11 bg-gray-100 rounded-xl animate-pulse" />
+                ) : hospitals.length === 0 ? (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-700">
+                    ⚠️ Abhi koi verified hospital Brims network mein nahi hai.
+                    Private Clinic choose karein ya{" "}
+                    <a href="/hospital-onboarding" className="underline font-medium">hospital onboard karein</a>.
+                  </div>
+                ) : (
+                  <div>
+                    <label className="text-xs font-medium text-gray-500">Hospital Select Karein *</label>
+                    <select
+                      value={selectedHospitalId}
+                      onChange={(e) => setSelectedHospitalId(e.target.value)}
+                      className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400 bg-white transition-all"
+                    >
+                      <option value="">-- Hospital chunein --</option>
+                      {hospitals.map((h) => (
+                        <option key={h._id} value={h._id}>
+                          {h.name}{h.address?.district ? ` — ${h.address.district}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Selected hospital info card */}
+                {selectedHospital && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center gap-3">
+                    <span className="text-2xl">🏥</span>
+                    <div>
+                      <p className="font-semibold text-blue-800 text-sm">{selectedHospital.name}</p>
+                      <p className="text-xs text-blue-600">
+                        {[selectedHospital.address?.city, selectedHospital.address?.district].filter(Boolean).join(", ")}
+                      </p>
+                    </div>
+                    <button type="button" onClick={() => setSelectedHospitalId("")}
+                      className="ml-auto text-blue-400 hover:text-blue-600 text-lg leading-none">×</button>
+                  </div>
+                )}
+
+                <p className="text-xs text-gray-400">
+                  Aapki hospital network mein nahi hai?{" "}
+                  <a href="/hospital-onboarding" className="text-blue-500 underline">Pehle hospital onboard karein</a>
+                  {" "}ya Private Clinic choose karein.
+                </p>
+              </div>
+            )}
+
+            {/* Private clinic: manual entry */}
+            {hospitalMode === "private" && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="sm:col-span-2">
+                  <label className="text-xs font-medium text-gray-500">Clinic / Hospital ka Naam *</label>
+                  <input value={form.hospitalName} onChange={(e) => setF("hospitalName", e.target.value)}
+                    placeholder="Ram Clinic, Chapra"
+                    className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400 transition-all" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-500">District</label>
+                  <select value={form.district} onChange={(e) => setF("district", e.target.value)}
+                    className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400 bg-white transition-all">
+                    <option value="">-- District --</option>
+                    {BIHAR_DISTRICTS.map((d) => <option key={d}>{d}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-500">City / Town</label>
+                  <input value={form.city} onChange={(e) => setF("city", e.target.value)}
+                    placeholder="Chapra"
+                    className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400 transition-all" />
+                </div>
+                <div className="sm:col-span-2">
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-700">
+                    💡 Private clinic ko Brims network mein join karne ke liye{" "}
+                    <a href="/hospital-onboarding" className="underline font-medium">Hospital Onboarding</a>{" "}
+                    karein — zyada patients milenge!
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Submit */}
@@ -289,7 +407,6 @@ export default function DoctorRegisterPage() {
           </div>
         </div>
 
-        {/* Already registered link */}
         <p className="text-center text-sm text-gray-500 mt-5">
           Pehle se registered hain?{" "}
           <a href="/staff-login" className="text-blue-600 font-medium hover:underline">

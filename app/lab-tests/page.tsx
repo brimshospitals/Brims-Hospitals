@@ -44,6 +44,11 @@ export default function LabTestsPage() {
   const [selectedSlot, setSelectedSlot]     = useState("");
   const [paymentType, setPaymentType]       = useState("counter");
 
+  // Home collection address
+  const [hcAddress, setHcAddress] = useState({
+    flat: "", street: "", landmark: "", district: "Patna", pincode: "",
+  });
+
   useEffect(() => {
     fetchTests();
     fetchUserData();
@@ -109,6 +114,7 @@ export default function LabTestsPage() {
     setSelectedSlot("");
     setPaymentType("online");
     setSelectedPatient(null);
+    setHcAddress({ flat: "", street: "", landmark: "", district: "Patna", pincode: "" });
     setMessage("");
   }
 
@@ -125,6 +131,12 @@ export default function LabTestsPage() {
         return;
       }
 
+      if (homeCollection && (!hcAddress.street || !hcAddress.district)) {
+        setMessage("❌ Pickup address fill karein");
+        setBooking(false);
+        return;
+      }
+
       const familyCardId = localStorage.getItem("familyCardId") || null;
 
       // Online payment — PhonePe pe redirect karo
@@ -137,8 +149,11 @@ export default function LabTestsPage() {
             memberId: selectedPatient.userId || userId,
             labTestId: selectedTest._id,
             appointmentDate: appointmentDate || null,
-            slot: homeCollection ? "Home Collection" : selectedSlot,
+            slot: homeCollection
+              ? `Home Collection${selectedSlot ? " — " + selectedSlot : ""}${hcAddress.district ? " (" + hcAddress.district + ")" : ""}`
+              : selectedSlot,
             homeCollection,
+            homeAddress: homeCollection ? hcAddress : undefined,
             amount: getTotalAmount(selectedTest),
             patientName: selectedPatient.name,
             patientMobile: selectedPatient.mobile,
@@ -162,7 +177,10 @@ export default function LabTestsPage() {
           type: "Lab",
           labTestId: selectedTest._id,
           appointmentDate: appointmentDate || new Date().toISOString().split("T")[0],
-          slot: homeCollection ? "Home Collection" : selectedSlot,
+          slot: homeCollection
+            ? `Home Collection${selectedSlot ? " — " + selectedSlot : ""}${hcAddress.district ? " (" + hcAddress.district + ")" : ""}`
+            : selectedSlot,
+          homeAddress: homeCollection ? hcAddress : undefined,
           patientUserId: selectedPatient.userId,
           patientName: selectedPatient.name,
           patientMobile: selectedPatient.mobile,
@@ -365,42 +383,109 @@ export default function LabTestsPage() {
 
                 {/* Home Collection Toggle */}
                 {selectedTest.homeCollection && (
-                  <label className="flex items-center justify-between p-3 border border-gray-200 rounded-xl cursor-pointer hover:border-teal-400 transition">
-                    <div>
-                      <p className="text-sm font-medium text-gray-800">🏠 Home Collection</p>
-                      <p className="text-xs text-gray-500">
-                        {selectedTest.homeCollectionCharge === 0
-                          ? "FREE home collection"
-                          : `+₹${selectedTest.homeCollectionCharge} extra charge`}
-                      </p>
+                  <button
+                    type="button"
+                    onClick={() => { setHomeCollection((v) => !v); setSelectedSlot(""); }}
+                    className={`w-full flex items-center justify-between p-4 rounded-xl border-2 transition ${
+                      homeCollection ? "border-teal-500 bg-teal-50" : "border-gray-200 hover:border-teal-300"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">🏠</span>
+                      <div className="text-left">
+                        <p className="text-sm font-bold text-gray-800">Ghar pe Sample Collection</p>
+                        <p className="text-xs text-gray-500">
+                          {selectedTest.homeCollectionCharge === 0
+                            ? "✅ FREE — koi extra charge nahi"
+                            : `+₹${selectedTest.homeCollectionCharge} collection charge`}
+                        </p>
+                      </div>
                     </div>
-                    <input type="checkbox" checked={homeCollection}
-                      onChange={(e) => { setHomeCollection(e.target.checked); setSelectedSlot(""); }}
-                      className="w-5 h-5 accent-teal-600" />
-                  </label>
+                    <div className={`w-12 h-6 rounded-full transition-colors relative ${homeCollection ? "bg-teal-600" : "bg-gray-200"}`}>
+                      <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${homeCollection ? "left-7" : "left-1"}`} />
+                    </div>
+                  </button>
                 )}
 
-                {/* Date & Slot */}
+                {/* Home Collection Address */}
+                {homeCollection && (
+                  <div className="bg-green-50 border border-green-200 rounded-2xl p-4 space-y-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-green-600 text-lg">📍</span>
+                      <p className="text-sm font-bold text-green-800">Pickup Address</p>
+                    </div>
+                    <input
+                      value={hcAddress.flat}
+                      onChange={(e) => setHcAddress({ ...hcAddress, flat: e.target.value })}
+                      placeholder="Flat / House No. / Building name"
+                      className="w-full border border-green-200 bg-white rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                    />
+                    <input
+                      value={hcAddress.street}
+                      onChange={(e) => setHcAddress({ ...hcAddress, street: e.target.value })}
+                      placeholder="Street / Mohalla / Area *"
+                      className="w-full border border-green-200 bg-white rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                    />
+                    <input
+                      value={hcAddress.landmark}
+                      onChange={(e) => setHcAddress({ ...hcAddress, landmark: e.target.value })}
+                      placeholder="Landmark (e.g. Near XYZ School)"
+                      className="w-full border border-green-200 bg-white rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <select
+                        value={hcAddress.district}
+                        onChange={(e) => setHcAddress({ ...hcAddress, district: e.target.value })}
+                        className="border border-green-200 bg-white rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                      >
+                        {biharDistricts.map((d) => <option key={d} value={d}>{d}</option>)}
+                      </select>
+                      <input
+                        value={hcAddress.pincode}
+                        onChange={(e) => setHcAddress({ ...hcAddress, pincode: e.target.value })}
+                        placeholder="Pincode"
+                        maxLength={6}
+                        className="border border-green-200 bg-white rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Date */}
                 <div>
-                  <p className="text-sm font-medium text-gray-700 mb-2">
-                    {homeCollection ? "Collection Date Choose Karein" : "Visit Date & Time"}
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                    {homeCollection ? "Pickup Date *" : "Visit Date *"}
                   </p>
                   <input type="date" value={appointmentDate} min={minDate}
                     onChange={(e) => setAppointmentDate(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 mb-3" />
-                  {!homeCollection && (
-                    <div className="grid grid-cols-2 gap-2">
-                      {timeSlots.map((slot) => (
-                        <button key={slot} onClick={() => setSelectedSlot(slot)}
-                          className={`py-2 px-3 rounded-lg text-xs font-medium border transition ${
-                            selectedSlot === slot
-                              ? "bg-teal-600 text-white border-teal-600"
-                              : "border-gray-200 text-gray-700 hover:border-teal-400"
-                          }`}>
-                          {slot}
-                        </button>
-                      ))}
-                    </div>
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                  />
+                </div>
+
+                {/* Time Slot */}
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                    {homeCollection ? "Pickup Time Slot" : "Visit Time Slot"}
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(homeCollection
+                      ? ["6:00 AM - 8:00 AM", "8:00 AM - 10:00 AM", "10:00 AM - 12:00 PM", "12:00 PM - 2:00 PM"]
+                      : timeSlots
+                    ).map((slot) => (
+                      <button key={slot} type="button" onClick={() => setSelectedSlot(slot)}
+                        className={`py-2 px-3 rounded-xl text-xs font-semibold border transition ${
+                          selectedSlot === slot
+                            ? "bg-teal-600 text-white border-teal-600"
+                            : "border-gray-200 text-gray-700 hover:border-teal-400"
+                        }`}>
+                        {homeCollection ? "🚗 " : "🕐 "}{slot}
+                      </button>
+                    ))}
+                  </div>
+                  {homeCollection && (
+                    <p className="text-xs text-gray-400 mt-2">
+                      ⓘ Fasting tests ke liye suba ka slot recommend hai
+                    </p>
                   )}
                 </div>
 
