@@ -93,7 +93,7 @@ const specializations = ["All", "General Physician", "Gynaecologist", "Orthopaed
 
 export default function DoctorsPage() {
   const [selected, setSelected] = useState("All");
-  const [expanded, setExpanded] = useState<number | null>(null);
+  const [expanded, setExpanded] = useState<number | null | undefined>(undefined);
 
   const filtered = selected === "All" ? doctors : doctors.filter(d => d.specialization === selected);
 
@@ -197,7 +197,7 @@ export default function DoctorsPage() {
                   Book Appointment
                 </a>
                 <button
-                  onClick={() => setExpanded(expanded === doc.id ? null : doc.id)}
+                  onClick={() => setExpanded(expanded === doc.id ? undefined : (doc.id as number))}
                   className="border border-teal-600 text-teal-600 px-5 py-2 rounded-xl text-sm font-semibold hover:bg-teal-50 transition">
                   {expanded === doc.id ? "Hide Profile" : "View Profile"}
                 </button>
@@ -205,7 +205,7 @@ export default function DoctorsPage() {
             </div>
 
             {/* Expanded Profile */}
-            {expanded === doc.id && (
+            {expanded !== undefined && expanded === doc.id && (
               <div className="border-t border-gray-100 px-6 py-5 bg-teal-50">
                 <h4 className="text-sm font-bold text-teal-700 mb-2">About Doctor</h4>
                 <p className="text-gray-600 text-sm">{doc.bio}</p>
