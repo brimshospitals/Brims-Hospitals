@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type Tab = "overview" | "members" | "hospitals" | "doctors" | "packages" | "labtests" | "bookings" | "staff" | "promo" | "reports" | "accounting" | "ambulance";
+type Tab = "overview" | "members" | "hospitals" | "doctors" | "packages" | "labtests" | "bookings" | "staff" | "promo" | "reports" | "accounting" | "ambulance" | "articles" | "notifications";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   pending:   { label: "Pending",   color: "bg-yellow-100 text-yellow-700 border-yellow-200" },
@@ -440,6 +440,21 @@ function OverviewTab({ stats, onNavigate }: { stats: any; onNavigate: (tab: Tab)
         <p className="text-xs text-gray-400">{new Date().toLocaleDateString("en-IN", { day:"2-digit", month:"long", year:"numeric" })}</p>
       </div>
 
+      {/* ── TODAY row ── */}
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          { label: "Today's Bookings", value: analytics?.today?.bookings ?? "—", icon: "📋", bg: "bg-gradient-to-br from-teal-500 to-teal-600", text: "text-white" },
+          { label: "Today's Revenue",  value: analytics?.today?.revenue  != null ? fmtINR(analytics.today.revenue) : "—", icon: "💰", bg: "bg-gradient-to-br from-emerald-500 to-emerald-600", text: "text-white" },
+          { label: "New Users Today",  value: analytics?.today?.newUsers ?? "—", icon: "👥", bg: "bg-gradient-to-br from-blue-500 to-blue-600", text: "text-white" },
+        ].map(({ label, value, icon, bg, text }) => (
+          <div key={label} className={`${bg} rounded-2xl p-4 shadow-md`}>
+            <p className="text-2xl mb-1">{icon}</p>
+            <p className={`text-3xl font-extrabold ${text}`}>{value}</p>
+            <p className={`text-xs font-medium mt-0.5 ${text} opacity-80`}>{label}</p>
+          </div>
+        ))}
+      </div>
+
       {/* ── KPI tiles ── */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         {[
@@ -596,7 +611,7 @@ function OverviewTab({ stats, onNavigate }: { stats: any; onNavigate: (tab: Tab)
           )}
         </div>
 
-        {/* This month + status donut-style */}
+        {/* This month + status */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
           <p className="font-bold text-gray-800">📆 This Month</p>
           <div className="grid grid-cols-2 gap-3">
@@ -631,6 +646,93 @@ function OverviewTab({ stats, onNavigate }: { stats: any; onNavigate: (tab: Tab)
             <p className="text-xs text-gray-400">All-time paid revenue</p>
             <p className="text-xl font-bold text-emerald-700">{fmtINR(analytics?.summary?.totalRevenuePaid || 0)}</p>
           </div>
+        </div>
+      </div>
+
+      {/* ── Payment Mode Breakdown ── */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+        <p className="font-bold text-gray-800 mb-4">💳 Payment Mode Breakdown</p>
+        {aLoading ? (
+          <div className="grid grid-cols-4 gap-3">{[1,2,3,4].map((i) => <div key={i} className="h-16 bg-gray-100 rounded-xl animate-pulse" />)}</div>
+        ) : (analytics?.byPaymentMode || []).length === 0 ? (
+          <p className="text-sm text-gray-400">No payment data</p>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {(analytics?.byPaymentMode || []).map((p: any) => {
+              const pmIcons: Record<string,string> = { counter:"🏢", online:"📱", wallet:"💼", insurance:"🛡️" };
+              const pmColors: Record<string,string> = { counter:"bg-amber-50 border-amber-100 text-amber-700", online:"bg-blue-50 border-blue-100 text-blue-700", wallet:"bg-teal-50 border-teal-100 text-teal-700", insurance:"bg-purple-50 border-purple-100 text-purple-700" };
+              const label = p._id === "counter" ? "Counter / Cash" : p._id === "online" ? "Online / UPI" : p._id === "wallet" ? "Brims Wallet" : p._id === "insurance" ? "Insurance" : p._id || "Other";
+              const cls   = pmColors[p._id] || "bg-gray-50 border-gray-100 text-gray-700";
+              return (
+                <div key={p._id} className={`${cls} border rounded-xl p-4`}>
+                  <p className="text-xl mb-1">{pmIcons[p._id] || "💳"}</p>
+                  <p className="text-xl font-bold">{p.count}</p>
+                  <p className="text-xs font-semibold mt-0.5">{label}</p>
+                  <p className="text-xs opacity-70 mt-0.5">{fmtINR(p.revenue)}</p>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ── Top Hospitals + Top Doctors ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+
+        {/* Top Hospitals */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+          <p className="font-bold text-gray-800 mb-4">🏥 Top Hospitals</p>
+          {aLoading ? (
+            <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-10 bg-gray-100 rounded-xl animate-pulse" />)}</div>
+          ) : (analytics?.topHospitals || []).length === 0 ? (
+            <p className="text-sm text-gray-400">No hospital bookings yet</p>
+          ) : (
+            <div className="space-y-2">
+              {(analytics?.topHospitals || []).map((h: any, i: number) => (
+                <div key={i} className="flex items-center gap-3 bg-gray-50 rounded-xl px-3 py-2.5">
+                  <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${i === 0 ? "bg-yellow-400 text-yellow-900" : i === 1 ? "bg-gray-300 text-gray-700" : i === 2 ? "bg-orange-300 text-orange-900" : "bg-gray-100 text-gray-500"}`}>
+                    {i + 1}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-800 truncate">{h.name}</p>
+                    {h.district && <p className="text-xs text-gray-400">{h.district}</p>}
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-sm font-bold text-teal-700">{h.count} bookings</p>
+                    <p className="text-xs text-gray-400">{fmtINR(h.revenue)}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Top Doctors */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+          <p className="font-bold text-gray-800 mb-4">🩺 Top Doctors</p>
+          {aLoading ? (
+            <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-10 bg-gray-100 rounded-xl animate-pulse" />)}</div>
+          ) : (analytics?.topDoctors || []).length === 0 ? (
+            <p className="text-sm text-gray-400">No doctor bookings yet</p>
+          ) : (
+            <div className="space-y-2">
+              {(analytics?.topDoctors || []).map((d: any, i: number) => (
+                <div key={i} className="flex items-center gap-3 bg-gray-50 rounded-xl px-3 py-2.5">
+                  <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${i === 0 ? "bg-yellow-400 text-yellow-900" : i === 1 ? "bg-gray-300 text-gray-700" : i === 2 ? "bg-orange-300 text-orange-900" : "bg-gray-100 text-gray-500"}`}>
+                    {i + 1}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-800 truncate">Dr. {d.name}</p>
+                    <p className="text-xs text-gray-400">{d.department}{d.hospitalName ? ` · ${d.hospitalName}` : ""}</p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-sm font-bold text-blue-700">{d.count} appts</p>
+                    <p className="text-xs text-gray-400">{fmtINR(d.revenue)}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -1436,15 +1538,177 @@ function AddStaffModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
 }
 
 // ── TAB: Staff ────────────────────────────────────────────────────────────────
+function StaffAccountingView() {
+  const [data, setData]       = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [range, setRange]     = useState("today");
+  const [expanded, setExpanded] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      const res  = await fetch(`/api/admin/staff-accounting?range=${range}`);
+      const json = await res.json();
+      if (json.success) setData(json);
+      setLoading(false);
+    })();
+  }, [range]);
+
+  const fmt  = (n: number) => `₹${n.toLocaleString("en-IN")}`;
+  const fmtT = (d: string) => d ? new Date(d).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—";
+  const TYPE_COLORS: Record<string, string> = { OPD: "bg-blue-100 text-blue-700", Lab: "bg-yellow-100 text-yellow-700", Surgery: "bg-purple-100 text-purple-700", IPD: "bg-teal-100 text-teal-700", Consultation: "bg-indigo-100 text-indigo-700" };
+
+  const maxAmt = data?.perStaff?.length ? Math.max(...data.perStaff.map((s: any) => s.totalAmount)) : 1;
+
+  return (
+    <div className="space-y-4">
+      {/* Header + Range Filter */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-bold text-gray-800">💰 Staff-wise Collections</h2>
+          <p className="text-xs text-gray-400 mt-0.5">Har staff member ne kitna collect kiya</p>
+        </div>
+        <div className="flex gap-1.5">
+          {[["today","Today"],["week","This Week"],["month","This Month"],["all","All Time"]].map(([v,l]) => (
+            <button key={v} onClick={() => setRange(v)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${range === v ? "bg-purple-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
+              {l}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {loading ? <Spinner /> : !data ? <EmptyState icon="📊" message="Data load nahi hua" /> : (
+        <>
+          {/* Overall Summary Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="bg-gradient-to-br from-purple-500 to-purple-700 rounded-2xl p-4 text-white">
+              <p className="text-xs font-semibold opacity-80 uppercase tracking-wide mb-1">Total Collected</p>
+              <p className="text-2xl font-bold">{fmt(data.overall.total)}</p>
+              <p className="text-xs opacity-70 mt-0.5">{data.overall.count} bookings</p>
+            </div>
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Active Staff</p>
+              <p className="text-2xl font-bold text-gray-800">{data.perStaff.length}</p>
+              <p className="text-xs text-gray-400 mt-0.5">collected today</p>
+            </div>
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Avg per Staff</p>
+              <p className="text-2xl font-bold text-gray-800">{data.perStaff.length ? fmt(Math.round(data.overall.total / data.perStaff.length)) : "₹0"}</p>
+              <p className="text-xs text-gray-400 mt-0.5">this period</p>
+            </div>
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Top Collector</p>
+              <p className="text-base font-bold text-gray-800 truncate">{data.perStaff[0]?.staffName || "—"}</p>
+              <p className="text-xs text-purple-600 font-semibold mt-0.5">{data.perStaff[0] ? fmt(data.perStaff[0].totalAmount) : "₹0"}</p>
+            </div>
+          </div>
+
+          {/* Per-Staff Cards */}
+          {data.perStaff.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
+              <EmptyState icon="👔" message="Is period mein kisi ne collection nahi ki" />
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {data.perStaff.map((s: any) => {
+                const pct = maxAmt > 0 ? Math.round((s.totalAmount / maxAmt) * 100) : 0;
+                const isOpen = expanded === s._id;
+                return (
+                  <div key={s._id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                    <div className="p-4">
+                      <div className="flex items-center justify-between gap-3 mb-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center text-purple-700 font-bold text-base flex-shrink-0">
+                            {(s.staffName || "S")[0].toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-bold text-gray-800">{s.staffName || "Unknown Staff"}</p>
+                            <p className="text-xs text-gray-400">{s.totalBookings} transactions · Last: {fmtT(s.lastCollected)}</p>
+                          </div>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <p className="text-lg font-bold text-purple-700">{fmt(s.totalAmount)}</p>
+                          <button onClick={() => setExpanded(isOpen ? null : s._id)}
+                            className="text-xs text-gray-400 hover:text-purple-600 transition mt-0.5">
+                            {isOpen ? "▲ Hide" : "▼ Details"}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Progress bar */}
+                      <div className="h-2 bg-gray-100 rounded-full overflow-hidden mb-3">
+                        <div className="h-full bg-gradient-to-r from-purple-400 to-purple-600 rounded-full transition-all duration-500"
+                          style={{ width: `${pct}%` }} />
+                      </div>
+
+                      {/* Type breakdown pills */}
+                      <div className="flex flex-wrap gap-1.5">
+                        {Object.entries(s.typeCounts || {}).map(([type, cnt]) => (
+                          <span key={type} className={`text-xs px-2 py-0.5 rounded-full font-semibold ${TYPE_COLORS[type] || "bg-gray-100 text-gray-600"}`}>
+                            {type}: {cnt as number}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Expanded: Hourly breakdown for this staff */}
+                    {isOpen && (
+                      <div className="border-t border-gray-100 bg-gray-50 p-4">
+                        <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Today&apos;s Hourly Collection</p>
+                        <div className="flex items-end gap-1 h-16">
+                          {data.hourly.map((h: any) => {
+                            const barH = h.total > 0 ? Math.max(8, Math.round((h.total / Math.max(...data.hourly.map((x: any) => x.total), 1)) * 56)) : 4;
+                            return (
+                              <div key={h.hour} className="flex-1 flex flex-col items-center gap-1">
+                                <div className="w-full bg-purple-400 rounded-t" style={{ height: `${barH}px` }} title={`${h.hour}:00 — ${fmt(h.total)}`} />
+                                <span className="text-[9px] text-gray-400">{h.hour}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <p className="text-[10px] text-gray-400 mt-2 text-center">Hours 8am–8pm (overall, not staff-specific)</p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Hourly Chart (Overall) */}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+            <p className="text-sm font-bold text-gray-700 mb-4">Today&apos;s Hourly Collection (All Staff)</p>
+            <div className="flex items-end gap-1.5 h-20">
+              {data.hourly.map((h: any) => {
+                const maxH = Math.max(...data.hourly.map((x: any) => x.total), 1);
+                const barH = h.total > 0 ? Math.max(6, Math.round((h.total / maxH) * 72)) : 4;
+                return (
+                  <div key={h.hour} className="flex-1 flex flex-col items-center gap-1">
+                    <span className="text-[9px] text-gray-400">{h.total > 0 ? `₹${Math.round(h.total/1000)}k` : ""}</span>
+                    <div className={`w-full rounded-t transition-all ${h.total > 0 ? "bg-purple-500" : "bg-gray-100"}`} style={{ height: `${barH}px` }} />
+                    <span className="text-[9px] text-gray-400">{h.hour}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function StaffTab() {
-  const [staff, setStaff]         = useState<any[]>([]);
-  const [loading, setLoading]     = useState(true);
-  const [search, setSearch]       = useState("");
-  const [page, setPage]           = useState(1);
-  const [meta, setMeta]           = useState<any>({});
-  const [toggling, setToggling]   = useState<string | null>(null);
-  const [showAdd, setShowAdd]     = useState(false);
-  const [toast, setToast]         = useState("");
+  const [subTab, setSubTab]           = useState<"members" | "accounting">("members");
+  const [staff, setStaff]             = useState<any[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [search, setSearch]           = useState("");
+  const [page, setPage]               = useState(1);
+  const [meta, setMeta]               = useState<any>({});
+  const [toggling, setToggling]       = useState<string | null>(null);
+  const [showAdd, setShowAdd]         = useState(false);
+  const [toast, setToast]             = useState("");
 
   const fetch_ = useCallback(async (pg = 1) => {
     setLoading(true);
@@ -1456,7 +1720,7 @@ function StaffTab() {
     setLoading(false);
   }, [search]);
 
-  useEffect(() => { fetch_(1); setPage(1); }, [search]);
+  useEffect(() => { if (subTab === "members") { fetch_(1); setPage(1); } }, [search, subTab]);
 
   async function toggleActive(userId: string, current: boolean) {
     setToggling(userId);
@@ -1474,55 +1738,69 @@ function StaffTab() {
       {toast && <div className="fixed top-4 right-4 z-50 bg-teal-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold shadow-lg">{toast}</div>}
       {showAdd && <AddStaffModal onClose={() => setShowAdd(false)} onSaved={() => { fetch_(1); setToast("Staff member add ho gaya!"); setTimeout(() => setToast(""), 3000); }} />}
 
+      {/* Sub-tab switcher */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-bold text-gray-800">👔 Staff Members</h1>
-        <div className="flex gap-2 flex-wrap">
-          <SearchBar value={search} onChange={setSearch} placeholder="Name / Mobile..." />
-          <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition">
-            <span className="text-base leading-none">+</span> Add Staff
+        <div className="flex gap-1 bg-gray-100 p-1 rounded-xl">
+          <button onClick={() => setSubTab("members")}
+            className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${subTab === "members" ? "bg-white shadow text-purple-700" : "text-gray-500 hover:text-gray-700"}`}>
+            👔 Staff Members
+          </button>
+          <button onClick={() => setSubTab("accounting")}
+            className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${subTab === "accounting" ? "bg-white shadow text-purple-700" : "text-gray-500 hover:text-gray-700"}`}>
+            💰 Accounting
           </button>
         </div>
-      </div>
-
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-        {loading ? <Spinner /> : staff.length === 0 ? <EmptyState icon="👔" message="Koi staff member nahi mila" /> : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 border-b border-gray-100">
-                  <tr>
-                    {["Staff Member", "Mobile", "Age / Gender", "Member ID", "Joined", "Active"].map((h) => (
-                      <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {staff.map((s) => (
-                    <tr key={s._id} className={`hover:bg-gray-50 transition ${!s.isActive ? "opacity-60" : ""}`}>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          {s.photo ? <img src={s.photo} alt={s.name} className="w-8 h-8 rounded-lg object-cover flex-shrink-0" /> : <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center text-purple-700 font-bold text-sm flex-shrink-0">{s.name?.[0]}</div>}
-                          <p className="font-semibold text-gray-800">{s.name}</p>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-gray-600">📱 {s.mobile}</td>
-                      <td className="px-4 py-3 text-gray-600">{s.age} yrs · <span className="capitalize">{s.gender}</span></td>
-                      <td className="px-4 py-3 font-mono text-xs text-gray-400">{s.memberId || "—"}</td>
-                      <td className="px-4 py-3 text-xs text-gray-400">{fmtDate(s.createdAt)}</td>
-                      <td className="px-4 py-3">
-                        <Toggle value={s.isActive} onChange={() => toggleActive(s._id, s.isActive)} disabled={toggling === s._id} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="px-4 pb-4">
-              <Pagination page={page} pages={meta.pages ?? 1} total={meta.total ?? 0} onPage={(p) => { setPage(p); fetch_(p); }} />
-            </div>
-          </>
+        {subTab === "members" && (
+          <div className="flex gap-2 flex-wrap">
+            <SearchBar value={search} onChange={setSearch} placeholder="Name / Mobile..." />
+            <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition">
+              <span className="text-base leading-none">+</span> Add Staff
+            </button>
+          </div>
         )}
       </div>
+
+      {subTab === "accounting" ? <StaffAccountingView /> : (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          {loading ? <Spinner /> : staff.length === 0 ? <EmptyState icon="👔" message="Koi staff member nahi mila" /> : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-100">
+                    <tr>
+                      {["Staff Member", "Mobile", "Age / Gender", "Member ID", "Joined", "Active"].map((h) => (
+                        <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {staff.map((s) => (
+                      <tr key={s._id} className={`hover:bg-gray-50 transition ${!s.isActive ? "opacity-60" : ""}`}>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            {s.photo ? <img src={s.photo} alt={s.name} className="w-8 h-8 rounded-lg object-cover flex-shrink-0" /> : <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center text-purple-700 font-bold text-sm flex-shrink-0">{s.name?.[0]}</div>}
+                            <p className="font-semibold text-gray-800">{s.name}</p>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-gray-600">📱 {s.mobile}</td>
+                        <td className="px-4 py-3 text-gray-600">{s.age} yrs · <span className="capitalize">{s.gender}</span></td>
+                        <td className="px-4 py-3 font-mono text-xs text-gray-400">{s.memberId || "—"}</td>
+                        <td className="px-4 py-3 text-xs text-gray-400">{fmtDate(s.createdAt)}</td>
+                        <td className="px-4 py-3">
+                          <Toggle value={s.isActive} onChange={() => toggleActive(s._id, s.isActive)} disabled={toggling === s._id} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="px-4 pb-4">
+                <Pagination page={page} pages={meta.pages ?? 1} total={meta.total ?? 0} onPage={(p) => { setPage(p); fetch_(p); }} />
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -2712,6 +2990,317 @@ function AmbulanceTab() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// ── ARTICLES TAB ──────────────────────────────────────────────────────────────
+function ArticlesTab() {
+  const [articles, setArticles]   = useState<any[]>([]);
+  const [loading, setLoading]     = useState(true);
+  const [search, setSearch]       = useState("");
+  const [page, setPage]           = useState(1);
+  const [meta, setMeta]           = useState<any>({});
+  const [toast, setToast]         = useState("");
+  const [toggling, setToggling]   = useState<string | null>(null);
+
+  const fetch_ = useCallback(async (pg = 1) => {
+    setLoading(true);
+    const p = new URLSearchParams({ page: pg.toString(), all: "true", limit: "15" });
+    if (search) p.set("search", search);
+    const res  = await fetch(`/api/articles?${p}`);
+    const data = await res.json();
+    if (data.success) { setArticles(data.articles); setMeta({ total: data.total, pages: data.pages }); }
+    setLoading(false);
+  }, [search]);
+
+  useEffect(() => { fetch_(1); setPage(1); }, [search]);
+
+  function showToast(msg: string) { setToast(msg); setTimeout(() => setToast(""), 3000); }
+
+  async function togglePublish(id: string, current: boolean) {
+    setToggling(id);
+    try {
+      const res  = await fetch(`/api/articles/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isPublished: !current }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(current ? "Article unpublish ho gayi" : "Article publish ho gayi ✓");
+        fetch_(page);
+      } else showToast(data.message || "Error");
+    } catch { showToast("Network error"); }
+    setToggling(null);
+  }
+
+  async function deleteArticle(id: string, title: string) {
+    if (!confirm(`"${title}" delete karein?`)) return;
+    try {
+      const res  = await fetch(`/api/articles/${id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) { showToast("Article delete ho gayi"); fetch_(page); }
+      else showToast(data.message || "Error");
+    } catch { showToast("Network error"); }
+  }
+
+  const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString("en-IN", { day:"2-digit", month:"short", year:"numeric" }) : "—";
+
+  return (
+    <div className="space-y-4">
+      {toast && (
+        <div className="fixed top-4 right-4 z-50 bg-teal-700 text-white px-4 py-2.5 rounded-xl shadow-lg text-sm">{toast}</div>
+      )}
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-gray-800">📰 Articles Management</h1>
+          <p className="text-xs text-gray-400 mt-0.5">{meta.total ?? 0} total articles</p>
+        </div>
+        <div className="flex gap-2 flex-wrap items-center">
+          <SearchBar value={search} onChange={setSearch} placeholder="Title / author search..." />
+          <a href="/write-article" target="_blank"
+            className="bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-4 py-2 rounded-xl transition flex items-center gap-1.5">
+            ✍️ Write New
+          </a>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        {loading ? <Spinner /> : articles.length === 0 ? (
+          <EmptyState icon="📰" message="Koi article nahi mili" />
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-100">
+                  <tr>
+                    {["Title", "Author", "Tags", "Views", "Status", "Date", "Actions"].map((h) => (
+                      <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {articles.map((a) => (
+                    <tr key={a._id} className="hover:bg-gray-50 transition">
+                      <td className="px-4 py-3 max-w-xs">
+                        <p className="font-semibold text-gray-800 truncate">{a.title}</p>
+                      </td>
+                      <td className="px-4 py-3 text-gray-500 text-xs">
+                        <p>{a.authorName || "—"}</p>
+                        <p className="text-gray-400 capitalize">{a.authorRole}</p>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-1">
+                          {(a.diseaseTags || []).slice(0, 2).map((tag: string) => (
+                            <span key={tag} className="text-[10px] bg-red-50 text-red-600 px-1.5 py-0.5 rounded-full border border-red-100">{tag}</span>
+                          ))}
+                          {(a.generalTags || []).slice(0, 1).map((tag: string) => (
+                            <span key={tag} className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full border border-blue-100">{tag}</span>
+                          ))}
+                          {((a.diseaseTags?.length || 0) + (a.generalTags?.length || 0)) > 3 && (
+                            <span className="text-[10px] text-gray-400">+more</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-gray-600 font-semibold">{a.views ?? 0}</td>
+                      <td className="px-4 py-3">
+                        <Badge color={a.isPublished ? "bg-green-100 text-green-700 border-green-200" : "bg-gray-100 text-gray-500 border-gray-200"}>
+                          {a.isPublished ? "● Published" : "○ Draft"}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-400">{fmtDate(a.createdAt)}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1.5">
+                          <a href={`/articles/${a._id}`} target="_blank"
+                            className="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-2.5 py-1 rounded-lg font-semibold transition">
+                            👁 View
+                          </a>
+                          <button
+                            onClick={() => togglePublish(a._id, a.isPublished)}
+                            disabled={toggling === a._id}
+                            className={`text-xs px-2.5 py-1 rounded-lg font-semibold border transition disabled:opacity-50 ${a.isPublished ? "bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200" : "bg-green-50 hover:bg-green-100 text-green-700 border-green-200"}`}>
+                            {toggling === a._id ? "..." : a.isPublished ? "Unpublish" : "Publish"}
+                          </button>
+                          <button
+                            onClick={() => deleteArticle(a._id, a.title)}
+                            className="text-xs bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-2.5 py-1 rounded-lg font-semibold transition">
+                            🗑
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="px-4 pb-4">
+              <Pagination page={page} pages={meta.pages ?? 1} total={meta.total ?? 0} onPage={(p) => { setPage(p); fetch_(p); }} />
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ── NOTIFICATIONS TAB ─────────────────────────────────────────────────────────
+const DISEASE_TAGS = ["HTN", "Diabetes", "CVD", "CKD", "Thyroid Disorder", "Pregnancy", "Joint Pain"];
+
+function NotificationsTab() {
+  const [title, setTitle]           = useState("");
+  const [message, setMessage]       = useState("");
+  const [target, setTarget]         = useState("all");
+  const [diseaseTag, setDiseaseTag] = useState("");
+  const [sending, setSending]       = useState(false);
+  const [result, setResult]         = useState<{ ok: boolean; msg: string } | null>(null);
+  const [history, setHistory]       = useState<any[]>([]);
+  const [hLoading, setHLoading]     = useState(true);
+
+  useEffect(() => {
+    fetch("/api/admin/broadcast")
+      .then((r) => r.json())
+      .then((d) => { if (d.success) setHistory(d.broadcasts); })
+      .finally(() => setHLoading(false));
+  }, []);
+
+  async function handleSend() {
+    if (!title.trim() || !message.trim()) {
+      setResult({ ok: false, msg: "Title aur message dono bharo" }); return;
+    }
+    setSending(true);
+    setResult(null);
+    try {
+      const body: any = { title: title.trim(), message: message.trim(), target };
+      if (diseaseTag) body.diseaseTag = diseaseTag;
+      const res  = await fetch("/api/admin/broadcast", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setResult({ ok: true, msg: data.message });
+        setTitle(""); setMessage(""); setTarget("all"); setDiseaseTag("");
+        // Refresh history
+        const r2   = await fetch("/api/admin/broadcast");
+        const d2   = await r2.json();
+        if (d2.success) setHistory(d2.broadcasts);
+      } else {
+        setResult({ ok: false, msg: data.message || "Error" });
+      }
+    } catch { setResult({ ok: false, msg: "Network error" }); }
+    setSending(false);
+  }
+
+  const fmtDate = (d: string) => d ? new Date(d).toLocaleString("en-IN", { day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit" }) : "—";
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-xl font-bold text-gray-800">🔔 Notifications Management</h1>
+        <p className="text-xs text-gray-400 mt-0.5">Broadcast notification bhejo sabhi ya specific users ko</p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+        {/* Send form */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
+          <p className="font-bold text-gray-800">📤 Broadcast Notification</p>
+
+          <div>
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">Target Audience</label>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { value: "all",     label: "All Users",    icon: "👥" },
+                { value: "users",   label: "Patients",     icon: "🧑" },
+                { value: "members", label: "Card Members", icon: "💳" },
+                { value: "doctors", label: "Doctors",      icon: "🩺" },
+              ].map((opt) => (
+                <button key={opt.value}
+                  onClick={() => setTarget(opt.value)}
+                  className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium border transition ${target === opt.value ? "bg-teal-50 border-teal-300 text-teal-700" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}>
+                  <span>{opt.icon}</span> {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">
+              Disease Filter <span className="text-gray-300 font-normal normal-case">(optional)</span>
+            </label>
+            <select value={diseaseTag} onChange={(e) => setDiseaseTag(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white">
+              <option value="">No filter (send to all in target)</option>
+              {DISEASE_TAGS.map((d) => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">Title *</label>
+            <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={100}
+              placeholder="e.g. New Health Article Available!"
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+            <p className="text-right text-xs text-gray-300 mt-0.5">{title.length}/100</p>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">Message *</label>
+            <textarea value={message} onChange={(e) => setMessage(e.target.value)} maxLength={300} rows={3}
+              placeholder="e.g. Diabetes se related nayi article publish hui hai. Abhi padhein!"
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 resize-none" />
+            <p className="text-right text-xs text-gray-300 mt-0.5">{message.length}/300</p>
+          </div>
+
+          {result && (
+            <div className={`rounded-xl px-4 py-3 text-sm font-medium ${result.ok ? "bg-green-50 text-green-700 border border-green-200" : "bg-red-50 text-red-600 border border-red-200"}`}>
+              {result.ok ? "✓ " : "✗ "}{result.msg}
+            </div>
+          )}
+
+          <button onClick={handleSend} disabled={sending || !title.trim() || !message.trim()}
+            className="w-full bg-teal-600 hover:bg-teal-700 text-white font-bold py-3 rounded-xl transition disabled:opacity-50 flex items-center justify-center gap-2">
+            {sending ? (
+              <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Sending...</>
+            ) : "📤 Notification Bhejo"}
+          </button>
+        </div>
+
+        {/* History */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+          <p className="font-bold text-gray-800 mb-4">📋 Broadcast History</p>
+          {hLoading ? (
+            <Spinner />
+          ) : history.length === 0 ? (
+            <EmptyState icon="🔔" message="Koi broadcast nahi hua abhi tak" />
+          ) : (
+            <div className="space-y-3 max-h-[500px] overflow-y-auto">
+              {history.map((h: any, i: number) => (
+                <div key={i} className="bg-gray-50 rounded-xl p-3 border border-gray-100">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="font-semibold text-gray-800 text-sm">{h._id}</p>
+                    <span className="text-xs text-gray-400 shrink-0">{fmtDate(h.sentAt)}</span>
+                  </div>
+                  <p className="text-xs text-gray-600 mt-1 leading-relaxed">{h.message}</p>
+                  <div className="flex items-center gap-3 mt-2 pt-2 border-t border-gray-100">
+                    <span className="text-xs text-gray-500">📤 Sent: <strong>{h.totalSent}</strong></span>
+                    <span className="text-xs text-gray-500">👁 Read: <strong>{h.readCount}</strong></span>
+                    {h.totalSent > 0 && (
+                      <span className="text-xs text-teal-600 font-semibold">
+                        {Math.round((h.readCount / h.totalSent) * 100)}% open rate
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // ── MAIN PAGE ─────────────────────────────────────────────────────────────────
 export default function AdminPage() {
   const [authed, setAuthed]     = useState(false);
@@ -2752,10 +3341,12 @@ export default function AdminPage() {
     { key: "labtests",  icon: "🧪", label: "Lab Tests",  badge: stats?.totalLabTests     },
     { key: "bookings",  icon: "📋", label: "Bookings",   badge: stats?.bookings?.pending },
     { key: "staff",     icon: "👔", label: "Staff"                                       },
-    { key: "promo",       icon: "🎟️", label: "Promo Codes"                              },
-    { key: "reports",     icon: "📈", label: "Revenue Reports"                          },
-    { key: "accounting",  icon: "💰", label: "Accounting"                               },
-    { key: "ambulance",   icon: "🚑", label: "Ambulance"                                },
+    { key: "promo",         icon: "🎟️", label: "Promo Codes"                            },
+    { key: "reports",       icon: "📈", label: "Revenue Reports"                        },
+    { key: "accounting",    icon: "💰", label: "Accounting"                             },
+    { key: "ambulance",     icon: "🚑", label: "Ambulance"                              },
+    { key: "articles",      icon: "📰", label: "Articles"                               },
+    { key: "notifications", icon: "🔔", label: "Notifications"                          },
   ];
 
   return (
@@ -2820,10 +3411,12 @@ export default function AdminPage() {
         {activeTab === "labtests"  && <LabTestsTab />}
         {activeTab === "bookings"  && <BookingsTab onOpenPatient={setDrawerUserId} />}
         {activeTab === "staff"     && <StaffTab />}
-        {activeTab === "promo"       && <PromoCodesTab />}
-        {activeTab === "reports"     && <RevenueReportsTab />}
-        {activeTab === "accounting"  && <AccountingTab />}
-        {activeTab === "ambulance"   && <AmbulanceTab />}
+        {activeTab === "promo"         && <PromoCodesTab />}
+        {activeTab === "reports"       && <RevenueReportsTab />}
+        {activeTab === "accounting"    && <AccountingTab />}
+        {activeTab === "ambulance"     && <AmbulanceTab />}
+        {activeTab === "articles"      && <ArticlesTab />}
+        {activeTab === "notifications" && <NotificationsTab />}
       </main>
     </div>
   );

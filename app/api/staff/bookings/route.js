@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import connectDB from "../../../../lib/mongodb";
 import Booking from "../../../../models/Booking";
-import User from "../../../../models/User";
-import { requireAuth } from "../../../../lib/auth";
+import User    from "../../../../models/User";
+import { requireAuth, getSession } from "../../../../lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -24,9 +24,8 @@ export async function GET(request) {
     if (status !== "all") query.status = status;
     if (type   !== "all") query.type   = type;
 
-    // Date filter: today / week
     const dateFilter = searchParams.get("date") || "";
-    const now  = new Date();
+    const now   = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     if (dateFilter === "today") {
       const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
@@ -36,9 +35,6 @@ export async function GET(request) {
       query.appointmentDate = { $gte: today, $lt: nextWeek };
     }
 
-    let userIds = [];
-
-    // If search, find matching users first
     if (search.trim()) {
       const users = await User.find({
         $or: [
@@ -46,7 +42,7 @@ export async function GET(request) {
           { mobile: { $regex: search.trim(), $options: "i" } },
         ],
       }).select("_id").lean();
-      userIds = users.map((u) => u._id);
+      const userIds = users.map((u) => u._id);
       query.$or = [
         { userId:    { $in: userIds } },
         { bookingId: { $regex: search.trim(), $options: "i" } },
@@ -60,7 +56,6 @@ export async function GET(request) {
       .limit(limit)
       .lean();
 
-    // Fetch patient names
     const allUserIds = [...new Set(bookings.map((b) => b.userId?.toString()).filter(Boolean))];
     const users      = await User.find({ _id: { $in: allUserIds } }).select("name mobile photo").lean();
     const userMap    = {};
@@ -72,17 +67,25 @@ export async function GET(request) {
       try { extra = b.notes ? JSON.parse(b.notes) : {}; } catch {}
       return {
         ...b,
-        patientName:   patient.name   || "Unknown",
-        patientMobile: patient.mobile || "",
-        consultType:   extra.consultType || "",
+        patientName:   extra.patientName   || patient.name   || "Unknown",
+        patientMobile: extra.patientMobile || patient.mobile || "",
+        patientAge:    extra.patientAge    || "",
+        patientGender: extra.patientGender || "",
+        symptoms:      extra.symptoms      || "",
+        paymentMode:   extra.paymentMode   || b.paymentMode  || "",
+        consultType:   extra.consultType   || "",
       };
     });
 
-    // Quick stats
-    const [todayPending, totalPending, totalConfirmed] = await Promise.all([
+    // Stats
+    const [todayPending, totalPending, totalConfirmed, todayCollected] = await Promise.all([
       Booking.countDocuments({ status: "pending", appointmentDate: { $gte: today } }),
       Booking.countDocuments({ status: "pending" }),
       Booking.countDocuments({ status: "confirmed" }),
+      Booking.aggregate([
+        { $match: { paymentStatus: "paid", collectedAt: { $gte: today } } },
+        { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } },
+      ]),
     ]);
 
     return NextResponse.json({
@@ -91,31 +94,130 @@ export async function GET(request) {
       total,
       pages: Math.ceil(total / limit),
       page,
-      stats: { todayPending, totalPending, totalConfirmed },
+      stats: {
+        todayPending,
+        totalPending,
+        totalConfirmed,
+        todayCollectedAmt:   todayCollected[0]?.total || 0,
+        todayCollectedCount: todayCollected[0]?.count || 0,
+      },
     });
   } catch (error) {
-    console.error("Staff Bookings Error:", error);
     return NextResponse.json({ success: false, message: "Server error: " + error.message }, { status: 500 });
   }
 }
 
-// PATCH — update booking status
+// PATCH — update booking status + payment collection
 export async function PATCH(request) {
-  const { error } = await requireAuth(request, ["staff", "admin"]);
+  const { error, session } = await requireAuth(request, ["staff", "admin"]);
   if (error) return error;
 
   try {
-    const { bookingId, status } = await request.json();
-    if (!bookingId || !status) {
-      return NextResponse.json({ success: false, message: "bookingId and status required" }, { status: 400 });
+    const body = await request.json();
+    const { bookingId, status, paymentStatus, paymentMode, amount } = body;
+
+    if (!bookingId) {
+      return NextResponse.json({ success: false, message: "bookingId zaruri hai" }, { status: 400 });
     }
 
     await connectDB();
-    const booking = await Booking.findByIdAndUpdate(bookingId, { status }, { new: true });
-    if (!booking) return NextResponse.json({ success: false, message: "Booking not found" }, { status: 404 });
+
+    const update = {};
+    if (status)        update.status        = status;
+    if (paymentStatus) update.paymentStatus = paymentStatus;
+    if (paymentMode)   update.paymentMode   = paymentMode;
+    if (amount != null) update.amount       = amount;
+
+    // Record who collected payment
+    if (paymentStatus === "paid") {
+      update.collectedBy     = session.userId;
+      update.collectedByName = session.name || "Staff";
+      update.collectedAt     = new Date();
+      // Also mark completed if still pending/confirmed
+      if (!status) update.status = "completed";
+    }
+
+    const booking = await Booking.findOneAndUpdate({ bookingId }, update, { new: true });
+    if (!booking) {
+      // Try by _id
+      const b2 = await Booking.findByIdAndUpdate(bookingId, update, { new: true });
+      if (!b2) return NextResponse.json({ success: false, message: "Booking nahi mili" }, { status: 404 });
+      return NextResponse.json({ success: true, booking: b2 });
+    }
 
     return NextResponse.json({ success: true, booking });
   } catch (error) {
     return NextResponse.json({ success: false, message: "Server error: " + error.message }, { status: 500 });
+  }
+}
+
+// POST — create walk-in booking (staff counter booking)
+export async function POST(request) {
+  const { error, session } = await requireAuth(request, ["staff", "admin"]);
+  if (error) return error;
+
+  try {
+    const body = await request.json();
+    const {
+      patientName, patientMobile, patientAge, patientGender,
+      type, amount, paymentMode, paymentStatus,
+      appointmentDate, slot, symptoms, doctorName, hospitalName,
+    } = body;
+
+    if (!patientName || !patientMobile || !type) {
+      return NextResponse.json({ success: false, message: "patientName, mobile aur type zaruri hai" }, { status: 400 });
+    }
+
+    await connectDB();
+
+    // Find or create guest user
+    let user = await User.findOne({ mobile: patientMobile });
+    if (!user) {
+      const count = await User.countDocuments();
+      user = await User.create({
+        mobile:   patientMobile,
+        name:     patientName,
+        role:     "user",
+        memberId: `BRIMS-${String(count + 1).padStart(6, "0")}`,
+      });
+    }
+
+    // Generate bookingId
+    const prefix = { OPD:"BH-OPD", Lab:"BH-LAB", Surgery:"BH-SUR", Consultation:"BH-CON", IPD:"BH-IPD" };
+    const count  = await Booking.countDocuments();
+    const bId    = `${prefix[type] || "BH-OPD"}-${String(count + 1).padStart(5, "0")}`;
+
+    const notes = JSON.stringify({
+      patientName, patientMobile, patientAge, patientGender,
+      symptoms: symptoms || "",
+      paymentMode: paymentMode || "counter",
+      isNewPatient: true,
+      walkinBy: session.name || "Staff",
+      doctorName:   doctorName  || "",
+      hospitalName: hospitalName || "Brims Hospitals",
+    });
+
+    const booking = await Booking.create({
+      bookingId:       bId,
+      userId:          user._id,
+      type:            type || "OPD",
+      status:          "confirmed",
+      paymentStatus:   paymentStatus || "pending",
+      paymentMode:     paymentMode   || "counter",
+      amount:          amount        || 0,
+      appointmentDate: appointmentDate ? new Date(appointmentDate) : new Date(),
+      slot:            slot || "",
+      notes,
+      // If paid at counter, record collector
+      ...(paymentStatus === "paid" ? {
+        collectedBy:     session.userId,
+        collectedByName: session.name || "Staff",
+        collectedAt:     new Date(),
+      } : {}),
+    });
+
+    return NextResponse.json({ success: true, booking, bookingId: bId, message: "Walk-in booking create ho gayi" });
+  } catch (error) {
+    return NextResponse.json({ success: false, message: error.message }, { status: 500 });
   }
 }

@@ -2,6 +2,8 @@
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Header from "../components/header";
+import { useLang } from "@/app/providers/LangProvider";
+import { t } from "@/lib/i18n";
 
 /* ── SVG Icons ── */
 function IconOPD() {
@@ -117,8 +119,8 @@ function IconHospitals() {
 const services = [
   {
     href: "/opd-booking",
-    label: "OPD Booking",
-    sub: "Specialist appointment",
+    tileKey: "tile.opd",
+    subKey: "tile.opd.sub",
     icon: <IconOPD />,
     bg: "bg-blue-50",
     color: "text-blue-600",
@@ -127,8 +129,8 @@ const services = [
   },
   {
     href: "/teleconsultation",
-    label: "Teleconsult",
-    sub: "Video / Audio Call",
+    tileKey: "tile.teleconsult",
+    subKey: "tile.teleconsult.sub",
     icon: <IconTele />,
     bg: "bg-purple-50",
     color: "text-purple-600",
@@ -137,8 +139,8 @@ const services = [
   },
   {
     href: "/lab-tests",
-    label: "Lab Tests",
-    sub: "Home collection",
+    tileKey: "tile.lab",
+    subKey: "tile.lab.sub",
     icon: <IconLab />,
     bg: "bg-orange-50",
     color: "text-orange-500",
@@ -147,8 +149,8 @@ const services = [
   },
   {
     href: "/surgery-packages",
-    label: "Surgery",
-    sub: "All-inclusive package",
+    tileKey: "tile.surgery",
+    subKey: "tile.surgery.sub",
     icon: <IconSurgery />,
     bg: "bg-rose-50",
     color: "text-rose-500",
@@ -157,8 +159,8 @@ const services = [
   },
   {
     href: "/ipd-booking",
-    label: "IPD Admission",
-    sub: "Inpatient / hospital stay",
+    tileKey: "tile.ipd",
+    subKey: "tile.ipd.sub",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6" stroke="currentColor" strokeWidth={1.8}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M3 7h18M3 12h18M3 17h8" />
@@ -173,8 +175,8 @@ const services = [
   },
   {
     href: "/reports",
-    label: "My Reports",
-    sub: "Lab & medical reports",
+    tileKey: "tile.reports",
+    subKey: "tile.reports.sub",
     icon: <IconReports />,
     bg: "bg-teal-50",
     color: "text-teal-600",
@@ -183,8 +185,8 @@ const services = [
   },
   {
     href: "/hospitals",
-    label: "Hospitals",
-    sub: "Verified hospitals dhundho",
+    tileKey: "tile.hospitals",
+    subKey: "tile.hospitals.sub",
     icon: <IconHospitals />,
     bg: "bg-green-50",
     color: "text-green-600",
@@ -193,8 +195,8 @@ const services = [
   },
   {
     href: "/ambulance",
-    label: "Ambulance",
-    sub: "Emergency request",
+    tileKey: "tile.ambulance",
+    subKey: "tile.ambulance.sub",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6" stroke="currentColor" strokeWidth={1.8}>
         <rect x="1" y="8" width="22" height="12" rx="2" />
@@ -210,8 +212,8 @@ const services = [
   },
   {
     href: "/referral",
-    label: "Refer & Earn",
-    sub: "₹50 cashback per referral",
+    tileKey: "tile.referral",
+    subKey: "tile.referral.sub",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6" stroke="currentColor" strokeWidth={1.8}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -224,8 +226,8 @@ const services = [
   },
   {
     href: "/health-card",
-    label: "Health Card",
-    sub: "Download PDF card",
+    tileKey: "tile.healthCard",
+    subKey: "tile.healthCard.sub",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6" stroke="currentColor" strokeWidth={1.8}>
         <rect x="2" y="5" width="20" height="14" rx="3" />
@@ -246,6 +248,7 @@ function DashboardContent() {
   const cardNumber    = searchParams.get("cardNumber");
   const renewal       = searchParams.get("renewal");
   const renewalExpiry = searchParams.get("expiry");
+  const { lang }      = useLang();
 
   const [user, setUser]               = useState<any>(null);
   const [familyCard, setFamilyCard]   = useState<any>(null);
@@ -394,7 +397,7 @@ function DashboardContent() {
 
             {/* Name & details */}
             <div className="flex-1 min-w-0">
-              <p className="text-teal-200 text-xs font-medium mb-0.5">Namaste 🙏</p>
+              <p className="text-teal-200 text-xs font-medium mb-0.5">{t("dash.hello", lang)} 🙏</p>
               <h1 className="text-white text-2xl font-bold leading-tight truncate">{displayName}</h1>
               <div className="flex items-center gap-3 mt-1.5 flex-wrap">
                 <span className="text-teal-200 text-xs">📱 +91 {user?.mobile}</span>
@@ -417,9 +420,9 @@ function DashboardContent() {
           {/* Stats row */}
           <div className="grid grid-cols-3 gap-3 mt-6">
             {[
-              { label: "Bookings",  value: "—",    icon: "📋" },
-              { label: "Wallet",    value: familyCard ? `₹${familyCard.walletBalance || 0}` : "₹0", icon: "💰" },
-              { label: "Members",   value: familyCard ? `${familyMembers.length}/6` : "—",           icon: "👨‍👩‍👧" },
+              { label: t("common.bookings", lang), value: "—",    icon: "📋" },
+              { label: t("dash.wallet", lang),    value: familyCard ? `₹${familyCard.walletBalance || 0}` : "₹0", icon: "💰" },
+              { label: t("dash.members", lang),   value: familyCard ? `${familyMembers.length}/6` : "—",          icon: "👨‍👩‍👧" },
             ].map((s) => (
               <div key={s.label} className="bg-white/10 rounded-2xl p-3 text-center">
                 <p className="text-lg mb-0.5">{s.icon}</p>
@@ -546,7 +549,7 @@ function DashboardContent() {
                   <IconWallet />
                 </div>
                 <div>
-                  <p className="text-xs text-gray-400 font-medium">Family Wallet</p>
+                  <p className="text-xs text-gray-400 font-medium">{t("dash.wallet", lang)}</p>
                   <p className="text-xl font-bold text-gray-800">₹{familyCard.walletBalance || 0}</p>
                 </div>
               </div>
@@ -555,7 +558,7 @@ function DashboardContent() {
                 <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4" stroke="currentColor" strokeWidth={2.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
                 </svg>
-                Add Money
+                {t("btn.addMoney", lang)}
               </a>
             </div>
           </div>
@@ -607,7 +610,7 @@ function DashboardContent() {
                     Processing...
                   </>
                 ) : (
-                  <>Activate Karein — ₹249 <span className="text-lg">🎉</span></>
+                  <>{t("dash.activateCard", lang)} — ₹249 <span className="text-lg">🎉</span></>
                 )}
               </button>
               <p className="text-center text-xs text-gray-400 mt-2">Secure payment · PhonePe / UPI / Card</p>
@@ -620,7 +623,7 @@ function DashboardContent() {
           <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-5">
             <div className="flex justify-between items-center mb-4">
               <div>
-                <h3 className="font-bold text-gray-800">Family Members</h3>
+                <h3 className="font-bold text-gray-800">{t("dash.members", lang)}</h3>
                 <p className="text-xs text-gray-400 mt-0.5">{familyMembers.length} of 6 slots used</p>
               </div>
               {familyMembers.length < 6 && (
@@ -681,7 +684,7 @@ function DashboardContent() {
 
         {/* ── Services Grid ── */}
         <div>
-          <h2 className="text-base font-bold text-gray-700 mb-3 px-1">Quick Services</h2>
+          <h2 className="text-base font-bold text-gray-700 mb-3 px-1">{t("dash.services", lang)}</h2>
           <div className="grid grid-cols-2 gap-3">
             {services.map((s) => (
               <a key={s.href} href={s.href}
@@ -699,8 +702,8 @@ function DashboardContent() {
                       {s.badge}
                     </span>
                   )}
-                  <h3 className="font-bold text-gray-800 text-sm">{s.label}</h3>
-                  <p className="text-xs text-gray-400 mt-0.5">{s.sub}</p>
+                  <h3 className="font-bold text-gray-800 text-sm">{t(s.tileKey, lang)}</h3>
+                  <p className="text-xs text-gray-400 mt-0.5">{t(s.subKey, lang)}</p>
                 </div>
               </a>
             ))}
@@ -714,7 +717,7 @@ function DashboardContent() {
               <IconBookings />
             </div>
             <div className="relative z-10">
-              <h3 className="font-bold text-gray-800 text-sm">Meri Bookings</h3>
+              <h3 className="font-bold text-gray-800 text-sm">{t("dash.myBookings", lang)}</h3>
               <p className="text-xs text-gray-400 mt-0.5">OPD · Lab · Surgery · Teleconsult</p>
             </div>
             <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5 text-gray-300 ml-auto relative z-10 group-hover:text-indigo-400 transition" stroke="currentColor" strokeWidth={2}>
@@ -733,7 +736,7 @@ function DashboardContent() {
           {familyCard ? (
             <a href="/wallet" className="flex-1 flex flex-col items-center justify-center gap-0.5 text-teal-600 hover:bg-teal-50 transition">
               <IconAddMoney />
-              <span className="text-[10px] font-semibold">Add Money</span>
+              <span className="text-[10px] font-semibold">{t("btn.addMoney", lang)}</span>
             </a>
           ) : (
             <button
@@ -743,7 +746,7 @@ function DashboardContent() {
               title="Card activate karein pehle"
             >
               <IconAddMoney />
-              <span className="text-[10px] font-semibold">Add Money</span>
+              <span className="text-[10px] font-semibold">{t("btn.addMoney", lang)}</span>
             </button>
           )}
 
@@ -753,7 +756,7 @@ function DashboardContent() {
           {/* Bookings — always enabled */}
           <a href="/my-bookings" className="flex-1 flex flex-col items-center justify-center gap-0.5 text-indigo-600 hover:bg-indigo-50 transition">
             <IconMyBookings />
-            <span className="text-[10px] font-semibold">Bookings</span>
+            <span className="text-[10px] font-semibold">{t("nav.myBookings", lang)}</span>
           </a>
 
           {/* Divider */}
@@ -763,7 +766,7 @@ function DashboardContent() {
           {familyCard ? (
             <a href="/add-member" className="flex-1 flex flex-col items-center justify-center gap-0.5 text-emerald-600 hover:bg-emerald-50 transition">
               <IconMembers />
-              <span className="text-[10px] font-semibold">Members</span>
+              <span className="text-[10px] font-semibold">{t("dash.members", lang)}</span>
             </a>
           ) : (
             <button
@@ -776,7 +779,7 @@ function DashboardContent() {
                 <IconMembers />
                 <span className="absolute -top-1 -right-2 w-4 h-4 bg-amber-400 rounded-full flex items-center justify-center text-[8px] font-bold text-white">!</span>
               </div>
-              <span className="text-[10px] font-semibold">Members</span>
+              <span className="text-[10px] font-semibold">{t("dash.members", lang)}</span>
             </button>
           )}
 

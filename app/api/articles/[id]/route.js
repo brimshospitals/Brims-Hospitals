@@ -24,6 +24,27 @@ export async function GET(request, { params }) {
   }
 }
 
+export async function PATCH(request, { params }) {
+  try {
+    const { id }  = params;
+    const updates = await request.json();
+    await connectDB();
+
+    const allowed = ["isPublished", "title", "blocks", "diseaseTags", "generalTags"];
+    const update  = {};
+    for (const key of allowed) {
+      if (key in updates) update[key] = updates[key];
+    }
+
+    const article = await Article.findByIdAndUpdate(id, update, { new: true });
+    if (!article) return NextResponse.json({ success: false, message: "Article nahi mila" }, { status: 404 });
+
+    return NextResponse.json({ success: true, article });
+  } catch (err) {
+    return NextResponse.json({ success: false, message: err.message }, { status: 500 });
+  }
+}
+
 export async function DELETE(request, { params }) {
   try {
     const { id } = params;

@@ -131,7 +131,7 @@ export async function GET(request) {
     const status = searchParams.get("status") || "";
     const page   = parseInt(searchParams.get("page") || "1");
     const limit  = 20;
-    const query: Record<string, any> = {};
+    const query = {};
     if (status) query.status = status;
 
     const [total, requests] = await Promise.all([
@@ -164,7 +164,7 @@ export async function PATCH(request) {
 
     await connectDB();
 
-    const update: Record<string, any> = {};
+    const update = {};
     if (status)        update.status        = status;
     if (assignedDriver)update.assignedDriver = assignedDriver;
     if (vehicleNumber) update.vehicleNumber  = vehicleNumber;

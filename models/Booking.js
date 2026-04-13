@@ -28,9 +28,14 @@ const bookingSchema = new mongoose.Schema(
       default: "pending",
     },
     amount: { type: Number },
-    paymentId: { type: String },
-    notes: { type: String },
-    familyCardId: { type: mongoose.Schema.Types.ObjectId, ref: "FamilyCard" },
+    paymentId:         { type: String },
+    paymentMode:       { type: String },  // counter | online | wallet | insurance
+    notes:             { type: String },
+    familyCardId:      { type: mongoose.Schema.Types.ObjectId, ref: "FamilyCard" },
+    // Staff collection tracking
+    collectedBy:       { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    collectedByName:   { type: String },
+    collectedAt:       { type: Date },
   },
   { timestamps: true }
 );
