@@ -174,6 +174,70 @@ function PrescriptionModal({ booking, onClose }: { booking: Booking; onClose: ()
   );
 }
 
+function SetPasswordModal({ onClose }: { onClose: () => void }) {
+  const [pw, setPw]   = useState("");
+  const [pw2, setPw2] = useState("");
+  const [show, setShow] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
+
+  async function save() {
+    if (pw.length < 6) { setErr("Minimum 6 characters ka password daalo"); return; }
+    if (pw !== pw2) { setErr("Dono passwords match nahi karte"); return; }
+    setSaving(true); setErr("");
+    const res  = await fetch("/api/auth/set-password", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: pw, confirmPassword: pw2 }),
+    });
+    const data = await res.json();
+    setSaving(false);
+    if (data.success) { setMsg(data.message); }
+    else setErr(data.message);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-sm p-6 space-y-4">
+        <h3 className="font-bold text-gray-800">Password Set Karein</h3>
+        <p className="text-xs text-gray-500">Ek baar password set karne ke baad OTP ke saath password se bhi login kar sakte hain.</p>
+        {err && <p className="text-red-500 text-sm bg-red-50 p-2 rounded-lg">{err}</p>}
+        {msg ? (
+          <div className="text-center space-y-3">
+            <p className="text-green-600 font-semibold text-sm">{msg}</p>
+            <button onClick={onClose} className="w-full py-2.5 rounded-xl bg-blue-600 text-white text-sm font-medium">Done</button>
+          </div>
+        ) : (
+          <>
+            <div>
+              <label className="text-xs text-gray-500 font-medium">Naya Password</label>
+              <div className="relative mt-1">
+                <input type={show ? "text" : "password"} value={pw} onChange={(e) => setPw(e.target.value)}
+                  placeholder="Minimum 6 characters"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 pr-12 text-sm focus:outline-none focus:border-blue-400" />
+                <button type="button" onClick={() => setShow((p) => !p)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-gray-600">{show ? "Hide" : "Show"}</button>
+              </div>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 font-medium">Password Confirm Karein</label>
+              <input type="password" value={pw2} onChange={(e) => setPw2(e.target.value)}
+                placeholder="Same password dobara daalo"
+                className="w-full mt-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400" />
+            </div>
+            <div className="flex gap-3">
+              <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-600">Cancel</button>
+              <button onClick={save} disabled={saving} className="flex-1 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-medium disabled:opacity-60">
+                {saving ? "Saving..." : "Password Set Karein"}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function DoctorDashboard() {
   const router = useRouter();
   const [doctorId, setDoctorId]     = useState("");
@@ -185,6 +249,7 @@ export default function DoctorDashboard() {
   const [loading, setLoading]       = useState(true);
   const [updating, setUpdating]         = useState<string | null>(null);
   const [prescriptionBooking, setPrescriptionBooking] = useState<Booking | null>(null);
+  const [showSetPassword, setShowSetPassword] = useState(false);
 
   useEffect(() => {
     const role = localStorage.getItem("userRole");
@@ -265,6 +330,9 @@ export default function DoctorDashboard() {
           <a href="/doctor-profile" className="text-xs text-blue-600 hover:bg-blue-50 transition-colors px-3 py-1.5 rounded-lg font-medium border border-blue-100">
             Edit Profile
           </a>
+          <button onClick={() => setShowSetPassword(true)} className="text-xs text-gray-500 hover:text-blue-600 transition-colors px-3 py-1.5 rounded-lg hover:bg-blue-50 border border-gray-200">
+            🔒 Password
+          </button>
           <button onClick={logout} className="text-xs text-gray-500 hover:text-red-500 transition-colors px-3 py-1.5 rounded-lg hover:bg-red-50">
             Logout
           </button>
@@ -274,6 +342,7 @@ export default function DoctorDashboard() {
       {prescriptionBooking && (
         <PrescriptionModal booking={prescriptionBooking} onClose={() => setPrescriptionBooking(null)} />
       )}
+      {showSetPassword && <SetPasswordModal onClose={() => setShowSetPassword(false)} />}
 
       <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
         {/* Stats */}

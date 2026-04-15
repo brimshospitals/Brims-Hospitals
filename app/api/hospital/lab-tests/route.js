@@ -53,6 +53,28 @@ export async function POST(request) {
   }
 }
 
+export async function PATCH(request) {
+  const { error } = await requireAuth(request, ["hospital", "admin"]);
+  if (error) return error;
+
+  try {
+    const body = await request.json();
+    const { testId, ...fields } = body;
+    if (!testId) return NextResponse.json({ success: false, message: "testId required" }, { status: 400 });
+
+    await connectDB();
+    const allowed = ["name","category","mrp","offerPrice","membershipPrice","sampleType","turnaroundTime","homeCollection","homeCollectionCharge","fastingRequired","isActive","description"];
+    const update = {};
+    allowed.forEach((k) => { if (fields[k] !== undefined) update[k] = fields[k]; });
+
+    const labTest = await LabTest.findByIdAndUpdate(testId, update, { new: true });
+    if (!labTest) return NextResponse.json({ success: false, message: "Lab test not found" }, { status: 404 });
+    return NextResponse.json({ success: true, labTest });
+  } catch (error) {
+    return NextResponse.json({ success: false, message: "Server error: " + error.message }, { status: 500 });
+  }
+}
+
 export async function DELETE(request) {
   const { error } = await requireAuth(request, ["hospital", "admin"]);
   if (error) return error;

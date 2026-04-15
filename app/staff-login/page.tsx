@@ -79,6 +79,9 @@ export default function StaffLoginPage() {
   const [selectedRole, setRole]     = useState("");
   const [identifier, setIdentifier] = useState("");
   const [otp, setOtp]               = useState("");
+  const [password, setPassword]     = useState("");
+  const [loginMode, setLoginMode]   = useState<"otp" | "password">("otp");
+  const [showPass, setShowPass]     = useState(false);
   const [loading, setLoading]       = useState(false);
   const [error, setError]           = useState("");
   const [success, setSuccess]       = useState("");
@@ -86,12 +89,56 @@ export default function StaffLoginPage() {
 
   const activeRole = ROLES.find((r) => r.id === selectedRole);
   const emailMode  = isEmail(identifier.trim());
+  const canUsePassword = ["doctor", "hospital", "staff"].includes(selectedRole);
 
   function pickRole(id: string) {
     setRole(id);
     setStep(2);
     setError("");
     setIdentifier("");
+    setPassword("");
+    setLoginMode("otp");
+  }
+
+  function saveSession(data: any) {
+    localStorage.setItem("userId",   data.userId);
+    localStorage.setItem("userName", data.name  || "");
+    localStorage.setItem("userRole", data.role  || "");
+    if ((data.role === "admin" || data.role === "staff") && data.userId) {
+      localStorage.setItem("adminId",   data.userId);
+      localStorage.setItem("adminName", data.name || "");
+    }
+    if (data.role === "doctor" && data.doctorId) {
+      localStorage.setItem("doctorId",   data.doctorId);
+      localStorage.setItem("doctorName", data.doctorName || data.name);
+      localStorage.setItem("hospitalId", data.hospitalId || "");
+    }
+    if (data.role === "hospital" && data.hospitalMongoId) {
+      localStorage.setItem("hospitalMongoId", data.hospitalMongoId);
+      localStorage.setItem("hospitalId",      data.hospitalId      || "");
+      localStorage.setItem("hospitalName",    data.hospitalName    || "");
+    }
+    setSuccess(`Welcome, ${data.name}! Redirect ho rahe hain...`);
+    const redirect = ROLE_REDIRECT[data.role] || "/dashboard";
+    setTimeout(() => { window.location.href = redirect; }, 800);
+  }
+
+  async function handlePasswordLogin() {
+    setError("");
+    const val = identifier.trim();
+    if (!val) { setError("Mobile number ya email daalo"); return; }
+    if (!password) { setError("Password daalo"); return; }
+    setLoading(true);
+    try {
+      const res  = await fetch("/api/auth/password-login", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ identifier: val, password }),
+      });
+      const data = await res.json();
+      if (data.success) { saveSession(data); }
+      else { setError(data.message); }
+    } catch { setError("Network error. Dobara try karein."); }
+    setLoading(false);
   }
 
   async function handleSendOTP() {
@@ -132,32 +179,8 @@ export default function StaffLoginPage() {
         body:    JSON.stringify({ identifier: identifier.trim(), otp }),
       });
       const data = await res.json();
-      if (data.success) {
-        localStorage.setItem("userId",   data.userId);
-        localStorage.setItem("userName", data.name  || "");
-        localStorage.setItem("userRole", data.role  || "");
-
-        if ((data.role === "admin" || data.role === "staff") && data.userId) {
-          localStorage.setItem("adminId",   data.userId);
-          localStorage.setItem("adminName", data.name || "");
-        }
-        if (data.role === "doctor" && data.doctorId) {
-          localStorage.setItem("doctorId",   data.doctorId);
-          localStorage.setItem("doctorName", data.doctorName || data.name);
-          localStorage.setItem("hospitalId", data.hospitalId || "");
-        }
-        if (data.role === "hospital" && data.hospitalMongoId) {
-          localStorage.setItem("hospitalMongoId", data.hospitalMongoId);
-          localStorage.setItem("hospitalId",      data.hospitalId      || "");
-          localStorage.setItem("hospitalName",    data.hospitalName    || "");
-        }
-
-        setSuccess(`Welcome, ${data.name}! Redirect ho rahe hain...`);
-        const redirect = ROLE_REDIRECT[data.role] || "/dashboard";
-        setTimeout(() => { window.location.href = redirect; }, 800);
-      } else {
-        setError(data.message);
-      }
+      if (data.success) { saveSession(data); }
+      else { setError(data.message); }
     } catch { setError("Network error. Dobara try karein."); }
     setLoading(false);
   }
@@ -216,7 +239,7 @@ export default function StaffLoginPage() {
             </div>
           )}
 
-          {/* STEP 2 — Identifier */}
+          {/* STEP 2 — Identifier + Login Mode */}
           {step === 2 && activeRole && (
             <div className="space-y-5">
               <div className="text-center">
@@ -226,6 +249,24 @@ export default function StaffLoginPage() {
                 <h2 className="text-xl font-bold text-white">{activeRole.label} Login</h2>
                 <p className="text-gray-400 text-sm mt-1">Mobile number ya email se login karein</p>
               </div>
+
+              {/* OTP / Password toggle — only for doctor/hospital/staff */}
+              {canUsePassword && (
+                <div className="flex gap-1 bg-white/5 p-1 rounded-xl border border-white/10">
+                  <button
+                    onClick={() => { setLoginMode("otp"); setError(""); }}
+                    className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all ${loginMode === "otp" ? "bg-white text-gray-900" : "text-gray-400 hover:text-white"}`}
+                  >
+                    OTP Login
+                  </button>
+                  <button
+                    onClick={() => { setLoginMode("password"); setError(""); }}
+                    className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all ${loginMode === "password" ? "bg-white text-gray-900" : "text-gray-400 hover:text-white"}`}
+                  >
+                    Password Login
+                  </button>
+                </div>
+              )}
 
               {/* Staff-only notice */}
               {selectedRole === "staff" && (
@@ -243,7 +284,6 @@ export default function StaffLoginPage() {
                   <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
                     Mobile Number ya Email ID
                   </label>
-                  {/* Auto badge */}
                   {identifier.trim() && (
                     <span className={`ml-2 text-xs px-2 py-0.5 rounded-full font-medium ${emailMode ? "bg-blue-500/20 text-blue-300" : "bg-teal-500/20 text-teal-300"}`}>
                       {emailMode ? "Email" : "Mobile"}
@@ -253,24 +293,46 @@ export default function StaffLoginPage() {
                     type="text"
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleSendOTP()}
+                    onKeyDown={(e) => e.key === "Enter" && (loginMode === "password" ? handlePasswordLogin() : handleSendOTP())}
                     placeholder="9876543210 ya name@email.com"
                     className="mt-1.5 w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-white/40 focus:bg-white/15 transition-all"
                     autoFocus
                   />
                 </div>
 
+                {/* Password field */}
+                {loginMode === "password" && (
+                  <div>
+                    <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Password</label>
+                    <div className="relative mt-1.5">
+                      <input
+                        type={showPass ? "text" : "password"}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && handlePasswordLogin()}
+                        placeholder="Apna password daalo"
+                        className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 pr-12 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-white/40 focus:bg-white/15 transition-all"
+                      />
+                      <button type="button" onClick={() => setShowPass((p) => !p)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition text-sm">
+                        {showPass ? "Hide" : "Show"}
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">Pehli baar? OTP se login karein phir profile mein password set karein.</p>
+                  </div>
+                )}
+
                 <button
-                  onClick={handleSendOTP}
-                  disabled={loading || identifier.trim().length < 5}
+                  onClick={loginMode === "password" ? handlePasswordLogin : handleSendOTP}
+                  disabled={loading || identifier.trim().length < 5 || (loginMode === "password" && !password)}
                   className={`w-full bg-gradient-to-r ${activeRole.bg} text-white py-3.5 rounded-xl font-semibold text-sm hover:opacity-90 transition-all disabled:opacity-40`}
                 >
                   {loading ? (
                     <span className="flex items-center justify-center gap-2">
                       <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                      OTP bhej rahe hain...
+                      {loginMode === "password" ? "Login ho raha hai..." : "OTP bhej rahe hain..."}
                     </span>
-                  ) : "OTP Bhejo"}
+                  ) : loginMode === "password" ? "Login Karein" : "OTP Bhejo"}
                 </button>
               </div>
 

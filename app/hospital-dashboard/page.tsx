@@ -465,6 +465,188 @@ function ReportsTab({ hospitalId }: { hospitalId: string }) {
   );
 }
 
+// ───── Edit Modals ─────
+function EditDoctorModal({ doctor, onClose, onSaved }: { doctor: Doctor; onClose: () => void; onSaved: (d: Doctor) => void }) {
+  const [f, setF] = useState({
+    name: doctor.name, department: doctor.department, speciality: doctor.speciality || "",
+    mobile: doctor.mobile || "", opdFee: String(doctor.opdFee), isActive: doctor.isActive,
+  });
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function save() {
+    if (!f.name || !f.department || !f.opdFee) { setErr("Naam, Department aur Fee zaruri hai"); return; }
+    setSaving(true); setErr("");
+    try {
+      const res  = await fetch("/api/hospital/doctors", {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ doctorId: doctor._id, ...f, opdFee: Number(f.opdFee) }),
+      });
+      const data = await res.json();
+      if (data.success) { onSaved(data.doctor); onClose(); }
+      else setErr(data.message);
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-md p-6 space-y-4">
+        <h3 className="font-bold text-gray-800 text-lg">Doctor Edit Karein</h3>
+        {err && <p className="text-red-500 text-sm bg-red-50 p-2 rounded-lg">{err}</p>}
+        {[
+          { key:"name",       label:"Doctor ka Naam *", type:"text"   },
+          { key:"department", label:"Department *",      type:"text"   },
+          { key:"speciality", label:"Speciality",        type:"text"   },
+          { key:"mobile",     label:"Mobile No.",        type:"tel"    },
+          { key:"opdFee",     label:"OPD Fee (₹) *",    type:"number" },
+        ].map(({ key, label, type }) => (
+          <div key={key}>
+            <label className="text-xs text-gray-500 font-medium">{label}</label>
+            <input type={type} value={(f as any)[key]}
+              onChange={(e) => setF((p) => ({ ...p, [key]: e.target.value }))}
+              className="w-full mt-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+          </div>
+        ))}
+        <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+          <input type="checkbox" checked={f.isActive} onChange={(e) => setF((p) => ({ ...p, isActive: e.target.checked }))} className="w-4 h-4 rounded" />
+          Active (patients ko dikh raha hai)
+        </label>
+        <div className="flex gap-3 pt-2">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-600">Cancel</button>
+          <button onClick={save} disabled={saving} className="flex-1 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-medium disabled:opacity-60">
+            {saving ? "Saving..." : "Save Changes"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EditLabModal({ test, onClose, onSaved }: { test: LabTest; onClose: () => void; onSaved: (t: LabTest) => void }) {
+  const [f, setF] = useState({
+    name: test.name, category: test.category, mrp: String(test.mrp),
+    offerPrice: String(test.offerPrice), homeCollection: test.homeCollection, isActive: test.isActive,
+  });
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function save() {
+    if (!f.name || !f.mrp || !f.offerPrice) { setErr("Naam, MRP aur Offer Price zaruri hai"); return; }
+    setSaving(true); setErr("");
+    try {
+      const res  = await fetch("/api/hospital/lab-tests", {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ testId: test._id, ...f, mrp: Number(f.mrp), offerPrice: Number(f.offerPrice) }),
+      });
+      const data = await res.json();
+      if (data.success) { onSaved(data.labTest); onClose(); }
+      else setErr(data.message);
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-md p-6 space-y-4">
+        <h3 className="font-bold text-gray-800 text-lg">Lab Test Edit Karein</h3>
+        {err && <p className="text-red-500 text-sm bg-red-50 p-2 rounded-lg">{err}</p>}
+        <div>
+          <label className="text-xs text-gray-500 font-medium">Test ka Naam *</label>
+          <input value={f.name} onChange={(e) => setF((p) => ({ ...p, name: e.target.value }))}
+            className="w-full mt-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-orange-400" />
+        </div>
+        <div>
+          <label className="text-xs text-gray-500 font-medium">Category</label>
+          <select value={f.category} onChange={(e) => setF((p) => ({ ...p, category: e.target.value }))}
+            className="w-full mt-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-orange-400">
+            {LAB_CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+          </select>
+        </div>
+        {[
+          { key:"mrp",        label:"MRP (₹) *",        type:"number" },
+          { key:"offerPrice", label:"Offer Price (₹) *", type:"number" },
+        ].map(({ key, label, type }) => (
+          <div key={key}>
+            <label className="text-xs text-gray-500 font-medium">{label}</label>
+            <input type={type} value={(f as any)[key]} onChange={(e) => setF((p) => ({ ...p, [key]: e.target.value }))}
+              className="w-full mt-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-orange-400" />
+          </div>
+        ))}
+        <div className="flex gap-4">
+          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+            <input type="checkbox" checked={f.homeCollection} onChange={(e) => setF((p) => ({ ...p, homeCollection: e.target.checked }))} className="w-4 h-4 rounded" />
+            Home Collection
+          </label>
+          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+            <input type="checkbox" checked={f.isActive} onChange={(e) => setF((p) => ({ ...p, isActive: e.target.checked }))} className="w-4 h-4 rounded" />
+            Active
+          </label>
+        </div>
+        <div className="flex gap-3 pt-2">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-600">Cancel</button>
+          <button onClick={save} disabled={saving} className="flex-1 py-2.5 rounded-xl bg-orange-500 text-white text-sm font-medium disabled:opacity-60">
+            {saving ? "Saving..." : "Save Changes"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EditSurgeryModal({ pkg, onClose, onSaved }: { pkg: SurgeryPkg; onClose: () => void; onSaved: (p: SurgeryPkg) => void }) {
+  const [f, setF] = useState({
+    name: pkg.name, category: pkg.category, mrp: String(pkg.mrp),
+    offerPrice: String(pkg.offerPrice), stayDays: String(pkg.stayDays), isActive: pkg.isActive,
+  });
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function save() {
+    if (!f.name || !f.mrp || !f.offerPrice) { setErr("Naam, MRP aur Offer Price zaruri hai"); return; }
+    setSaving(true); setErr("");
+    try {
+      const res  = await fetch("/api/hospital/surgery-packages", {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ packageId: pkg._id, ...f, mrp: Number(f.mrp), offerPrice: Number(f.offerPrice), stayDays: Number(f.stayDays) }),
+      });
+      const data = await res.json();
+      if (data.success) { onSaved(data.package); onClose(); }
+      else setErr(data.message);
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-md p-6 space-y-4">
+        <h3 className="font-bold text-gray-800 text-lg">Surgery Package Edit Karein</h3>
+        {err && <p className="text-red-500 text-sm bg-red-50 p-2 rounded-lg">{err}</p>}
+        {[
+          { key:"name",       label:"Package Naam *",     type:"text"   },
+          { key:"category",   label:"Category",            type:"text"   },
+          { key:"mrp",        label:"MRP (₹) *",          type:"number" },
+          { key:"offerPrice", label:"Offer Price (₹) *",  type:"number" },
+          { key:"stayDays",   label:"Stay Days",           type:"number" },
+        ].map(({ key, label, type }) => (
+          <div key={key}>
+            <label className="text-xs text-gray-500 font-medium">{label}</label>
+            <input type={type} value={(f as any)[key]} onChange={(e) => setF((p) => ({ ...p, [key]: e.target.value }))}
+              className="w-full mt-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-purple-400" />
+          </div>
+        ))}
+        <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+          <input type="checkbox" checked={f.isActive} onChange={(e) => setF((p) => ({ ...p, isActive: e.target.checked }))} className="w-4 h-4 rounded" />
+          Active (patients ko dikh raha hai)
+        </label>
+        <div className="flex gap-3 pt-2">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-600">Cancel</button>
+          <button onClick={save} disabled={saving} className="flex-1 py-2.5 rounded-xl bg-purple-600 text-white text-sm font-medium disabled:opacity-60">
+            {saving ? "Saving..." : "Save Changes"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ───── Main Page ─────
 export default function HospitalDashboard() {
   const router = useRouter();
@@ -478,6 +660,9 @@ export default function HospitalDashboard() {
   const [loading, setLoading]       = useState(true);
   const [modal, setModal]           = useState<"doctor"|"lab"|"surgery"|null>(null);
   const [deleting, setDeleting]     = useState<string | null>(null);
+  const [editDoctor, setEditDoctor] = useState<Doctor | null>(null);
+  const [editLab, setEditLab]       = useState<LabTest | null>(null);
+  const [editSurgery, setEditSurgery] = useState<SurgeryPkg | null>(null);
 
   useEffect(() => {
     const role = localStorage.getItem("userRole");
@@ -546,10 +731,14 @@ export default function HospitalDashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Modals */}
+      {/* Add Modals */}
       {modal === "doctor"  && <DoctorModal  hospitalId={hospitalId} onClose={() => setModal(null)} onSaved={(d) => { setDoctors((p) => [d, ...p]); setStats((s) => ({...s, doctorCount: s.doctorCount+1})); }} />}
       {modal === "lab"     && <LabTestModal  hospitalId={hospitalId} onClose={() => setModal(null)} onSaved={(t) => { setLabTests((p) => [t, ...p]); setStats((s) => ({...s, labTestCount: s.labTestCount+1})); }} />}
       {modal === "surgery" && <SurgeryModal  hospitalId={hospitalId} onClose={() => setModal(null)} onSaved={(p) => { setSurgeries((prev) => [p, ...prev]); setStats((s) => ({...s, surgeryCount: s.surgeryCount+1})); }} />}
+      {/* Edit Modals */}
+      {editDoctor  && <EditDoctorModal  doctor={editDoctor}  onClose={() => setEditDoctor(null)}  onSaved={(d) => { setDoctors((p) => p.map((x) => x._id === d._id ? d : x)); setEditDoctor(null); }} />}
+      {editLab     && <EditLabModal     test={editLab}       onClose={() => setEditLab(null)}     onSaved={(t) => { setLabTests((p) => p.map((x) => x._id === t._id ? t : x)); setEditLab(null); }} />}
+      {editSurgery && <EditSurgeryModal pkg={editSurgery}   onClose={() => setEditSurgery(null)} onSaved={(p) => { setSurgeries((prev) => prev.map((x) => x._id === p._id ? p : x)); setEditSurgery(null); }} />}
 
       {/* Header */}
       <header className="bg-white border-b border-gray-100 sticky top-0 z-20 shadow-sm">
@@ -653,19 +842,28 @@ export default function HospitalDashboard() {
             ) : (
               <div className="space-y-3">
                 {doctors.map((d) => (
-                  <div key={d._id} className="bg-white rounded-2xl border border-gray-100 p-4 flex items-center gap-3 shadow-sm">
+                  <div key={d._id} className={`bg-white rounded-2xl border p-4 flex items-center gap-3 shadow-sm ${!d.isActive ? "opacity-60 border-gray-200" : "border-gray-100"}`}>
                     <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 font-bold flex items-center justify-center text-sm shrink-0">
                       {d.name.charAt(0)}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-gray-800 text-sm">{d.name}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-gray-800 text-sm">{d.name}</p>
+                        {!d.isActive && <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">Inactive</span>}
+                      </div>
                       <p className="text-xs text-gray-500">{d.department}{d.speciality ? ` · ${d.speciality}` : ""}</p>
                       <p className="text-xs text-teal-600 font-medium">OPD: ₹{d.opdFee}</p>
                     </div>
-                    <button onClick={() => deleteDoctor(d._id)} disabled={deleting === d._id}
-                      className="text-xs text-red-500 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
-                      {deleting === d._id ? "..." : "Hatao"}
-                    </button>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button onClick={() => setEditDoctor(d)}
+                        className="text-xs text-blue-600 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors border border-blue-100">
+                        Edit
+                      </button>
+                      <button onClick={() => deleteDoctor(d._id)} disabled={deleting === d._id}
+                        className="text-xs text-red-500 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+                        {deleting === d._id ? "..." : "Hatao"}
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -693,20 +891,32 @@ export default function HospitalDashboard() {
             ) : (
               <div className="space-y-3">
                 {labTests.map((t) => (
-                  <div key={t._id} className="bg-white rounded-2xl border border-gray-100 p-4 flex items-center gap-3 shadow-sm">
+                  <div key={t._id} className={`bg-white rounded-2xl border p-4 flex items-center gap-3 shadow-sm ${!t.isActive ? "opacity-60 border-gray-200" : "border-gray-100"}`}>
                     <div className="w-10 h-10 rounded-xl bg-orange-100 text-orange-600 font-bold flex items-center justify-center text-lg shrink-0">
                       🔬
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-gray-800 text-sm">{t.name}</p>
-                      <p className="text-xs text-gray-500">{t.category}{t.homeCollection ? " · Home Collection" : ""}</p>
-                      <p className="text-xs text-gray-400 line-through">₹{t.mrp}</p>
-                      <p className="text-xs text-orange-600 font-medium">₹{t.offerPrice}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-gray-800 text-sm">{t.name}</p>
+                        {!t.isActive && <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">Inactive</span>}
+                        {t.homeCollection && <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">Home</span>}
+                      </div>
+                      <p className="text-xs text-gray-500">{t.category}</p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-xs text-gray-400 line-through">₹{t.mrp}</span>
+                        <span className="text-xs text-orange-600 font-semibold">₹{t.offerPrice}</span>
+                      </div>
                     </div>
-                    <button onClick={() => deleteLabTest(t._id)} disabled={deleting === t._id}
-                      className="text-xs text-red-500 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
-                      {deleting === t._id ? "..." : "Hatao"}
-                    </button>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button onClick={() => setEditLab(t)}
+                        className="text-xs text-orange-600 hover:bg-orange-50 px-3 py-1.5 rounded-lg transition-colors border border-orange-100">
+                        Edit
+                      </button>
+                      <button onClick={() => deleteLabTest(t._id)} disabled={deleting === t._id}
+                        className="text-xs text-red-500 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+                        {deleting === t._id ? "..." : "Hatao"}
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -737,20 +947,31 @@ export default function HospitalDashboard() {
             ) : (
               <div className="space-y-3">
                 {surgeries.map((s) => (
-                  <div key={s._id} className="bg-white rounded-2xl border border-gray-100 p-4 flex items-center gap-3 shadow-sm">
+                  <div key={s._id} className={`bg-white rounded-2xl border p-4 flex items-center gap-3 shadow-sm ${!s.isActive ? "opacity-60 border-gray-200" : "border-gray-100"}`}>
                     <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-600 font-bold flex items-center justify-center text-lg shrink-0">
                       🏨
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-gray-800 text-sm">{s.name}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-gray-800 text-sm">{s.name}</p>
+                        {!s.isActive && <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">Inactive</span>}
+                      </div>
                       <p className="text-xs text-gray-500">{s.category} · {s.stayDays} day stay</p>
-                      <p className="text-xs text-gray-400 line-through">₹{s.mrp}</p>
-                      <p className="text-xs text-purple-600 font-medium">₹{s.offerPrice}</p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-xs text-gray-400 line-through">₹{s.mrp}</span>
+                        <span className="text-xs text-purple-600 font-semibold">₹{s.offerPrice}</span>
+                      </div>
                     </div>
-                    <button onClick={() => deleteSurgery(s._id)} disabled={deleting === s._id}
-                      className="text-xs text-red-500 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
-                      {deleting === s._id ? "..." : "Hatao"}
-                    </button>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button onClick={() => setEditSurgery(s)}
+                        className="text-xs text-purple-600 hover:bg-purple-50 px-3 py-1.5 rounded-lg transition-colors border border-purple-100">
+                        Edit
+                      </button>
+                      <button onClick={() => deleteSurgery(s._id)} disabled={deleting === s._id}
+                        className="text-xs text-red-500 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+                        {deleting === s._id ? "..." : "Hatao"}
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>

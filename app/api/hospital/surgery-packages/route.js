@@ -54,6 +54,28 @@ export async function POST(request) {
   }
 }
 
+export async function PATCH(request) {
+  const { error } = await requireAuth(request, ["hospital", "admin"]);
+  if (error) return error;
+
+  try {
+    const body = await request.json();
+    const { packageId, ...fields } = body;
+    if (!packageId) return NextResponse.json({ success: false, message: "packageId required" }, { status: 400 });
+
+    await connectDB();
+    const allowed = ["name","category","mrp","offerPrice","membershipPrice","description","inclusions","stayDays","roomType","surgeonName","surgeonExperience","isActive"];
+    const update = {};
+    allowed.forEach((k) => { if (fields[k] !== undefined) update[k] = fields[k]; });
+
+    const pkg = await SurgeryPackage.findByIdAndUpdate(packageId, update, { new: true });
+    if (!pkg) return NextResponse.json({ success: false, message: "Package not found" }, { status: 404 });
+    return NextResponse.json({ success: true, package: pkg });
+  } catch (error) {
+    return NextResponse.json({ success: false, message: "Server error: " + error.message }, { status: 500 });
+  }
+}
+
 export async function DELETE(request) {
   const { error } = await requireAuth(request, ["hospital", "admin"]);
   if (error) return error;

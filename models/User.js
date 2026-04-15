@@ -134,6 +134,9 @@ const userSchema = new mongoose.Schema(
     otp: { type: String },
     otpExpiry: { type: Date },
 
+    // Password Login (optional — SHA256 hashed)
+    password: { type: String },
+
     // Linked entity IDs
     doctorId:   { type: mongoose.Schema.Types.ObjectId, ref: "Doctor"   },
     hospitalId: { type: mongoose.Schema.Types.ObjectId, ref: "Hospital" },
