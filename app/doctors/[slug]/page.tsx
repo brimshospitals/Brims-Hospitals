@@ -7,11 +7,12 @@ import Review from "../../../models/Review";
 import Header from "../../components/header";
 
 // ── SEO Metadata ──────────────────────────────────────────────────────────────
-export async function generateMetadata({ params }: { params: { slug: string } }) {
-  if (!mongoose.Types.ObjectId.isValid(params.slug)) return { title: "Doctor Not Found — Brims Hospitals" };
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  if (!mongoose.Types.ObjectId.isValid(slug)) return { title: "Doctor Not Found — Brims Hospitals" };
 
   await connectDB();
-  const doc = await Doctor.findById(params.slug)
+  const doc = await Doctor.findById(slug)
     .select("name department speciality address hospitalName")
     .lean() as any;
 
@@ -47,12 +48,13 @@ function Stars({ rating, total }: { rating: number; total: number }) {
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
-export default async function DoctorProfilePage({ params }: { params: { slug: string } }) {
-  if (!mongoose.Types.ObjectId.isValid(params.slug)) notFound();
+export default async function DoctorProfilePage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  if (!mongoose.Types.ObjectId.isValid(slug)) notFound();
 
   await connectDB();
 
-  const doctor = await Doctor.findOne({ _id: params.slug, isActive: true })
+  const doctor = await Doctor.findOne({ _id: slug, isActive: true })
     .lean() as any;
 
   if (!doctor) notFound();

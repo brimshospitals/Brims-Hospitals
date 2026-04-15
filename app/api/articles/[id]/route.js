@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request, { params }) {
   try {
-    const { id } = params;
+    const { id } = await params;
     await connectDB();
 
     const article = await Article.findById(id);
@@ -26,7 +26,7 @@ export async function GET(request, { params }) {
 
 export async function PATCH(request, { params }) {
   try {
-    const { id }  = params;
+    const { id }  = await params;
     const updates = await request.json();
     await connectDB();
 
@@ -47,7 +47,7 @@ export async function PATCH(request, { params }) {
 
 export async function DELETE(request, { params }) {
   try {
-    const { id } = params;
+    const { id } = await params;
     await connectDB();
     await Article.findByIdAndDelete(id);
     return NextResponse.json({ success: true, message: "Article delete ho gaya" });

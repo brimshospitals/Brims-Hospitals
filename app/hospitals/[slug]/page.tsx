@@ -3,12 +3,15 @@ import connectDB from "../../../lib/mongodb";
 import Hospital from "../../../models/Hospital";
 import Doctor from "../../../models/Doctor";
 import Review from "../../../models/Review";
+import LabTest from "../../../models/LabTest";
+import SurgeryPackage from "../../../models/SurgeryPackage";
 import Header from "../../components/header";
 
 // ── SEO Metadata ──────────────────────────────────────────────────────────────
-export async function generateMetadata({ params }: { params: { slug: string } }) {
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
   await connectDB();
-  const h = await Hospital.findOne({ hospitalId: params.slug, isVerified: true })
+  const h = await Hospital.findOne({ hospitalId: slug, isVerified: true })
     .select("name address type departments")
     .lean() as any;
 
@@ -17,7 +20,7 @@ export async function generateMetadata({ params }: { params: { slug: string } })
   const district = h.address?.district || "Bihar";
   return {
     title: `${h.name} — ${district} | Brims Hospitals`,
-    description: `${h.name} is a ${h.type} hospital in ${district}, Bihar. Departments: ${(h.departments || []).slice(0, 5).join(", ")}. Book OPD appointment online.`,
+    description: `${h.name} is a ${h.type} hospital in ${district}, Bihar. Book OPD, Lab Tests and Surgery Packages online.`,
     openGraph: {
       title: `${h.name} | Brims Hospitals`,
       description: `${h.type} hospital in ${district}, Bihar. Book appointment online.`,
@@ -43,7 +46,6 @@ function Stars({ rating, total }: { rating: number; total: number }) {
   );
 }
 
-// ── Badge ─────────────────────────────────────────────────────────────────────
 const TYPE_COLORS: Record<string, string> = {
   "Single Specialist": "bg-blue-100 text-blue-700 border-blue-200",
   "Multi Specialist":  "bg-purple-100 text-purple-700 border-purple-200",
@@ -51,26 +53,28 @@ const TYPE_COLORS: Record<string, string> = {
 };
 
 // ── Page ──────────────────────────────────────────────────────────────────────
-export default async function HospitalProfilePage({ params }: { params: { slug: string } }) {
+export default async function HospitalProfilePage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
   await connectDB();
 
-  const hospital = await Hospital.findOne({ hospitalId: params.slug, isVerified: true, isActive: true })
+  const hospital = await Hospital.findOne({ hospitalId: slug, isVerified: true, isActive: true })
     .lean() as any;
 
   if (!hospital) notFound();
 
-  // Fetch doctors at this hospital
-  const doctors = await Doctor.find({ hospitalId: hospital._id, isActive: true })
-    .select("name department speciality photo opdFee offerFee rating totalReviews isAvailable")
-    .sort({ rating: -1 })
-    .limit(20)
-    .lean() as any[];
-
-  // Fetch recent reviews for this hospital
-  const reviews = await Review.find({ hospitalId: hospital._id, targetType: "hospital" })
-    .sort({ createdAt: -1 })
-    .limit(10)
-    .lean() as any[];
+  const [doctors, labTests, surgeries, reviews] = await Promise.all([
+    Doctor.find({ hospitalId: hospital._id, isActive: true })
+      .select("name department speciality photo opdFee offerFee rating totalReviews isAvailable _id")
+      .sort({ rating: -1 }).limit(20).lean() as Promise<any[]>,
+    LabTest.find({ hospitalId: hospital._id, isActive: true })
+      .select("name category mrp offerPrice homeCollection turnaroundTime fastingRequired _id")
+      .sort({ offerPrice: 1 }).limit(30).lean() as Promise<any[]>,
+    SurgeryPackage.find({ hospitalId: hospital._id, isActive: true })
+      .select("name category mrp offerPrice stayDays surgeonName _id")
+      .sort({ offerPrice: 1 }).limit(30).lean() as Promise<any[]>,
+    Review.find({ hospitalId: hospital._id, targetType: "hospital" })
+      .sort({ createdAt: -1 }).limit(10).lean() as Promise<any[]>,
+  ]);
 
   const addr = hospital.address || {};
   const fullAddress = [addr.street, addr.city, addr.district, "Bihar", addr.pincode].filter(Boolean).join(", ");
@@ -101,32 +105,30 @@ export default async function HospitalProfilePage({ params }: { params: { slug: 
 
       <div className="max-w-4xl mx-auto px-4 py-8 space-y-8">
 
-        {/* ── Quick Info ── */}
+        {/* ── Quick Stats ── */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {hospital.mobile && (
             <a href={`tel:${hospital.mobile}`}
               className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm flex flex-col items-center text-center hover:shadow-md transition">
               <span className="text-2xl mb-1">📞</span>
-              <span className="text-xs text-gray-500 font-medium">Call</span>
+              <span className="text-xs text-gray-500 font-medium">Call Now</span>
               <span className="text-sm font-bold text-teal-700 mt-0.5">{hospital.mobile}</span>
             </a>
           )}
-          {hospital.spocName && (
-            <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm flex flex-col items-center text-center">
-              <span className="text-2xl mb-1">👤</span>
-              <span className="text-xs text-gray-500 font-medium">SPOC</span>
-              <span className="text-sm font-bold text-gray-700 mt-0.5">{hospital.spocName}</span>
-            </div>
-          )}
-          <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm flex flex-col items-center text-center">
-            <span className="text-2xl mb-1">🏥</span>
-            <span className="text-xs text-gray-500 font-medium">Departments</span>
-            <span className="text-sm font-bold text-gray-700 mt-0.5">{(hospital.departments || []).length}</span>
-          </div>
           <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm flex flex-col items-center text-center">
             <span className="text-2xl mb-1">👨‍⚕️</span>
             <span className="text-xs text-gray-500 font-medium">Doctors</span>
             <span className="text-sm font-bold text-gray-700 mt-0.5">{doctors.length}</span>
+          </div>
+          <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm flex flex-col items-center text-center">
+            <span className="text-2xl mb-1">🧪</span>
+            <span className="text-xs text-gray-500 font-medium">Lab Tests</span>
+            <span className="text-sm font-bold text-gray-700 mt-0.5">{labTests.length}</span>
+          </div>
+          <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm flex flex-col items-center text-center">
+            <span className="text-2xl mb-1">🏨</span>
+            <span className="text-xs text-gray-500 font-medium">Surgery Pkgs</span>
+            <span className="text-sm font-bold text-gray-700 mt-0.5">{surgeries.length}</span>
           </div>
         </div>
 
@@ -144,14 +146,14 @@ export default async function HospitalProfilePage({ params }: { params: { slug: 
           </div>
         )}
 
-        {/* ── Doctors ── */}
+        {/* ── OPD Doctors ── */}
         {doctors.length > 0 && (
           <div>
-            <h2 className="font-bold text-gray-800 text-lg mb-4">👨‍⚕️ Our Doctors</h2>
+            <h2 className="font-bold text-gray-800 text-lg mb-4">🩺 OPD Doctors</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {doctors.map((doc) => (
                 <a key={doc._id.toString()} href={`/doctors/${doc._id}`}
-                  className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex gap-3 hover:shadow-md hover:border-teal-200 transition">
+                  className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex gap-3 hover:shadow-md hover:border-teal-200 transition group">
                   <div className="w-14 h-14 rounded-xl overflow-hidden bg-teal-50 flex-shrink-0 flex items-center justify-center">
                     {doc.photo
                       ? <img src={doc.photo} alt={doc.name} className="w-full h-full object-cover" />
@@ -165,13 +167,76 @@ export default async function HospitalProfilePage({ params }: { params: { slug: 
                         {[1,2,3,4,5].map((n) => (
                           <span key={n} className={`text-xs ${n <= Math.round(doc.rating || 0) ? "text-amber-400" : "text-gray-200"}`}>★</span>
                         ))}
-                        {(doc.totalReviews || 0) > 0 && <span className="text-xs text-gray-400 ml-1">({doc.totalReviews})</span>}
                       </div>
                       <span className="text-xs font-bold text-teal-700">₹{doc.opdFee}</span>
                     </div>
-                    <span className={`inline-flex text-[10px] mt-1 px-2 py-0.5 rounded-full font-semibold ${doc.isAvailable ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
-                      {doc.isAvailable ? "● Available" : "● Unavailable"}
+                    <div className="flex items-center justify-between mt-1.5">
+                      <span className={`inline-flex text-[10px] px-2 py-0.5 rounded-full font-semibold ${doc.isAvailable ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
+                        {doc.isAvailable ? "● Available" : "● Unavailable"}
+                      </span>
+                      <span className="text-[10px] text-teal-600 font-semibold group-hover:underline">Book OPD →</span>
+                    </div>
+                  </div>
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── Surgery Packages ── */}
+        {surgeries.length > 0 && (
+          <div>
+            <h2 className="font-bold text-gray-800 text-lg mb-4">🏨 Surgery Packages</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {surgeries.map((s) => (
+                <a key={s._id.toString()} href={`/surgery-packages?hospital=${hospital._id}&pkg=${s._id}`}
+                  className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 hover:shadow-md hover:border-purple-200 transition group">
+                  <div className="flex items-start justify-between gap-2 mb-3">
+                    <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center text-xl flex-shrink-0">🏨</div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-gray-800 text-sm leading-tight">{s.name}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{s.category} · {s.stayDays} day stay</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-xs text-gray-400 line-through mr-1">₹{s.mrp.toLocaleString("en-IN")}</span>
+                      <span className="text-base font-bold text-purple-700">₹{s.offerPrice.toLocaleString("en-IN")}</span>
+                    </div>
+                    <span className="text-xs bg-purple-600 text-white px-3 py-1.5 rounded-lg font-semibold group-hover:bg-purple-700 transition">
+                      Book Now
                     </span>
+                  </div>
+                  {s.surgeonName && <p className="text-xs text-gray-400 mt-2">Surgeon: {s.surgeonName}</p>}
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── Lab Tests ── */}
+        {labTests.length > 0 && (
+          <div>
+            <h2 className="font-bold text-gray-800 text-lg mb-4">🧪 Lab Tests</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {labTests.map((t) => (
+                <a key={t._id.toString()} href={`/lab-tests?hospital=${hospital._id}&test=${t._id}`}
+                  className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 hover:shadow-md hover:border-orange-200 transition group">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-gray-800 text-sm">{t.name}</p>
+                      <div className="flex flex-wrap gap-1.5 mt-1">
+                        <span className="text-[10px] bg-orange-50 text-orange-600 px-2 py-0.5 rounded-full border border-orange-100">{t.category}</span>
+                        {t.homeCollection && <span className="text-[10px] bg-green-50 text-green-700 px-2 py-0.5 rounded-full border border-green-100">Home Collection</span>}
+                        {t.fastingRequired && <span className="text-[10px] bg-red-50 text-red-600 px-2 py-0.5 rounded-full border border-red-100">Fasting</span>}
+                        {t.turnaroundTime && <span className="text-[10px] bg-gray-50 text-gray-500 px-2 py-0.5 rounded-full border border-gray-100">{t.turnaroundTime}</span>}
+                      </div>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-xs text-gray-400 line-through">₹{t.mrp}</p>
+                      <p className="text-base font-bold text-orange-600">₹{t.offerPrice}</p>
+                      <span className="text-[10px] text-orange-600 font-semibold group-hover:underline">Book →</span>
+                    </div>
                   </div>
                 </a>
               ))}
@@ -207,11 +272,25 @@ export default async function HospitalProfilePage({ params }: { params: { slug: 
         {/* ── CTA ── */}
         <div className="bg-gradient-to-br from-teal-600 to-teal-700 rounded-2xl p-6 text-white text-center">
           <h3 className="font-bold text-lg mb-1">Appointment Book Karein</h3>
-          <p className="text-teal-100 text-sm mb-4">{hospital.name} ke doctors se milein — online booking available hai</p>
-          <a href={`/opd-booking?hospital=${hospital._id}`}
-            className="inline-flex items-center gap-2 bg-white text-teal-700 font-bold px-6 py-3 rounded-xl hover:bg-teal-50 transition shadow">
-            🩺 OPD Book Karein
-          </a>
+          <p className="text-teal-100 text-sm mb-4">{hospital.name} ke saath book karein — OPD, Lab ya Surgery</p>
+          <div className="flex flex-wrap justify-center gap-3">
+            <a href={`/opd-booking?hospital=${hospital._id}`}
+              className="inline-flex items-center gap-2 bg-white text-teal-700 font-bold px-5 py-2.5 rounded-xl hover:bg-teal-50 transition shadow text-sm">
+              🩺 OPD Book Karein
+            </a>
+            {labTests.length > 0 && (
+              <a href={`/lab-tests?hospital=${hospital._id}`}
+                className="inline-flex items-center gap-2 bg-white/20 text-white font-bold px-5 py-2.5 rounded-xl hover:bg-white/30 transition text-sm border border-white/30">
+                🧪 Lab Test
+              </a>
+            )}
+            {surgeries.length > 0 && (
+              <a href={`/surgery-packages?hospital=${hospital._id}`}
+                className="inline-flex items-center gap-2 bg-white/20 text-white font-bold px-5 py-2.5 rounded-xl hover:bg-white/30 transition text-sm border border-white/30">
+                🏨 Surgery
+              </a>
+            )}
+          </div>
         </div>
 
         {/* ── Photos ── */}

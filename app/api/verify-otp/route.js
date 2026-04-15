@@ -91,9 +91,15 @@ export async function POST(request) {
     let extraData = {};
 
     if (role === "doctor") {
-      const doctor = await Doctor.findOne({ userId: user._id }).select(
-        "_id name department speciality photo hospitalId hospitalName opdFee"
-      );
+      // First try by userId link, then fallback to mobile (auto-link if found)
+      let doctor = await Doctor.findOne({ userId: user._id });
+      if (!doctor && user.mobile) {
+        doctor = await Doctor.findOne({ mobile: user.mobile, isActive: true });
+        if (doctor) {
+          doctor.userId = user._id;
+          await doctor.save();
+        }
+      }
       if (doctor) {
         extraData = {
           doctorId:     doctor._id.toString(),
@@ -108,9 +114,15 @@ export async function POST(request) {
     }
 
     if (role === "hospital") {
-      const hospital = await Hospital.findOne({ userId: user._id }).select(
-        "_id hospitalId name address.district isVerified isActive"
-      );
+      // First try by userId link, then fallback to mobile (auto-link if found)
+      let hospital = await Hospital.findOne({ userId: user._id });
+      if (!hospital && user.mobile) {
+        hospital = await Hospital.findOne({ mobile: user.mobile });
+        if (hospital) {
+          hospital.userId = user._id;
+          await hospital.save();
+        }
+      }
       if (hospital) {
         extraData = {
           hospitalMongoId: hospital._id.toString(),

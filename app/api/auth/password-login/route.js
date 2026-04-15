@@ -18,7 +18,7 @@ function isEmail(s) {
 
 export async function POST(request) {
   try {
-    const { identifier, password, role } = await request.json();
+    const { identifier, password } = await request.json();
     if (!identifier || !password) {
       return NextResponse.json({ success: false, message: "Identifier aur password zaruri hai" }, { status: 400 });
     }
@@ -67,8 +67,12 @@ export async function POST(request) {
     // Fetch linked entity
     let doctorId = null, doctorName = null, hospitalMongoId = null, hospitalId = null, hospitalName = null;
 
-    if (user.role === "doctor" && user.doctorId) {
-      const doc = await Doctor.findById(user.doctorId).lean();
+    if (user.role === "doctor") {
+      let doc = await Doctor.findOne({ userId: user._id }).lean();
+      if (!doc && user.mobile) {
+        doc = await Doctor.findOne({ mobile: user.mobile, isActive: true }).lean();
+        if (doc) await Doctor.findByIdAndUpdate(doc._id, { userId: user._id });
+      }
       if (doc) {
         doctorId   = doc._id.toString();
         doctorName = doc.name;
@@ -76,8 +80,12 @@ export async function POST(request) {
       }
     }
 
-    if (user.role === "hospital" && user.hospitalId) {
-      const hosp = await Hospital.findById(user.hospitalId).lean();
+    if (user.role === "hospital") {
+      let hosp = await Hospital.findOne({ userId: user._id }).lean();
+      if (!hosp && user.mobile) {
+        hosp = await Hospital.findOne({ mobile: user.mobile }).lean();
+        if (hosp) await Hospital.findByIdAndUpdate(hosp._id, { userId: user._id });
+      }
       if (hosp) {
         hospitalMongoId = hosp._id.toString();
         hospitalId      = hosp.hospitalId || "";
