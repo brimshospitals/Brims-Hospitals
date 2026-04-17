@@ -42,6 +42,7 @@ export default function HospitalOnboardingPage() {
     spocName: "", spocContact: "", spocEmail: "",
     ownerName: "", ownerContact: "",
     departments: [] as string[],
+    password: "",
   });
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState("");
@@ -63,6 +64,7 @@ export default function HospitalOnboardingPage() {
       if (!form.spocName.trim())    return setError("SPOC ka naam zaruri hai"),    false;
       if (!form.spocContact.trim()) return setError("SPOC ka mobile zaruri hai"),  false;
       if (!form.ownerName.trim())   return setError("Owner ka naam zaruri hai"),   false;
+      if (!form.password || form.password.length < 6) return setError("Password kam se kam 6 characters ka hona chahiye"), false;
     }
     if (step === 3) {
       if (form.departments.length === 0) return setError("Kam se kam ek department select karein"), false;
@@ -302,6 +304,21 @@ export default function HospitalOnboardingPage() {
                       <input className="flex-1 px-3 py-3 text-sm outline-none" value={form.ownerContact} onChange={(e) => set("ownerContact", e.target.value.replace(/\D/g,""))} maxLength={10} placeholder="Mobile" />
                     </div>
                   </div>
+                </div>
+              </div>
+
+              <div className="border-t border-gray-100 pt-5">
+                <p className="text-sm font-bold text-gray-700 mb-4">🔐 Login Password</p>
+                <div>
+                  <Label required>Password (Login ke liye)</Label>
+                  <input 
+                    className={inp} 
+                    type="password" 
+                    value={form.password} 
+                    onChange={(e) => set("password", e.target.value)} 
+                    placeholder="Kam se kam 6 characters" 
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Staff-login page se apna mobile number aur password use karke login kar sakte ho</p>
                 </div>
               </div>
             </div>

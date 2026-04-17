@@ -4,7 +4,8 @@ import Hospital from "../../../../models/Hospital";
 import Doctor from "../../../../models/Doctor";
 import SurgeryPackage from "../../../../models/SurgeryPackage";
 import LabTest from "../../../../models/LabTest";
-import { requireAuth } from "../../../../lib/auth";
+import User from "../../../../models/User";
+import { requireAuth, hashPassword } from "../../../../lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -105,7 +106,45 @@ export async function POST(request) {
       isActive:       verified,
     });
 
-    return NextResponse.json({ success: true, message: `${hospital.name} add ho gaya`, hospital });
+    // Create or update User account so hospital can login with mobile + password
+    const defaultPw   = mobile.trim(); // default password = mobile number
+    const hashedPw    = await hashPassword(defaultPw);
+    const profId      = email?.trim() || mobile.trim();
+
+    let user = await User.findOne({ mobile: mobile.trim() });
+    if (user) {
+      await User.findByIdAndUpdate(user._id, {
+        role: "hospital",
+        professionalId: profId,
+        professionalPassword: hashedPw,
+        professionalType: "hospital",
+        hospitalId: hospital._id,
+        isActive: true,
+      });
+    } else {
+      user = await User.create({
+        mobile:               mobile.trim(),
+        email:                email?.trim()     || undefined,
+        name:                 name.trim(),
+        age:                  30,
+        gender:               "male",
+        role:                 "hospital",
+        professionalId:       profId,
+        professionalPassword: hashedPw,
+        professionalType:     "hospital",
+        hospitalId:           hospital._id,
+        isActive:             true,
+      });
+    }
+
+    // Link user back to hospital
+    await Hospital.findByIdAndUpdate(hospital._id, { userId: user._id });
+
+    return NextResponse.json({
+      success: true,
+      message: `${hospital.name} add ho gaya. Login: ${profId} | Default password: ${defaultPw}`,
+      hospital,
+    });
   } catch (err) {
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });
   }

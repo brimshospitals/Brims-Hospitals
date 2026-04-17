@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import connectDB from "../../../lib/mongodb";
 import Doctor   from "../../../models/Doctor";
+import User from "../../../models/User";
 import Hospital from "../../../models/Hospital";
+import { hashPassword } from "../../../lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +13,8 @@ export async function POST(request) {
     const {
       name, mobile, email, department, speciality,
       degrees, experience, hospitalId, hospitalName,
-      district, city, opdFee,
+      district, city, opdFee, registrationNumber, password,
+      collegeUG, collegePG, collegeMCH, about,
     } = body;
 
     if (!name || !mobile || !department || !opdFee) {
@@ -28,14 +31,30 @@ export async function POST(request) {
       );
     }
 
+    if (!password || password.length < 6) {
+      return NextResponse.json(
+        { success: false, message: "Password kam se kam 6 characters ka hona chahiye" },
+        { status: 400 }
+      );
+    }
+
     await connectDB();
 
     // Check if already applied with this mobile
-    const existing = await Doctor.findOne({ mobile: mobile.trim(), userId: null });
+    const existing = await Doctor.findOne({ mobile: mobile.trim() });
     if (existing) {
       return NextResponse.json(
         { success: false, message: "Is mobile se pehle se ek application hai. Admin se contact karein." },
         { status: 409 }
+      );
+    }
+
+    // Check duplicate user
+    const existingUser = await User.findOne({ mobile: mobile.trim() });
+    if (existingUser) {
+      return NextResponse.json(
+        { success: false, message: "Is mobile number se pehle se account hai" },
+        { status: 400 }
       );
     }
 
@@ -51,14 +70,49 @@ export async function POST(request) {
       }
     }
 
-    // Save with isActive: false — admin will review and activate
+    // Parse degrees (array of {degree, university, year})
+    let parsedDegrees = [];
+    if (Array.isArray(degrees)) {
+      parsedDegrees = degrees.map(d => {
+        if (typeof d === 'string') return { degree: d, university: "", year: null };
+        return d;
+      });
+    } else if (typeof degrees === 'string' && degrees.trim()) {
+      parsedDegrees = [{ degree: degrees.trim(), university: "", year: null }];
+    }
+
+    // Create User account for doctor with professional login
+    const hashedPassword = await hashPassword(password);
+    const professionalId = email || `doctor_${mobile}`;
+
+    const user = await User.create({
+      mobile: mobile.trim(),
+      email: email?.trim() || null,
+      name: name.trim(),
+      age: 30,  // Default
+      gender: "male",  // Can be updated later
+      role: "doctor",
+      professionalId: professionalId,
+      professionalPassword: hashedPassword,
+      professionalType: "doctor",
+      isActive: true,
+    });
+
+    // Save doctor with complete profile
     const doctor = await Doctor.create({
       name:        name.trim(),
       mobile:      mobile.trim(),
       email:       email?.trim() || "",
+      userId:      user._id,
       department,
       speciality:  speciality  || "",
-      degrees:     degrees     || [],
+      degrees:     parsedDegrees,
+      registrationNumber: registrationNumber?.trim() || null,
+      collegeUG: collegeUG?.trim() || "",
+      collegePG: collegePG?.trim() || "",
+      collegeMCH: collegeMCH?.trim() || "",
+      about: about?.trim() || "",
+      profileComplete: false,
       experience:  Number(experience) || 0,
       opdFee:      Number(opdFee),
       hospitalId:  resolvedHospitalId,
@@ -70,16 +124,19 @@ export async function POST(request) {
       },
       isActive:    false,   // Pending admin approval
       isAvailable: false,
-      // userId remains null until admin links a User account
     });
 
-    // Note in console for admin awareness
+    // Link doctor back to user
+    user.doctorId = doctor._id;
+    await user.save();
+
     console.log(`🩺 New Doctor Registration: ${name} (${mobile}) — pending admin approval. Doctor _id: ${doctor._id}`);
 
     return NextResponse.json({
       success:  true,
-      message:  "Aapki registration request submit ho gayi! Admin approval ke baad login kar sakenge. 2-3 working days mein notification milegi.",
+      message:  "Aapki registration request submit ho gayi! Admin approval ke baad login kar sakenge. Password se staff-login page pe login kar sakte ho.",
       doctorId: doctor._id.toString(),
+      loginId: professionalId,
     });
   } catch (error) {
     console.error("Doctor Register Error:", error);
@@ -89,3 +146,4 @@ export async function POST(request) {
     );
   }
 }
+

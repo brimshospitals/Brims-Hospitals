@@ -1,216 +1,56 @@
-"use client";
-import { useEffect, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
+export { default } from './page-fixed'; ─────────────────────────────────────────────────────────────
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-type Tab = "bookings" | "walkin" | "collections" | "bill";
+    if (searchMobile.length !== 10) {
+      onToast("10-digit mobile number required", false);
+      return;
+    }
 
-const STATUS_COLORS: Record<string, string> = {
-  pending:   "bg-amber-100 text-amber-700 border-amber-200",
-  confirmed: "bg-blue-100 text-blue-700 border-blue-200",
-  completed: "bg-green-100 text-green-700 border-green-200",
-  cancelled: "bg-red-100 text-red-700 border-red-200",
-};
-const TYPE_COLORS: Record<string, string> = {
-  OPD:"bg-teal-100 text-teal-700", Consultation:"bg-purple-100 text-purple-700",
-  Lab:"bg-orange-100 text-orange-700", Surgery:"bg-rose-100 text-rose-700", IPD:"bg-indigo-100 text-indigo-700",
-};
-const TYPE_ICON: Record<string, string> = { OPD:"🩺", Lab:"🧪", Surgery:"🔬", Consultation:"💻", IPD:"🛏️" };
-const PM_LABEL: Record<string, string>  = { counter:"Counter/Cash", online:"Online/UPI", wallet:"Brims Wallet", insurance:"Insurance" };
-
-function fmtDate(d?: string) {
-  if (!d) return "—";
-  return new Date(d).toLocaleDateString("en-IN", { day:"2-digit", month:"short", year:"numeric" });
-}
-function fmtDateTime(d?: string) {
-  if (!d) return "—";
-  return new Date(d).toLocaleString("en-IN", { day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit" });
-}
-function fmtINR(n: number) {
-  return n >= 1000 ? `₹${(n/1000).toFixed(1)}k` : `₹${n}`;
-}
-
-// ── Toast ─────────────────────────────────────────────────────────────────────
-function Toast({ msg, ok }: { msg: string; ok: boolean }) {
-  return (
-    <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl shadow-xl text-sm font-semibold ${ok ? "bg-green-600" : "bg-red-600"} text-white`}>
-      {msg}
-    </div>
-  );
-}
-
-// ── Payment Modal ─────────────────────────────────────────────────────────────
-function PaymentModal({ booking, onClose, onSuccess }: { booking: any; onClose: () => void; onSuccess: (b: any) => void }) {
-  const [amount, setAmount]       = useState(String(booking.amount || ""));
-  const [mode, setMode]           = useState("counter");
-  const [saving, setSaving]       = useState(false);
-
-  async function handlePay() {
-    setSaving(true);
+    setSearching(true);
     try {
-      const res  = await fetch("/api/staff/bookings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          bookingId:     booking.bookingId,
-          paymentStatus: "paid",
-          paymentMode:   mode,
-          amount:        parseFloat(amount) || 0,
-          status:        "completed",
-        }),
-      });
+      const res = await fetch(`/api/staff/search-patient?mobile=${searchMobile}`);
       const data = await res.json();
-      if (data.success) onSuccess(data.booking);
-      else alert(data.message);
-    } finally { setSaving(false); }
+      if (data.success) {
+        setSearchResult(data);
+        if (data.found) {
+          setForm((p) => ({
+            ...p,
+            patientName: data.user.name,
+            patientMobile: data.user.mobile,
+            patientAge: String(data.user.age || ""),
+            patientGender: data.user.gender || "male",
+          }));
+          setSelectedMember(data.user);
+          onToast("✓ Member found", true);
+        } else {
+          onToast("Member not found - add as new patient", false);
+        }
+      } else {
+        onToast(data.message || "Search error", false);
+      }
+    } catch (error) {
+      console.error("Search error:", error);
+      onToast("Search failed - try again", false);
+    } finally {
+      setSearching(false);
+    }
   }
 
-  return (
-    <>
-      <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="font-bold text-gray-800 text-lg">💰 Payment Receive Karein</h3>
-            <button onClick={onClose} className="w-7 h-7 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 text-sm">✕</button>
-          </div>
-
-          <div className="bg-orange-50 rounded-xl p-3 border border-orange-100">
-            <p className="text-xs text-orange-600 font-semibold uppercase tracking-wide mb-1">Booking</p>
-            <p className="font-bold text-gray-800">{booking.patientName}</p>
-            <p className="text-xs text-gray-500">{booking.bookingId} · {booking.type}</p>
-          </div>
-
-          <div>
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">Amount (₹)</label>
-            <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)}
-              placeholder="0"
-              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-lg font-bold focus:outline-none focus:ring-2 focus:ring-orange-400" />
-          </div>
-
-          <div>
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">Payment Mode</label>
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { value:"counter",   icon:"🏢", label:"Counter/Cash" },
-                { value:"online",    icon:"📱", label:"Online/UPI"   },
-                { value:"wallet",    icon:"💼", label:"Brims Wallet" },
-                { value:"insurance", icon:"🛡️", label:"Insurance"    },
-              ].map((m) => (
-                <button key={m.value} onClick={() => setMode(m.value)}
-                  className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium border transition ${mode === m.value ? "bg-orange-50 border-orange-300 text-orange-700" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}>
-                  <span>{m.icon}</span> {m.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex gap-3 pt-1">
-            <button onClick={onClose} className="flex-1 border border-gray-200 text-gray-600 py-3 rounded-xl text-sm font-semibold">Ruko</button>
-            <button onClick={handlePay} disabled={saving || !amount}
-              className="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl text-sm font-bold transition disabled:opacity-50">
-              {saving ? "..." : "✓ Paid Karo"}
-            </button>
-          </div>
-        </div>
-      </div>
-    </>
-  );
-}
-
-// ── Bill Print Modal ───────────────────────────────────────────────────────────
-function BillModal({ booking, staffName, onClose }: { booking: any; staffName: string; onClose: () => void }) {
-  const now = new Date().toLocaleString("en-IN", { day:"2-digit", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit" });
-
-  function handlePrint() {
-    const el = document.getElementById("staff-bill");
-    if (!el) return;
-    const w = window.open("", "_blank");
-    if (!w) return;
-    w.document.write(`<html><head><title>Bill - ${booking.bookingId}</title>
-    <style>
-      body{font-family:Arial,sans-serif;padding:20px;color:#111;max-width:400px;margin:0 auto}
-      h2{color:#0d9488;margin-bottom:4px} .sub{color:#888;font-size:12px;margin-bottom:16px}
-      .divider{border-top:1px dashed #ddd;margin:12px 0}
-      .row{display:flex;justify-content:space-between;margin:6px 0;font-size:13px}
-      .label{color:#666} .value{font-weight:600}
-      .total-row{font-size:16px;font-weight:bold;color:#0d9488}
-      .paid-stamp{background:#16a34a;color:#fff;display:inline-block;padding:4px 16px;border-radius:20px;font-weight:bold;font-size:13px;margin-top:8px}
-      .footer{font-size:11px;color:#aaa;text-align:center;margin-top:20px}
-    </style></head><body>${el.innerHTML}</body></html>`);
-    w.document.close();
-    w.print();
+  function selectMember(member: any) {
+    setForm((p) => ({
+      ...p,
+      patientName: member.name,
+      patientAge: String(member.age || ""),
+      patientGender: member.gender || "male",
+    }));
+    setSelectedMember(member);
   }
 
-  const pMode = PM_LABEL[booking.paymentMode] || booking.paymentMode || "Counter/Cash";
-
-  return (
-    <>
-      <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden">
-          <div className="bg-teal-600 px-5 py-4 flex items-center justify-between">
-            <p className="text-white font-bold">🧾 Bill / Receipt</p>
-            <button onClick={onClose} className="text-white/70 hover:text-white">✕</button>
-          </div>
-
-          <div className="p-5">
-            {/* Printable content */}
-            <div id="staff-bill">
-              <h2>Brims Hospitals</h2>
-              <p className="sub">Making Healthcare Affordable · Patna, Bihar</p>
-
-              <div className="divider" />
-
-              <div className="row"><span className="label">Bill No.</span><span className="value">{booking.bookingId}</span></div>
-              <div className="row"><span className="label">Date</span><span className="value">{now}</span></div>
-              <div className="row"><span className="label">Staff</span><span className="value">{staffName}</span></div>
-
-              <div className="divider" />
-
-              <div className="row"><span className="label">Patient</span><span className="value">{booking.patientName}</span></div>
-              {booking.patientMobile && <div className="row"><span className="label">Mobile</span><span className="value">{booking.patientMobile}</span></div>}
-              {booking.patientAge    && <div className="row"><span className="label">Age</span><span className="value">{booking.patientAge} yrs</span></div>}
-
-              <div className="divider" />
-
-              <div className="row"><span className="label">Service</span><span className="value">{booking.type} Booking</span></div>
-              {booking.appointmentDate && <div className="row"><span className="label">Appointment</span><span className="value">{fmtDate(booking.appointmentDate)}{booking.slot ? ` · ${booking.slot}` : ""}</span></div>}
-              {booking.symptoms && <div className="row"><span className="label">Symptoms</span><span className="value">{booking.symptoms}</span></div>}
-
-              <div className="divider" />
-
-              <div className="row total-row"><span>Total Amount</span><span>₹{booking.amount || 0}</span></div>
-              <div className="row"><span className="label">Payment Mode</span><span className="value">{pMode}</span></div>
-
-              {booking.paymentStatus === "paid" && <p className="paid-stamp">✓ PAID</p>}
-
-              <p className="footer">Thank you for choosing Brims Hospitals<br/>Helpline: 112 | Patna, Bihar</p>
-            </div>
-
-            <button onClick={handlePrint}
-              className="w-full mt-4 bg-teal-600 hover:bg-teal-700 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2">
-              🖨️ Print / Save PDF
-            </button>
-          </div>
-        </div>
-      </div>
-    </>
-  );
-}
-
-// ── Walk-in Booking Form ──────────────────────────────────────────────────────
-function WalkInTab({ staffName, onToast }: { staffName: string; onToast: (msg: string, ok: boolean) => void }) {
-  const [form, setForm] = useState({
-    patientName: "", patientMobile: "", patientAge: "", patientGender: "male",
-    type: "OPD", amount: "", paymentMode: "counter", paymentStatus: "pending",
-    appointmentDate: new Date().toISOString().split("T")[0],
-    slot: "", symptoms: "", doctorName: "",
-  });
-  const [saving, setSaving]   = useState(false);
-  const [created, setCreated] = useState<any>(null);
-
-  const set = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
+  function resetSearch() {
+    setSearchMobile("");
+    setSearchResult(null);
+    setSelectedMember(null);
+    setForm((p) => ({ ...p, patientName: "", patientAge: "", patientGender: "male" }));
+  }
 
   async function handleSubmit() {
     if (!form.patientName || !form.patientMobile || form.patientMobile.length !== 10) {
@@ -276,6 +116,155 @@ function WalkInTab({ staffName, onToast }: { staffName: string; onToast: (msg: s
         <p className="text-xs text-gray-400 mt-0.5">Counter pe aaye patient ki booking create karein</p>
       </div>
 
+      {/* Patient Search Section */}
+      {!selectedMember && (
+        <div className="bg-blue-50 rounded-2xl border border-blue-100 shadow-sm p-5 space-y-4">
+          <p className="text-xs font-bold text-blue-600 uppercase tracking-wide">🔍 Patient Verification</p>
+          <p className="text-sm text-blue-700">Kya ye patient pehle se registered hai? Mobile number se check karein</p>
+          
+          <div className="flex gap-2">
+            <input
+              type="tel"
+              maxLength={10}
+              value={searchMobile}
+              onChange={(e) => setSearchMobile(e.target.value.replace(/\D/g, ""))}
+              onKeyDown={(e) => e.key === "Enter" && handleSearchPatient()}
+              placeholder="Mobile number"
+              className="flex-1 border border-blue-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+            />
+            <button
+              onClick={handleSearchPatient}
+              disabled={searching || searchMobile.length !== 10}
+              className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold transition disabled:opacity-50"
+            >
+              {searching ? "..." : "Search"}
+            </button>
+          </div>
+
+          {/* Search Results */}
+          {searchResult && (
+            <>
+              {searchResult.found ? (
+                <div className="bg-white rounded-xl border border-green-200 p-4 space-y-3">
+                  <p className="text-xs font-bold text-green-700">✓ Member Found</p>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Name</span>
+                      <span className="font-semibold">{searchResult.user.name}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Mobile</span>
+                      <span className="font-semibold">{searchResult.user.mobile}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Age</span>
+                      <span className="font-semibold">{searchResult.user.age || "—"}</span>
+                    </div>
+                  </div>
+
+                  {/* Primary + Family Members */}
+                  <div className="pt-3 border-t border-gray-100">
+                    <p className="text-xs font-semibold text-gray-600 mb-2">Kaun member hai?</p>
+                    <div className="space-y-2">
+                      <button
+                        onClick={() => selectMember(searchResult.user)}
+                        className="w-full flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition"
+                      >
+                        <input type="radio" checked={selectedMember?.userId === searchResult.user.userId} readOnly />
+                        <div className="text-left">
+                          <p className="text-sm font-semibold text-gray-800">{searchResult.user.name}</p>
+                          <p className="text-xs text-gray-500">Primary Member</p>
+                        </div>
+                      </button>
+
+                      {(searchResult.familyMembers || []).map((m: any) => (
+                        <button
+                          key={m.id}
+                          onClick={() => selectMember({ ...m, userId: searchResult.user.userId })}
+                          className="w-full flex items-center gap-3 p-3 bg-orange-50 border border-orange-200 rounded-lg hover:bg-orange-100 transition"
+                        >
+                          <input type="radio" readOnly />
+                          <div className="text-left">
+                            <p className="text-sm font-semibold text-gray-800">{m.name}</p>
+                            <p className="text-xs text-gray-500">{m.relationship}</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+               ) : (
+                 <div className="space-y-3">
+                   <div className="bg-orange-50 rounded-xl border border-orange-200 p-4">
+                     <p className="text-xs font-bold text-orange-700 mb-2">➕ Naya Patient Register Karein</p>
+                     <p className="text-sm text-gray-600">Ye patient system mein registered nahi hai. Neeche form fill karke add karein:</p>
+                   </div>
+
+                   {/* New Patient Quick Form */}
+                   <div className="bg-white rounded-xl border border-orange-100 p-4 space-y-3">
+                     <div>
+                       <label className="text-xs font-semibold text-gray-500 block mb-1">Patient Name *</label>
+                       <input
+                         value={form.patientName}
+                         onChange={(e) => set("patientName", e.target.value)}
+                         placeholder="Full naam"
+                         className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                       />
+                     </div>
+
+                     <div className="grid grid-cols-2 gap-3">
+                       <div>
+                         <label className="text-xs font-semibold text-gray-500 block mb-1">Age</label>
+                         <input
+                           type="number"
+                           value={form.patientAge}
+                           onChange={(e) => set("patientAge", e.target.value)}
+                           placeholder="Years"
+                           className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                         />
+                       </div>
+                       <div>
+                         <label className="text-xs font-semibold text-gray-500 block mb-1">Gender</label>
+                         <select
+                           value={form.patientGender}
+                           onChange={(e) => set("patientGender", e.target.value)}
+                           className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                         >
+                           <option value="male">Male</option>
+                           <option value="female">Female</option>
+                           <option value="other">Other</option>
+                         </select>
+                       </div>
+                     </div>
+
+                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                       <p className="text-xs font-semibold text-blue-700 mb-1">💡 Tip:</p>
+                       <p className="text-xs text-blue-600">
+                         Booking karne ke baad patient registration form fill kara sakte ho
+                       </p>
+                     </div>
+                   </div>
+                 </div>
+               )}
+             </>
+           )}
+      )}
+
+      {selectedMember && (
+        <div className="bg-green-50 rounded-2xl border border-green-100 p-4 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-bold text-gray-800">{selectedMember.name}</p>
+            <p className="text-xs text-gray-500">{selectedMember.mobile}</p>
+          </div>
+          <button
+            onClick={resetSearch}
+            className="text-xs text-orange-600 hover:text-orange-700 font-semibold px-3 py-1 rounded-lg hover:bg-orange-50"
+          >
+            Change
+          </button>
+        </div>
+      )}
+
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
         <p className="text-xs font-bold text-gray-500 uppercase tracking-wide border-b border-gray-100 pb-2">Patient Details</p>
 
@@ -292,7 +281,6 @@ function WalkInTab({ staffName, onToast }: { staffName: string; onToast: (msg: s
               placeholder="10-digit"
               className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400" />
           </div>
-          <div>
             <label className="text-xs font-semibold text-gray-500 block mb-1">Age</label>
             <input type="number" value={form.patientAge} onChange={(e) => set("patientAge", e.target.value)}
               placeholder="Years"
@@ -534,7 +522,357 @@ function CollectionsTab({ staffId }: { staffId: string }) {
   );
 }
 
+// ── Staff Profile Tab ─────────────────────────────────────────────────────────
+function StaffProfileTab({ staffId, onToast }: { staffId: string; onToast: (msg: string, ok: boolean) => void }) {
+  const [profile, setProfile] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({
+    name: "", age: "", gender: "male", phone: "", designation: "", department: "",
+    email: "", currentPassword: "", newPassword: "", confirmPassword: "",
+  });
+  const [saving, setSaving] = useState(false);
+
+  const set = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
+
+  // Fetch profile on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/staff/profile");
+        const data = await res.json();
+        if (data.success) {
+          setProfile(data.staff);
+          setForm({
+            name: data.staff.name || "",
+            age: data.staff.age || "",
+            gender: data.staff.gender || "male",
+            phone: data.staff.phone || "",
+            designation: data.staff.designation || "",
+            department: data.staff.department || "",
+            email: data.staff.email || "",
+            currentPassword: "",
+            newPassword: "",
+            confirmPassword: "",
+          });
+        }
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  async function handlePhotoUpload(file: File) {
+    if (!file) return;
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/upload-photo", { method: "POST", body: formData });
+      const data = await res.json();
+      if (data.url) {
+        // Update profile with new photo
+        const updateRes = await fetch("/api/staff/profile", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ photo: data.url }),
+        });
+        const updateData = await updateRes.json();
+        if (updateData.success) {
+          setProfile((p: any) => ({ ...p, photo: data.url }));
+          onToast("Photo updated ✓", true);
+        }
+      }
+    } catch (e) {
+      onToast("Photo upload failed", false);
+    }
+  }
+
+  async function handleSave() {
+    if (!form.name || !form.email) {
+      onToast("Name and email required", false);
+      return;
+    }
+
+    if (form.newPassword && form.newPassword !== form.confirmPassword) {
+      onToast("Passwords don't match", false);
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const payload: any = {
+        name: form.name,
+        age: form.age,
+        gender: form.gender,
+        phone: form.phone,
+        designation: form.designation,
+        department: form.department,
+        email: form.email,
+      };
+
+      if (form.newPassword) {
+        payload.password = form.newPassword;
+        payload.currentPassword = form.currentPassword;
+      }
+
+      const res = await fetch("/api/staff/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setProfile(data.staff);
+        setEditing(false);
+        setForm((p) => ({ ...p, currentPassword: "", newPassword: "", confirmPassword: "" }));
+        onToast("Profile updated ✓", true);
+      } else {
+        onToast(data.message || "Update failed", false);
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="max-w-2xl mx-auto space-y-4">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="bg-white rounded-2xl h-32 animate-pulse" />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-2xl mx-auto space-y-5">
+      <div>
+        <h2 className="text-lg font-bold text-gray-800">👤 My Profile</h2>
+        <p className="text-xs text-gray-400 mt-0.5">Apne details aur photo update karein</p>
+      </div>
+
+      {/* Photo Section */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-4">
+        <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Photo</p>
+        <div className="flex items-center gap-6">
+          <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-orange-400 to-orange-500 flex items-center justify-center text-white text-3xl flex-shrink-0 overflow-hidden">
+            {profile?.photo ? (
+              <img src={profile.photo} alt="Staff" className="w-full h-full object-cover" />
+            ) : (
+              profile?.name?.charAt(0) || "S"
+            )}
+          </div>
+          <label className="flex-1 px-4 py-3 border-2 border-dashed border-orange-300 rounded-xl text-center cursor-pointer hover:bg-orange-50 transition">
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => e.target.files?.[0] && handlePhotoUpload(e.target.files[0])}
+              className="hidden"
+            />
+            <p className="text-sm font-semibold text-orange-600">📸 Photo upload karein</p>
+            <p className="text-xs text-gray-400">Camera ya Gallery se</p>
+          </label>
+        </div>
+      </div>
+
+      {/* Details Section */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-4">
+        <div className="flex items-center justify-between mb-4">
+          <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Personal Details</p>
+          {!editing && (
+            <button
+              onClick={() => setEditing(true)}
+              className="text-xs text-orange-600 hover:text-orange-700 font-semibold"
+            >
+              ✏️ Edit
+            </button>
+          )}
+        </div>
+
+        {!editing ? (
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div>
+              <p className="text-xs text-gray-500 mb-1">Name</p>
+              <p className="font-semibold text-gray-800">{profile?.name}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 mb-1">Age</p>
+              <p className="font-semibold text-gray-800">{profile?.age || "—"}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 mb-1">Gender</p>
+              <p className="font-semibold text-gray-800 capitalize">{profile?.gender || "—"}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 mb-1">Phone</p>
+              <p className="font-semibold text-gray-800">{profile?.phone || "—"}</p>
+            </div>
+            <div className="col-span-2">
+              <p className="text-xs text-gray-500 mb-1">Designation</p>
+              <p className="font-semibold text-gray-800">{profile?.designation || "—"}</p>
+            </div>
+            <div className="col-span-2">
+              <p className="text-xs text-gray-500 mb-1">Department</p>
+              <p className="font-semibold text-gray-800">{profile?.department || "—"}</p>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2">
+              <label className="text-xs font-semibold text-gray-500 block mb-1">Name *</label>
+              <input
+                value={form.name}
+                onChange={(e) => set("name", e.target.value)}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 block mb-1">Age</label>
+              <input
+                type="number"
+                value={form.age}
+                onChange={(e) => set("age", e.target.value)}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 block mb-1">Gender</label>
+              <select
+                value={form.gender}
+                onChange={(e) => set("gender", e.target.value)}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+              >
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 block mb-1">Phone</label>
+              <input
+                value={form.phone}
+                onChange={(e) => set("phone", e.target.value)}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 block mb-1">Designation</label>
+              <input
+                value={form.designation}
+                onChange={(e) => set("designation", e.target.value)}
+                placeholder="e.g. Receptionist"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 block mb-1">Department</label>
+              <input
+                value={form.department}
+                onChange={(e) => set("department", e.target.value)}
+                placeholder="e.g. OPD, Lab"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Login Credentials */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-4">
+        <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-4">Login Credentials</p>
+
+        <div>
+          <label className="text-xs font-semibold text-gray-500 block mb-1">Professional ID</label>
+          <input
+            value={form.email || profile?.professionalId}
+            onChange={(e) => set("email", e.target.value)}
+            disabled={!editing}
+            className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 disabled:bg-gray-50"
+          />
+          <p className="text-xs text-gray-400 mt-1">Email ya mobile se login kar sakte ho</p>
+        </div>
+
+        {editing && (
+          <>
+            <div className="pt-2 border-t border-gray-100">
+              <p className="text-xs font-semibold text-gray-500 mb-3">🔐 Change Password (Optional)</p>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 block mb-1">Current Password</label>
+                  <input
+                    type="password"
+                    value={form.currentPassword}
+                    onChange={(e) => set("currentPassword", e.target.value)}
+                    placeholder="Required if changing password"
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 block mb-1">New Password</label>
+                  <input
+                    type="password"
+                    value={form.newPassword}
+                    onChange={(e) => set("newPassword", e.target.value)}
+                    placeholder="Min 6 characters"
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 block mb-1">Confirm Password</label>
+                  <input
+                    type="password"
+                    value={form.confirmPassword}
+                    onChange={(e) => set("confirmPassword", e.target.value)}
+                    placeholder="Confirm new password"
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                  />
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Actions */}
+      {editing && (
+        <div className="flex gap-3">
+          <button
+            onClick={() => {
+              setEditing(false);
+              setForm((p) => ({
+                ...p,
+                name: profile?.name,
+                age: profile?.age,
+                gender: profile?.gender,
+                phone: profile?.phone,
+                designation: profile?.designation,
+                department: profile?.department,
+                email: profile?.email,
+                currentPassword: "",
+                newPassword: "",
+                confirmPassword: "",
+              }));
+            }}
+            className="flex-1 px-4 py-3 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="flex-1 px-4 py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-sm font-semibold transition disabled:opacity-50"
+          >
+            {saving ? "Saving..." : "Save Changes"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
+
 // ── MAIN STAFF DASHBOARD ───────────────────────────────────────────────────────
 export default function StaffDashboard() {
   const router = useRouter();
@@ -618,6 +956,7 @@ export default function StaffDashboard() {
     { key: "bookings",    icon: "📋", label: "Bookings"      },
     { key: "walkin",      icon: "🚶", label: "Walk-in"       },
     { key: "collections", icon: "💰", label: "Collections"   },
+    { key: "profile",     icon: "👤", label: "My Profile"    },
   ] as const;
 
   return (
@@ -823,7 +1162,7 @@ export default function StaffDashboard() {
         {activeTab === "collections" && (
           <CollectionsTab staffId={staffId} />
         )}
-      </div>
-    </div>
-  );
-}
+
+        {/* ── PROFILE TAB ── */}
+        {activeTab === "profile" && (
+

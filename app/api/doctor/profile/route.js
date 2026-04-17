@@ -58,6 +58,10 @@ export async function PATCH(request) {
       district, city,
       availableSlots,
       isAvailable,
+      // New profile fields
+      registrationNumber,
+      collegeUG, collegePG, collegeMCH,
+      about,
     } = body;
 
     const doctorId = session.role === "admin" ? bodyDoctorId : session.doctorId;
@@ -68,14 +72,19 @@ export async function PATCH(request) {
     await connectDB();
 
     const update = {};
-    if (name        !== undefined) update.name        = name.trim();
-    if (speciality  !== undefined) update.speciality  = speciality;
-    if (degrees     !== undefined) update.degrees     = Array.isArray(degrees) ? degrees : degrees.split(",").map((d) => d.trim()).filter(Boolean);
-    if (experience  !== undefined) update.experience  = Number(experience);
-    if (opdFee      !== undefined) update.opdFee      = Number(opdFee);
-    if (offerFee    !== undefined) update.offerFee    = Number(offerFee) || undefined;
-    if (photo       !== undefined) update.photo       = photo;
-    if (isAvailable !== undefined) update.isAvailable = isAvailable;
+    if (name               !== undefined) update.name               = name.trim();
+    if (speciality         !== undefined) update.speciality         = speciality;
+    if (registrationNumber !== undefined) update.registrationNumber = registrationNumber.trim();
+    if (degrees            !== undefined) update.degrees            = Array.isArray(degrees) ? degrees : [];
+    if (experience         !== undefined) update.experience         = Number(experience);
+    if (opdFee             !== undefined) update.opdFee             = Number(opdFee);
+    if (offerFee           !== undefined) update.offerFee           = Number(offerFee) || undefined;
+    if (photo              !== undefined) update.photo              = photo;
+    if (isAvailable        !== undefined) update.isAvailable        = isAvailable;
+    if (collegeUG          !== undefined) update.collegeUG          = collegeUG.trim();
+    if (collegePG          !== undefined) update.collegePG          = collegePG.trim();
+    if (collegeMCH         !== undefined) update.collegeMCH         = collegeMCH.trim();
+    if (about              !== undefined) update.about              = about.trim();
 
     // Slots: array of { day, times[] }
     if (availableSlots !== undefined) update.availableSlots = availableSlots;
@@ -96,6 +105,17 @@ export async function PATCH(request) {
       update.hospitalId   = null;
       update.hospitalName = hospitalName.trim();
     }
+
+    // Check profile completeness
+    const existing = await Doctor.findById(doctorId).lean();
+    const merged   = { ...existing, ...update };
+    update.profileComplete = !!(
+      merged.name &&
+      merged.registrationNumber &&
+      merged.degrees?.length > 0 &&
+      merged.experience &&
+      merged.photo
+    );
 
     const doctor = await Doctor.findByIdAndUpdate(doctorId, { $set: update }, { new: true }).lean();
     if (!doctor) {

@@ -130,12 +130,22 @@ export default function StaffLoginPage() {
     if (!password) { setError("Password daalo"); return; }
     setLoading(true);
     try {
-      const res  = await fetch("/api/auth/password-login", {
+      const res  = await fetch("/api/auth/professional-login", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ identifier: val, password }),
+        body: JSON.stringify({ 
+          professionalId: val, 
+          password,
+          type: selectedRole
+        }),
       });
       const data = await res.json();
-      if (data.success) { saveSession(data); }
+      if (data.success) { 
+        const userData = {
+          ...data.data.user,
+          role: selectedRole
+        };
+        saveSession(userData); 
+      }
       else { setError(data.message); }
     } catch { setError("Network error. Dobara try karein."); }
     setLoading(false);

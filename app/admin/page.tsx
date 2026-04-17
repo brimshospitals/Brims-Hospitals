@@ -1481,54 +1481,139 @@ function AddHospitalModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
   );
 }
 
+// ── Staff Permissions Config ───────────────────────────────────────────────────
+const STAFF_PERMISSIONS = [
+  { key: "manageBookings",    label: "Bookings Manage Karein",      desc: "OPD/Lab/Surgery bookings dekhna aur status update",     icon: "📋", default: true  },
+  { key: "collectPayments",   label: "Payments Collect Karein",     desc: "Counter payments accept karna",                         icon: "💰", default: true  },
+  { key: "managePatients",    label: "Patient Details Dekhein",     desc: "Full patient profile, family info, health records",     icon: "👤", default: false },
+  { key: "uploadLabReports",  label: "Lab Reports Upload Karein",   desc: "Lab test reports upload karna",                        icon: "🧪", default: false },
+  { key: "cancelBookings",    label: "Bookings Cancel Karein",      desc: "Bookings cancel karna aur wallet refund dena",          icon: "❌", default: false },
+  { key: "viewAnalytics",     label: "Analytics Dekhein",           desc: "Revenue reports aur booking analytics",                 icon: "📊", default: false },
+  { key: "manageIPD",         label: "IPD Manage Karein",           desc: "IPD admission, discharge management",                   icon: "🏥", default: false },
+  { key: "dispatchAmbulance", label: "Ambulance Dispatch Karein",   desc: "Ambulance requests manage karna aur ETA update",        icon: "🚑", default: false },
+];
+
+function defaultPermissions() {
+  const p: Record<string, boolean> = {};
+  STAFF_PERMISSIONS.forEach((item) => { p[item.key] = item.default; });
+  return p;
+}
+
 // ── Modal: Add Staff ──────────────────────────────────────────────────────────
 function AddStaffModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
-  const [form, setForm] = useState({ name: "", mobile: "", age: "", gender: "" });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [form, setForm]         = useState({ name: "", mobile: "", email: "", age: "", gender: "male" });
+  const [permissions, setPerms] = useState<Record<string, boolean>>(defaultPermissions());
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState("");
+  const [success, setSuccess]   = useState("");
+
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
+  const togglePerm = (key: string) => setPerms((p) => ({ ...p, [key]: !p[key] }));
 
   async function submit(e: React.SyntheticEvent) {
     e.preventDefault(); setError(""); setLoading(true);
-    const res  = await fetch("/api/admin/staff", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...form, age: Number(form.age) }) });
+    const res  = await fetch("/api/admin/staff", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...form, age: Number(form.age) || 25, permissions }),
+    });
     const data = await res.json();
-    if (data.success) { onSaved(); onClose(); }
-    else setError(data.message);
+    if (data.success) {
+      setSuccess(data.message);
+      setTimeout(() => { onSaved(); onClose(); }, 1500);
+    } else {
+      setError(data.message);
+    }
     setLoading(false);
   }
 
   return (
     <>
       <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={onClose} />
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl">
-          <div className="bg-gradient-to-r from-purple-600 to-purple-700 p-5 rounded-t-2xl flex items-center justify-between">
-            <div><p className="text-xs text-purple-200 font-medium uppercase tracking-wide">Admin Panel</p><h2 className="text-white font-bold text-lg">Add Staff Member</h2></div>
+      <div className="fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto">
+        <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl my-4">
+          <div className="bg-gradient-to-r from-orange-500 to-orange-600 p-5 rounded-t-2xl flex items-center justify-between">
+            <div>
+              <p className="text-xs text-orange-200 font-medium uppercase tracking-wide">Admin Panel</p>
+              <h2 className="text-white font-bold text-lg">Add Staff Member</h2>
+            </div>
             <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white transition">✕</button>
           </div>
-          <form onSubmit={submit} className="p-5 space-y-3">
-            <FormField label="Full Name" required><input className={inputCls} value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="Staff member name" required /></FormField>
-            <FormField label="Mobile Number" required>
-              <div className="flex border border-gray-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-teal-400">
-                <span className="bg-gray-50 text-gray-500 px-3 flex items-center text-sm border-r border-gray-200">+91</span>
-                <input className="flex-1 px-3 py-2.5 text-sm outline-none" value={form.mobile} onChange={(e) => set("mobile", e.target.value.replace(/\D/g,""))} maxLength={10} placeholder="10-digit number" required />
-              </div>
-            </FormField>
-            <div className="grid grid-cols-2 gap-3">
-              <FormField label="Age" required><input className={inputCls} type="number" min="18" max="70" value={form.age} onChange={(e) => set("age", e.target.value)} placeholder="25" required /></FormField>
-              <FormField label="Gender" required>
-                <select className={selectCls} value={form.gender} onChange={(e) => set("gender", e.target.value)} required>
-                  <option value="">— Select —</option>
-                  <option value="male">Male</option>
-                  <option value="female">Female</option>
-                </select>
+          <form onSubmit={submit} className="p-5 space-y-4">
+
+            {/* Basic Info */}
+            <div className="space-y-3">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Basic Information</p>
+              <FormField label="Full Name" required>
+                <input className={inputCls} value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="Staff member ka naam" required />
               </FormField>
+              <FormField label="Mobile Number" required>
+                <div className="flex border border-gray-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-teal-400">
+                  <span className="bg-gray-50 text-gray-500 px-3 flex items-center text-sm border-r border-gray-200">+91</span>
+                  <input className="flex-1 px-3 py-2.5 text-sm outline-none"
+                    value={form.mobile} onChange={(e) => set("mobile", e.target.value.replace(/\D/g,""))}
+                    maxLength={10} placeholder="10-digit number" required />
+                </div>
+              </FormField>
+              <FormField label="Email (optional)">
+                <input className={inputCls} type="email" value={form.email} onChange={(e) => set("email", e.target.value)} placeholder="staff@hospital.com" />
+              </FormField>
+              <div className="grid grid-cols-2 gap-3">
+                <FormField label="Age">
+                  <input className={inputCls} type="number" min="18" max="70" value={form.age} onChange={(e) => set("age", e.target.value)} placeholder="25" />
+                </FormField>
+                <FormField label="Gender">
+                  <select className={selectCls} value={form.gender} onChange={(e) => set("gender", e.target.value)}>
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                  </select>
+                </FormField>
+              </div>
+              <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5 text-xs text-blue-700">
+                🔑 Default password: <strong>{form.mobile || "mobile number"}</strong> — staff pehli login ke baad change kar sakte hain
+              </div>
             </div>
-            <p className="text-xs text-gray-400 bg-gray-50 rounded-xl px-3 py-2 border border-gray-100">Staff member OTP se login kar sakenge apne mobile number se.</p>
-            {error && <p className="text-sm text-red-600 bg-red-50 rounded-xl px-3 py-2 border border-red-100">{error}</p>}
+
+            {/* Permissions */}
+            <div className="space-y-3">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Access Permissions</p>
+              <div className="space-y-2">
+                {STAFF_PERMISSIONS.map((p) => (
+                  <div key={p.key}
+                    onClick={() => togglePerm(p.key)}
+                    className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                      permissions[p.key]
+                        ? "bg-teal-50 border-teal-200"
+                        : "bg-gray-50 border-gray-200 opacity-60"
+                    }`}>
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0 ${
+                      permissions[p.key] ? "bg-teal-100" : "bg-gray-200"
+                    }`}>
+                      {p.icon}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-gray-800">{p.label}</p>
+                      <p className="text-xs text-gray-400 truncate">{p.desc}</p>
+                    </div>
+                    <div className={`w-10 h-6 rounded-full transition-colors flex-shrink-0 ${
+                      permissions[p.key] ? "bg-teal-500" : "bg-gray-300"
+                    }`}>
+                      <div className={`w-5 h-5 bg-white rounded-full shadow mt-0.5 transition-transform ${
+                        permissions[p.key] ? "translate-x-4" : "translate-x-0.5"
+                      }`} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {error   && <p className="text-sm text-red-600 bg-red-50 rounded-xl px-3 py-2 border border-red-100">{error}</p>}
+            {success && <p className="text-sm text-green-600 bg-green-50 rounded-xl px-3 py-2 border border-green-100">{success}</p>}
+
             <div className="flex gap-3 pt-1">
               <button type="button" onClick={onClose} className="flex-1 border border-gray-200 text-gray-600 py-2.5 rounded-xl text-sm font-semibold">Cancel</button>
-              <button type="submit" disabled={loading} className="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50">{loading ? "Adding..." : "Add Staff"}</button>
+              <button type="submit" disabled={loading} className="flex-1 bg-orange-500 hover:bg-orange-600 text-white py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50">
+                {loading ? "Adding..." : "Add Staff Member"}
+              </button>
             </div>
           </form>
         </div>
@@ -1699,6 +1784,78 @@ function StaffAccountingView() {
   );
 }
 
+// ── Edit Permissions Modal ────────────────────────────────────────────────────
+function EditPermissionsModal({ staff, onClose, onSaved }: { staff: any; onClose: () => void; onSaved: () => void }) {
+  const [perms,   setPerms]   = useState<Record<string, boolean>>(() => ({
+    ...defaultPermissions(),
+    ...(staff.staffPermissions || {}),
+  }));
+  const [saving,  setSaving]  = useState(false);
+  const [error,   setError]   = useState("");
+  const [success, setSuccess] = useState("");
+
+  const togglePerm = (key: string) => setPerms((p) => ({ ...p, [key]: !p[key] }));
+
+  async function save() {
+    setSaving(true); setError("");
+    const res  = await fetch("/api/admin/staff", {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: staff._id, permissions: perms }),
+    });
+    const data = await res.json();
+    if (data.success) { setSuccess("Permissions save ho gayi!"); setTimeout(() => { onSaved(); onClose(); }, 1200); }
+    else setError(data.message);
+    setSaving(false);
+  }
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={onClose} />
+      <div className="fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto">
+        <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl my-4">
+          <div className="bg-gradient-to-r from-orange-500 to-orange-600 p-5 rounded-t-2xl flex items-center justify-between">
+            <div>
+              <p className="text-xs text-orange-200 font-medium">Staff Permissions</p>
+              <h2 className="text-white font-bold text-lg">{staff.name}</h2>
+              <p className="text-orange-200 text-xs">📱 {staff.mobile}</p>
+            </div>
+            <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white">✕</button>
+          </div>
+          <div className="p-5 space-y-3">
+            <p className="text-xs text-gray-500">Toggle ON/OFF karne se is staff ko access milega/hatega</p>
+            {STAFF_PERMISSIONS.map((p) => (
+              <div key={p.key}
+                onClick={() => togglePerm(p.key)}
+                className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                  perms[p.key] ? "bg-teal-50 border-teal-200" : "bg-gray-50 border-gray-200 opacity-60"
+                }`}>
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0 ${perms[p.key] ? "bg-teal-100" : "bg-gray-200"}`}>
+                  {p.icon}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-800">{p.label}</p>
+                  <p className="text-xs text-gray-400 truncate">{p.desc}</p>
+                </div>
+                <div className={`w-10 h-6 rounded-full transition-colors flex-shrink-0 ${perms[p.key] ? "bg-teal-500" : "bg-gray-300"}`}>
+                  <div className={`w-5 h-5 bg-white rounded-full shadow mt-0.5 transition-transform ${perms[p.key] ? "translate-x-4" : "translate-x-0.5"}`} />
+                </div>
+              </div>
+            ))}
+            {error   && <p className="text-sm text-red-600 bg-red-50 rounded-xl px-3 py-2">{error}</p>}
+            {success && <p className="text-sm text-green-600 bg-green-50 rounded-xl px-3 py-2">{success}</p>}
+            <div className="flex gap-3 pt-1">
+              <button onClick={onClose} className="flex-1 border border-gray-200 text-gray-600 py-2.5 rounded-xl text-sm font-semibold">Cancel</button>
+              <button onClick={save} disabled={saving} className="flex-1 bg-orange-500 hover:bg-orange-600 text-white py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50">
+                {saving ? "Saving..." : "Save Permissions"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 function StaffTab() {
   const [subTab, setSubTab]           = useState<"members" | "accounting">("members");
   const [staff, setStaff]             = useState<any[]>([]);
@@ -1708,6 +1865,7 @@ function StaffTab() {
   const [meta, setMeta]               = useState<any>({});
   const [toggling, setToggling]       = useState<string | null>(null);
   const [showAdd, setShowAdd]         = useState(false);
+  const [editPermsFor, setEditPermsFor] = useState<any | null>(null);
   const [toast, setToast]             = useState("");
 
   const fetch_ = useCallback(async (pg = 1) => {
@@ -1726,34 +1884,35 @@ function StaffTab() {
     setToggling(userId);
     const res  = await fetch("/api/admin/staff", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId, isActive: !current }) });
     const data = await res.json();
-    if (data.success) { setToast(data.message); fetch_(page); }
-    setTimeout(() => setToast(""), 3000);
+    if (data.success) { showToast(data.message); fetch_(page); }
     setToggling(null);
   }
 
+  function showToast(msg: string) { setToast(msg); setTimeout(() => setToast(""), 3000); }
   const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
 
   return (
     <div className="space-y-4">
       {toast && <div className="fixed top-4 right-4 z-50 bg-teal-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold shadow-lg">{toast}</div>}
-      {showAdd && <AddStaffModal onClose={() => setShowAdd(false)} onSaved={() => { fetch_(1); setToast("Staff member add ho gaya!"); setTimeout(() => setToast(""), 3000); }} />}
+      {showAdd && <AddStaffModal onClose={() => setShowAdd(false)} onSaved={() => { fetch_(1); showToast("Staff member add ho gaya!"); }} />}
+      {editPermsFor && <EditPermissionsModal staff={editPermsFor} onClose={() => setEditPermsFor(null)} onSaved={() => { fetch_(page); showToast("Permissions update ho gayi!"); }} />}
 
       {/* Sub-tab switcher */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-1 bg-gray-100 p-1 rounded-xl">
           <button onClick={() => setSubTab("members")}
-            className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${subTab === "members" ? "bg-white shadow text-purple-700" : "text-gray-500 hover:text-gray-700"}`}>
+            className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${subTab === "members" ? "bg-white shadow text-orange-600" : "text-gray-500 hover:text-gray-700"}`}>
             👔 Staff Members
           </button>
           <button onClick={() => setSubTab("accounting")}
-            className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${subTab === "accounting" ? "bg-white shadow text-purple-700" : "text-gray-500 hover:text-gray-700"}`}>
+            className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${subTab === "accounting" ? "bg-white shadow text-orange-600" : "text-gray-500 hover:text-gray-700"}`}>
             💰 Accounting
           </button>
         </div>
         {subTab === "members" && (
           <div className="flex gap-2 flex-wrap">
             <SearchBar value={search} onChange={setSearch} placeholder="Name / Mobile..." />
-            <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition">
+            <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-xl text-sm font-semibold transition">
               <span className="text-base leading-none">+</span> Add Staff
             </button>
           </div>
@@ -1761,45 +1920,57 @@ function StaffTab() {
       </div>
 
       {subTab === "accounting" ? <StaffAccountingView /> : (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          {loading ? <Spinner /> : staff.length === 0 ? <EmptyState icon="👔" message="Koi staff member nahi mila" /> : (
-            <>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 border-b border-gray-100">
-                    <tr>
-                      {["Staff Member", "Mobile", "Age / Gender", "Member ID", "Joined", "Active"].map((h) => (
-                        <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {staff.map((s) => (
-                      <tr key={s._id} className={`hover:bg-gray-50 transition ${!s.isActive ? "opacity-60" : ""}`}>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            {s.photo ? <img src={s.photo} alt={s.name} className="w-8 h-8 rounded-lg object-cover flex-shrink-0" /> : <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center text-purple-700 font-bold text-sm flex-shrink-0">{s.name?.[0]}</div>}
-                            <p className="font-semibold text-gray-800">{s.name}</p>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-gray-600">📱 {s.mobile}</td>
-                        <td className="px-4 py-3 text-gray-600">{s.age} yrs · <span className="capitalize">{s.gender}</span></td>
-                        <td className="px-4 py-3 font-mono text-xs text-gray-400">{s.memberId || "—"}</td>
-                        <td className="px-4 py-3 text-xs text-gray-400">{fmtDate(s.createdAt)}</td>
-                        <td className="px-4 py-3">
-                          <Toggle value={s.isActive} onChange={() => toggleActive(s._id, s.isActive)} disabled={toggling === s._id} />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="px-4 pb-4">
-                <Pagination page={page} pages={meta.pages ?? 1} total={meta.total ?? 0} onPage={(p) => { setPage(p); fetch_(p); }} />
-              </div>
-            </>
-          )}
-        </div>
+        loading ? <Spinner /> : staff.length === 0 ? <EmptyState icon="👔" message="Koi staff member nahi mila" /> : (
+          <div className="space-y-3">
+            {staff.map((s) => {
+              const perms = s.staffPermissions || {};
+              const activePerms = STAFF_PERMISSIONS.filter((p) => perms[p.key]);
+              return (
+                <div key={s._id} className={`bg-white rounded-2xl border border-gray-100 shadow-sm p-4 ${!s.isActive ? "opacity-60" : ""}`}>
+                  <div className="flex items-start gap-3">
+                    {s.photo
+                      ? <img src={s.photo} alt={s.name} className="w-12 h-12 rounded-xl object-cover flex-shrink-0" />
+                      : <div className="w-12 h-12 rounded-xl bg-orange-100 flex items-center justify-center text-orange-700 font-bold text-lg flex-shrink-0">{s.name?.[0]}</div>
+                    }
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="font-bold text-gray-800">{s.name}</p>
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${s.isActive ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+                          {s.isActive ? "Active" : "Inactive"}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-500 mt-0.5">📱 {s.mobile}{s.email ? ` · ${s.email}` : ""}</p>
+                      <p className="text-xs text-gray-400">Joined: {fmtDate(s.createdAt)}</p>
+                      {/* Permission badges */}
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {activePerms.length === 0 ? (
+                          <span className="text-xs text-gray-400">No permissions set</span>
+                        ) : (
+                          activePerms.map((p) => (
+                            <span key={p.key} className="text-xs bg-teal-50 text-teal-700 border border-teal-100 px-2 py-0.5 rounded-full">
+                              {p.icon} {p.label}
+                            </span>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-2 flex-shrink-0">
+                      <button
+                        onClick={() => setEditPermsFor(s)}
+                        className="text-xs bg-orange-50 text-orange-700 border border-orange-200 px-3 py-1.5 rounded-xl hover:bg-orange-100 transition font-medium">
+                        🔑 Permissions
+                      </button>
+                      <Toggle value={s.isActive} onChange={() => toggleActive(s._id, s.isActive)} disabled={toggling === s._id} />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            <div className="bg-white rounded-2xl border border-gray-100 p-3">
+              <Pagination page={page} pages={meta.pages ?? 1} total={meta.total ?? 0} onPage={(p) => { setPage(p); fetch_(p); }} />
+            </div>
+          </div>
+        )
       )}
     </div>
   );

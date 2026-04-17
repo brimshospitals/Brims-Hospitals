@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import connectDB from "../../../../lib/mongodb";
 import Doctor from "../../../../models/Doctor";
 import Hospital from "../../../../models/Hospital";
-import { requireAuth } from "../../../../lib/auth";
+import User from "../../../../models/User";
+import { requireAuth, hashPassword } from "../../../../lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -96,7 +97,45 @@ export async function POST(request) {
       isAvailable: active,
     });
 
-    return NextResponse.json({ success: true, message: `Dr. ${doctor.name} add ho gaye`, doctor });
+    // Create or update User account so doctor can login with mobile + password
+    if (mobile?.trim()) {
+      const defaultPw = mobile.trim(); // default password = mobile number
+      const hashedPw  = await hashPassword(defaultPw);
+      const profId    = email?.trim() || mobile.trim();
+
+      let user = await User.findOne({ mobile: mobile.trim() });
+      if (user) {
+        await User.findByIdAndUpdate(user._id, {
+          role: "doctor",
+          professionalId: profId,
+          professionalPassword: hashedPw,
+          professionalType: "doctor",
+          doctorId: doctor._id,
+          isActive: true,
+        });
+      } else {
+        user = await User.create({
+          mobile:               mobile.trim(),
+          email:                email?.trim()   || undefined,
+          name:                 name.trim(),
+          age:                  30,
+          gender:               "male",
+          role:                 "doctor",
+          professionalId:       profId,
+          professionalPassword: hashedPw,
+          professionalType:     "doctor",
+          doctorId:             doctor._id,
+          isActive:             true,
+        });
+      }
+      await Doctor.findByIdAndUpdate(doctor._id, { userId: user._id });
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: `Dr. ${doctor.name} add ho gaye. Login: ${mobile?.trim() || "no mobile"} | Default password: ${mobile?.trim() || "N/A"}`,
+      doctor,
+    });
   } catch (err) {
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });
   }

@@ -26,6 +26,16 @@ type Doctor = {
   photo: string;
   hospitalName: string;
   opdFee: number;
+  offerFee?: number;
+  experience?: number;
+  registrationNumber?: string;
+  degrees?: { degree: string; university: string; year?: number }[];
+  collegeUG?: string;
+  collegePG?: string;
+  collegeMCH?: string;
+  about?: string;
+  isAvailable?: boolean;
+  profileComplete?: boolean;
 };
 
 type Stats = { todayCount: number; pendingCount: number; completedCount: number };
@@ -238,6 +248,294 @@ function SetPasswordModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+// ── Doctor Profile Tab ───────────────────────────────────────────────────────
+function ProfileTab({ doctorId }: { doctorId: string }) {
+  const [profile, setProfile] = useState<Doctor | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving,  setSaving]  = useState(false);
+  const [toast,   setToast]   = useState<{ msg: string; ok: boolean } | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  // Form state
+  const [name,               setName]               = useState("");
+  const [speciality,         setSpeciality]         = useState("");
+  const [registrationNumber, setRegistrationNumber] = useState("");
+  const [experience,         setExperience]         = useState("");
+  const [about,              setAbout]              = useState("");
+  const [photo,              setPhoto]              = useState("");
+  const [collegeUG,          setCollegeUG]          = useState("");
+  const [collegePG,          setCollegePG]          = useState("");
+  const [collegeMCH,         setCollegeMCH]         = useState("");
+  const [opdFee,             setOpdFee]             = useState("");
+  const [offerFee,           setOfferFee]           = useState("");
+  const [degrees, setDegrees] = useState<{ degree: string; university: string; year: string }[]>([]);
+
+  useEffect(() => {
+    fetch("/api/doctor/profile")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.success) {
+          const doc = d.doctor;
+          setProfile(doc);
+          setName(doc.name || "");
+          setSpeciality(doc.speciality || "");
+          setRegistrationNumber(doc.registrationNumber || "");
+          setExperience(String(doc.experience || ""));
+          setAbout(doc.about || "");
+          setPhoto(doc.photo || "");
+          setCollegeUG(doc.collegeUG || "");
+          setCollegePG(doc.collegePG || "");
+          setCollegeMCH(doc.collegeMCH || "");
+          setOpdFee(String(doc.opdFee || ""));
+          setOfferFee(String(doc.offerFee || ""));
+          setDegrees((doc.degrees || []).map((d: any) => ({
+            degree:     d.degree     || "",
+            university: d.university || "",
+            year:       String(d.year || ""),
+          })));
+        }
+      })
+      .finally(() => setLoading(false));
+  }, [doctorId]);
+
+  function showMsg(msg: string, ok: boolean) {
+    setToast({ msg, ok });
+    setTimeout(() => setToast(null), 3500);
+  }
+
+  async function uploadPhoto(file: File) {
+    setUploading(true);
+    const fd = new FormData();
+    fd.append("photo", file);
+    try {
+      const res  = await fetch("/api/upload-photo", { method: "POST", body: fd });
+      const data = await res.json();
+      if (data.success) { setPhoto(data.url); showMsg("Photo upload ho gayi!", true); }
+      else showMsg("Photo upload fail hua", false);
+    } catch { showMsg("Upload error", false); }
+    setUploading(false);
+  }
+
+  function addDegree() {
+    setDegrees((p) => [...p, { degree: "", university: "", year: "" }]);
+  }
+  function removeDegree(i: number) {
+    setDegrees((p) => p.filter((_, idx) => idx !== i));
+  }
+  function updateDegree(i: number, field: string, val: string) {
+    setDegrees((p) => p.map((d, idx) => idx === i ? { ...d, [field]: val } : d));
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const degreesPayload = degrees
+        .filter((d) => d.degree && d.university)
+        .map((d) => ({ degree: d.degree, university: d.university, year: Number(d.year) || undefined }));
+
+      const res  = await fetch("/api/doctor/profile", {
+        method:  "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name, speciality, registrationNumber,
+          experience: Number(experience) || 0,
+          about, photo,
+          collegeUG, collegePG, collegeMCH,
+          opdFee: Number(opdFee) || 0,
+          offerFee: offerFee ? Number(offerFee) : undefined,
+          degrees: degreesPayload,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setProfile(data.doctor);
+        showMsg("Profile save ho gayi! ✓", true);
+      } else {
+        showMsg(data.message, false);
+      }
+    } catch { showMsg("Network error", false); }
+    setSaving(false);
+  }
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 gap-3">
+        <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        <p className="text-gray-400 text-sm">Profile load ho raha hai...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5 pb-8">
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed top-4 right-4 z-50 px-5 py-3 rounded-2xl shadow-xl text-sm font-semibold ${
+          toast.ok ? "bg-green-600 text-white" : "bg-red-600 text-white"
+        }`}>
+          {toast.msg}
+        </div>
+      )}
+
+      {/* Profile completeness banner */}
+      {!profile?.profileComplete && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 flex items-center gap-3">
+          <span className="text-xl">⚠️</span>
+          <div>
+            <p className="text-amber-800 font-semibold text-sm">Profile Incomplete</p>
+            <p className="text-amber-600 text-xs">Photo, Registration No., Degree aur Experience fill karein</p>
+          </div>
+        </div>
+      )}
+
+      {/* Photo */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-5">
+        <h3 className="font-bold text-gray-800 mb-4">Profile Photo</h3>
+        <div className="flex items-center gap-5">
+          <div className="w-24 h-24 rounded-2xl bg-blue-100 overflow-hidden flex-shrink-0">
+            {photo
+              ? <img src={photo} alt="Profile" className="w-full h-full object-cover" />
+              : <div className="w-full h-full flex items-center justify-center text-blue-500 text-3xl font-bold">{name?.[0] || "D"}</div>
+            }
+          </div>
+          <div>
+            <label className="cursor-pointer inline-block">
+              <div className={`px-4 py-2 rounded-xl text-sm font-semibold border transition ${
+                uploading ? "bg-gray-100 text-gray-400 border-gray-200" : "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100"
+              }`}>
+                {uploading ? "Uploading..." : "📷 Photo Upload Karein"}
+              </div>
+              <input type="file" accept="image/*" className="hidden"
+                disabled={uploading}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadPhoto(f); }} />
+            </label>
+            <p className="text-xs text-gray-400 mt-1.5">JPG, PNG — max 5 MB</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Basic Info */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
+        <h3 className="font-bold text-gray-800">Basic Information</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="text-xs text-gray-500 font-medium">Doctor Name *</label>
+            <input value={name} onChange={(e) => setName(e.target.value)}
+              placeholder="Dr. Full Name"
+              className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 font-medium">Medical Council Registration No. *</label>
+            <input value={registrationNumber} onChange={(e) => setRegistrationNumber(e.target.value)}
+              placeholder="e.g. BM-12345 / MCI-67890"
+              className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 font-medium">Speciality</label>
+            <input value={speciality} onChange={(e) => setSpeciality(e.target.value)}
+              placeholder="e.g. Cardiologist, General Physician"
+              className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 font-medium">Experience (Years) *</label>
+            <input type="number" value={experience} onChange={(e) => setExperience(e.target.value)}
+              placeholder="0"
+              min="0" max="60"
+              className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 font-medium">OPD Fee (₹) *</label>
+            <input type="number" value={opdFee} onChange={(e) => setOpdFee(e.target.value)}
+              placeholder="500"
+              className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 font-medium">Offer Fee (₹) — optional</label>
+            <input type="number" value={offerFee} onChange={(e) => setOfferFee(e.target.value)}
+              placeholder="Leave blank if no discount"
+              className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+          </div>
+        </div>
+        <div>
+          <label className="text-xs text-gray-500 font-medium">About Doctor</label>
+          <textarea value={about} onChange={(e) => setAbout(e.target.value)}
+            rows={3}
+            placeholder="Doctor ki expertise, achievements, areas of focus ke bare mein likhein..."
+            className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none" />
+        </div>
+      </div>
+
+      {/* Degrees */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-bold text-gray-800">Degrees / Qualifications *</h3>
+          <button onClick={addDegree}
+            className="text-sm text-blue-600 font-semibold hover:bg-blue-50 px-3 py-1.5 rounded-xl transition">
+            + Add Degree
+          </button>
+        </div>
+        {degrees.length === 0 && (
+          <p className="text-sm text-gray-400 text-center py-4">Koi degree nahi hai. "+ Add Degree" click karein.</p>
+        )}
+        <div className="space-y-3">
+          {degrees.map((d, i) => (
+            <div key={i} className="flex gap-2 items-start bg-gray-50 rounded-xl p-3">
+              <div className="flex-1 grid grid-cols-3 gap-2">
+                <input value={d.degree} onChange={(e) => updateDegree(i, "degree", e.target.value)}
+                  placeholder="MBBS / MD / MCH / DNB"
+                  className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white" />
+                <input value={d.university} onChange={(e) => updateDegree(i, "university", e.target.value)}
+                  placeholder="University / College"
+                  className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white" />
+                <input type="number" value={d.year} onChange={(e) => updateDegree(i, "year", e.target.value)}
+                  placeholder="Year (e.g. 2010)"
+                  min="1970" max="2030"
+                  className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white" />
+              </div>
+              <button onClick={() => removeDegree(i)}
+                className="w-8 h-8 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 flex items-center justify-center text-sm transition flex-shrink-0">✕</button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Colleges */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
+        <h3 className="font-bold text-gray-800">Medical Colleges</h3>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs text-gray-500 font-medium">UG College (MBBS)</label>
+            <input value={collegeUG} onChange={(e) => setCollegeUG(e.target.value)}
+              placeholder="e.g. PMCH Patna, AIIMS New Delhi"
+              className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 font-medium">PG College (MD / MS / DNB)</label>
+            <input value={collegePG} onChange={(e) => setCollegePG(e.target.value)}
+              placeholder="e.g. AIIMS New Delhi, PGI Chandigarh"
+              className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 font-medium">Super-Specialty College (MCH / DM — if applicable)</label>
+            <input value={collegeMCH} onChange={(e) => setCollegeMCH(e.target.value)}
+              placeholder="e.g. SGPGI Lucknow, TMC Mumbai"
+              className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+          </div>
+        </div>
+      </div>
+
+      {/* Save Button */}
+      <button
+        onClick={handleSave}
+        disabled={saving}
+        className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl transition disabled:opacity-50 text-sm shadow-lg shadow-blue-200"
+      >
+        {saving ? "Save ho raha hai..." : "💾 Profile Save Karein"}
+      </button>
+    </div>
+  );
+}
+
 export default function DoctorDashboard() {
   const router = useRouter();
   const [doctorId, setDoctorId]     = useState("");
@@ -245,6 +543,7 @@ export default function DoctorDashboard() {
   const [bookings, setBookings]     = useState<Booking[]>([]);
   const [stats, setStats]           = useState<Stats>({ todayCount: 0, pendingCount: 0, completedCount: 0 });
   const [tab, setTab]               = useState("today");
+  const [mainTab, setMainTab]       = useState<"appointments" | "profile">("appointments");
   const [typeFilter, setTypeFilter] = useState("all");
   const [loading, setLoading]       = useState(true);
   const [updating, setUpdating]         = useState<string | null>(null);
@@ -255,7 +554,7 @@ export default function DoctorDashboard() {
     const role = localStorage.getItem("userRole");
     const did  = localStorage.getItem("doctorId");
     if (!did || role !== "doctor") {
-      router.replace("/login");
+      router.replace("/portal-login");
       return;
     }
     setDoctorId(did);
@@ -302,7 +601,7 @@ export default function DoctorDashboard() {
     ["userId","userRole","userName","doctorId","doctorName","hospitalId","hospitalName"].forEach((k) =>
       localStorage.removeItem(k)
     );
-    router.push("/login");
+    router.push("/portal-login");
   }
 
   const filtered = typeFilter === "all"
@@ -327,15 +626,31 @@ export default function DoctorDashboard() {
               <p className="text-xs text-gray-500">{doctor?.department} · {doctor?.hospitalName}</p>
             </div>
           </div>
-          <a href="/doctor-profile" className="text-xs text-blue-600 hover:bg-blue-50 transition-colors px-3 py-1.5 rounded-lg font-medium border border-blue-100">
-            Edit Profile
-          </a>
-          <button onClick={() => setShowSetPassword(true)} className="text-xs text-gray-500 hover:text-blue-600 transition-colors px-3 py-1.5 rounded-lg hover:bg-blue-50 border border-gray-200">
-            🔒 Password
-          </button>
-          <button onClick={logout} className="text-xs text-gray-500 hover:text-red-500 transition-colors px-3 py-1.5 rounded-lg hover:bg-red-50">
-            Logout
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setShowSetPassword(true)} className="text-xs text-gray-500 hover:text-blue-600 transition-colors px-3 py-1.5 rounded-lg hover:bg-blue-50 border border-gray-200">
+              🔒 Password
+            </button>
+            <button onClick={logout} className="text-xs text-gray-500 hover:text-red-500 transition-colors px-3 py-1.5 rounded-lg hover:bg-red-50">
+              Logout
+            </button>
+          </div>
+        </div>
+        {/* Main tab bar */}
+        <div className="max-w-5xl mx-auto px-4 flex border-t border-gray-100">
+          {[
+            { key: "appointments", label: "📋 Appointments" },
+            { key: "profile",      label: "👤 My Profile" },
+          ].map((t) => (
+            <button key={t.key}
+              onClick={() => setMainTab(t.key as "appointments" | "profile")}
+              className={`px-5 py-3 text-sm font-semibold border-b-2 transition-colors ${
+                mainTab === t.key
+                  ? "border-blue-600 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}>
+              {t.label}
+            </button>
+          ))}
         </div>
       </header>
 
@@ -345,6 +660,14 @@ export default function DoctorDashboard() {
       {showSetPassword && <SetPasswordModal onClose={() => setShowSetPassword(false)} />}
 
       <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
+
+        {/* Profile Tab */}
+        {mainTab === "profile" && doctorId && (
+          <ProfileTab doctorId={doctorId} />
+        )}
+
+        {/* Appointments Tab */}
+        {mainTab === "appointments" && <>
         {/* Stats */}
         <div className="grid grid-cols-3 gap-4">
           {[
@@ -473,6 +796,7 @@ export default function DoctorDashboard() {
             ))}
           </div>
         )}
+        </> /* end appointments tab */}
       </div>
     </div>
   );

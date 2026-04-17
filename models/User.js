@@ -134,12 +134,34 @@ const userSchema = new mongoose.Schema(
     otp: { type: String },
     otpExpiry: { type: Date },
 
-    // Password Login (optional — SHA256 hashed)
+    // Professional Account (Doctor/Hospital/Staff) — Password + ID
+    professionalId: { type: String, unique: true, sparse: true },        // Email or Username
+    professionalPassword: { type: String, sparse: true },                // bcrypt hashed
+    professionalType: {
+      type: String,
+      enum: [null, "doctor", "hospital", "staff"],
+      default: null,
+    },
+
+    // Password Login (deprecated — SHA256 hashed)
     password: { type: String },
+
+    // Staff permissions — granular access control
+    staffPermissions: {
+      manageBookings:      { type: Boolean, default: true  }, // View + update booking status
+      collectPayments:     { type: Boolean, default: true  }, // Accept counter payments
+      managePatients:      { type: Boolean, default: false }, // View full patient profile
+      uploadLabReports:    { type: Boolean, default: false }, // Upload lab reports
+      cancelBookings:      { type: Boolean, default: false }, // Cancel bookings + issue refunds
+      viewAnalytics:       { type: Boolean, default: false }, // View revenue & reports
+      manageIPD:           { type: Boolean, default: false }, // IPD admission management
+      dispatchAmbulance:   { type: Boolean, default: false }, // Ambulance dispatch
+    },
 
     // Linked entity IDs
     doctorId:   { type: mongoose.Schema.Types.ObjectId, ref: "Doctor"   },
     hospitalId: { type: mongoose.Schema.Types.ObjectId, ref: "Hospital" },
+    staffId:    { type: mongoose.Schema.Types.ObjectId, ref: "Staff" },
 
     isActive: { type: Boolean, default: true },
   },

@@ -69,14 +69,17 @@ export async function middleware(request: NextRequest) {
     const token = request.cookies.get(COOKIE_NAME)?.value;
 
     if (!token) {
-      const loginUrl = new URL("/staff-login", request.url);
+      // Route to correct login page based on which portal they're trying to access
+      const loginPath = pathname.startsWith("/admin") ? "/admin-login" : "/portal-login";
+      const loginUrl  = new URL(loginPath, request.url);
       loginUrl.searchParams.set("redirect", pathname);
       return NextResponse.redirect(loginUrl);
     }
 
     const session = await verifySession(token);
     if (!session) {
-      const loginUrl = new URL("/staff-login", request.url);
+      const loginPath = pathname.startsWith("/admin") ? "/admin-login" : "/portal-login";
+      const loginUrl  = new URL(loginPath, request.url);
       loginUrl.searchParams.set("expired", "1");
       return NextResponse.redirect(loginUrl);
     }
@@ -92,7 +95,7 @@ export async function middleware(request: NextRequest) {
         admin:    "/admin",
       };
       return NextResponse.redirect(
-        new URL(dashMap[session.role] || "/login", request.url)
+        new URL(dashMap[session.role] || "/portal-login", request.url)
       );
     }
   }

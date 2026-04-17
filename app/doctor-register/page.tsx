@@ -43,8 +43,14 @@ export default function DoctorRegisterPage() {
     department:   "",
     speciality:   "",
     degreesStr:   "",
+    registrationNumber: "",
+    collegeUG:    "",
+    collegePG:    "",
+    collegeMCH:   "",
+    about:        "",
     experience:   "",
     opdFee:       "",
+    password:     "",
     // private clinic fields
     hospitalName: "",
     district:     "",
@@ -66,9 +72,15 @@ export default function DoctorRegisterPage() {
     setError("");
 
     // Validate required fields
-    const { name, mobile, department, opdFee } = form;
+    const { name, mobile, department, opdFee, password, registrationNumber } = form;
     if (!name.trim() || !mobile.trim() || !department || !opdFee) {
       setError("Naam, Mobile, Department aur OPD Fee zaruri hai"); return;
+    }
+    if (!registrationNumber.trim()) {
+      setError("Medical Council Registration Number zaruri hai"); return;
+    }
+    if (!password || password.length < 6) {
+      setError("Password kam se kam 6 characters ka hona chahiye"); return;
     }
     if (!/^\d{10}$/.test(mobile.trim())) {
       setError("Valid 10-digit mobile number daalo"); return;
@@ -87,19 +99,19 @@ export default function DoctorRegisterPage() {
 
     setLoading(true);
     try {
+      const degreesArray = form.degreesStr.split(",").filter(s => s.trim()).map(d => ({ degree: d.trim(), university: "", year: null }));
+      
       const payload: Record<string, unknown> = {
         ...form,
-        degrees:    form.degreesStr ? form.degreesStr.split(",").map((s) => s.trim()).filter(Boolean) : [],
+        degrees:    degreesArray,
         experience: Number(form.experience) || 0,
         opdFee:     Number(form.opdFee),
       };
 
       if (hospitalMode === "network") {
         payload.hospitalId = selectedHospitalId;
-        // hospitalName will be resolved server-side from hospitalId
         payload.hospitalName = "";
       }
-      // private mode: hospitalName, district, city are already in form
 
       const res  = await fetch("/api/doctor-register", {
         method:  "POST",
@@ -388,6 +400,75 @@ export default function DoctorRegisterPage() {
                 </div>
               </div>
             )}
+          </div>
+
+          <div className="border-t border-gray-100" />
+
+          {/* ── Section 4: Medical Details ── */}
+          <div>
+            <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wide mb-4 flex items-center gap-2">
+              <span className="w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-bold">4</span>
+              Medical Qualifications
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="sm:col-span-2">
+                <label className="text-xs font-medium text-gray-500">Registration Number *</label>
+                <input value={form.registrationNumber} onChange={(e) => setF("registrationNumber", e.target.value)}
+                  placeholder="Medical Council Registration No. (e.g. DL-12345)"
+                  className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400 transition-all" />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="text-xs font-medium text-gray-500">Degrees (comma se alag karein)</label>
+                <input value={form.degreesStr} onChange={(e) => setF("degreesStr", e.target.value)}
+                  placeholder="MBBS, MD, MCH, DNB"
+                  className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400 transition-all" />
+                <p className="text-xs text-gray-400 mt-1">Sabhi qualifications comma se alag karein</p>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-500">UG College (Undergrad)</label>
+                <input value={form.collegeUG} onChange={(e) => setF("collegeUG", e.target.value)}
+                  placeholder="e.g. AIIMS Delhi"
+                  className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400 transition-all" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-500">PG College (Postgrad)</label>
+                <input value={form.collegePG} onChange={(e) => setF("collegePG", e.target.value)}
+                  placeholder="e.g. SMS Jaipur"
+                  className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400 transition-all" />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="text-xs font-medium text-gray-500">MCH / Super-Specialty College</label>
+                <input value={form.collegeMCH} onChange={(e) => setF("collegeMCH", e.target.value)}
+                  placeholder="e.g. Delhi University MCH"
+                  className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400 transition-all" />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="text-xs font-medium text-gray-500">About Doctor (Bio)</label>
+                <textarea value={form.about} onChange={(e) => setF("about", e.target.value)}
+                  placeholder="Apne baare mein likhen... experience, interests, etc."
+                  rows={3}
+                  className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400 resize-none transition-all" />
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t border-gray-100" />
+
+          {/* ── Section 5: Login Credentials ── */}
+          <div>
+            <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wide mb-4 flex items-center gap-2">
+              <span className="w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-bold">5</span>
+              Login Credentials
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="sm:col-span-2">
+                <label className="text-xs font-medium text-gray-500">Password *</label>
+                <input type="password" value={form.password} onChange={(e) => setF("password", e.target.value)}
+                  placeholder="Kam se kam 6 characters"
+                  className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400 transition-all" />
+                <p className="text-xs text-gray-400 mt-1">Staff-login page se is password use karke login kar sakte ho</p>
+              </div>
+            </div>
           </div>
 
           {/* Submit */}
