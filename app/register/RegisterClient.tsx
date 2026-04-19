@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import Header from "../components/header";
 
 const biharDistricts: Record<string, string[]> = {
@@ -23,9 +23,11 @@ const diseases = ["HTN", "Diabetes", "CVD", "CKD", "Thyroid Disorder", "Joint Pa
 
 export default function RegisterClient() {
   const searchParams = useSearchParams();
-  const mobile = searchParams.get("mobile") || "";
-  const userId = searchParams.get("userId") || "";
-  const refFromUrl = searchParams.get("ref") || "";
+  const router       = useRouter();
+  const mobile     = searchParams.get("mobile") || "";
+  const userId     = searchParams.get("userId") || "";
+  const refFromUrl = searchParams.get("ref")    || "";
+  const fromStaff  = searchParams.get("from") === "staff";
 
   const [form, setForm] = useState({
     name: "", age: "", gender: "",
@@ -61,36 +63,29 @@ export default function RegisterClient() {
     }));
   }
 
-  // Photo select karna
-  function handlePhotoSelect(e: React.ChangeEvent<HTMLInputElement>) {
+  // Photo select karo — automatic upload starts immediately
+  async function handlePhotoSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     setPhotoFile(file);
     setPhotoPreview(URL.createObjectURL(file));
-  }
-
-  // Photo upload karna
-  async function uploadPhoto() {
-    if (!photoFile) return;
     setPhotoUploading(true);
+    setError("");
     try {
-      const formData = new FormData();
-      formData.append("photo", photoFile);
-      const res = await fetch("/api/upload-photo", {
-        method: "POST",
-        body: formData,
-      });
+      const fd = new FormData();
+      fd.append("photo", file);
+      const res  = await fetch("/api/upload-photo", { method: "POST", body: fd });
       const data = await res.json();
-      if (data.success) {
+      if (data.success && data.url) {
         setForm((prev) => ({ ...prev, photo: data.url }));
-        setError("");
       } else {
-        setError("Photo upload fail hua: " + data.message);
+        setError("Photo upload fail hua: " + (data.message || "Dobara try karein"));
       }
     } catch {
       setError("Photo upload mein network error");
+    } finally {
+      setPhotoUploading(false);
     }
-    setPhotoUploading(false);
   }
 
   const showMarital = form.gender === "female" && parseInt(form.age) >= 18;
@@ -98,14 +93,25 @@ export default function RegisterClient() {
 
   async function handleSubmit() {
     setError("");
-    if (!form.name || !form.age || !form.gender || !form.idType || !form.idNumber || !form.district) {
-      setError("Sabhi zaruri (*) fields bharo");
+
+    // Client-side validation with specific field messages
+    const missing = [];
+    if (!form.name.trim())   missing.push("Naam");
+    if (!form.age)           missing.push("Umar");
+    if (!form.gender)        missing.push("Ling (Gender)");
+    if (!form.idType)        missing.push("ID Type");
+    if (!form.idNumber.trim()) missing.push("ID Number");
+    if (!form.district)      missing.push("Zila (District)");
+
+    if (missing.length > 0) {
+      setError(`Ye fields bharo: ${missing.join(", ")}`);
       return;
     }
-    if (!form.photo) {
-      setError("Photo upload karna zaruri hai");
+    if (photoFile && photoUploading) {
+      setError("Photo upload ho rahi hai, thoda ruko...");
       return;
     }
+
     setLoading(true);
     try {
       const res = await fetch("/api/register", {
@@ -116,7 +122,13 @@ export default function RegisterClient() {
       const data = await res.json();
       if (data.success) {
         setSuccess(`Registration ho gayi! 🎉 Member ID: ${data.memberId}`);
-        setTimeout(() => { window.location.href = "/dashboard"; }, 2000);
+        setTimeout(() => {
+          if (fromStaff) {
+            window.location.href = "/staff-dashboard";
+          } else {
+            window.location.href = "/dashboard";
+          }
+        }, 2000);
       } else {
         setError(data.message);
       }
@@ -133,6 +145,16 @@ export default function RegisterClient() {
         <div className="bg-white rounded-2xl shadow-lg p-8">
           <h1 className="text-2xl font-bold text-teal-700 mb-2">Register Karein</h1>
           <p className="text-gray-500 text-sm mb-3">Mobile: +91 {mobile}</p>
+
+          {fromStaff && (
+            <div className="mb-5 bg-orange-50 border border-orange-200 rounded-xl p-3 flex items-center gap-3">
+              <span className="text-2xl">🏥</span>
+              <div>
+                <p className="text-sm font-semibold text-orange-800">Staff-initiated Registration</p>
+                <p className="text-xs text-orange-600">Registration ke baad staff dashboard pe wapas jaenge</p>
+              </div>
+            </div>
+          )}
 
           {refFromUrl && (
             <div className="mb-5 bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center gap-3">
@@ -158,16 +180,21 @@ export default function RegisterClient() {
                 )}
               </div>
               <div className="flex flex-col gap-2">
-                <input type="file" accept="image/*" onChange={handlePhotoSelect}
-                  className="text-sm text-gray-500 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-teal-50 file:text-teal-700 file:font-medium hover:file:bg-teal-100" />
-                {photoFile && !form.photo && (
-                  <button onClick={uploadPhoto} disabled={photoUploading}
-                    className="bg-teal-600 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50">
-                    {photoUploading ? "Upload ho raha hai..." : "Photo Upload Karein ☁️"}
-                  </button>
+                <label className="cursor-pointer inline-flex items-center gap-2 bg-teal-50 hover:bg-teal-100 text-teal-700 font-medium px-4 py-2 rounded-lg text-sm border border-teal-200 transition">
+                  <input type="file" accept="image/*" onChange={handlePhotoSelect} className="hidden" />
+                  📷 Photo Select Karein
+                </label>
+                {photoUploading && (
+                  <span className="text-blue-600 text-sm flex items-center gap-2">
+                    <span className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin inline-block" />
+                    Upload ho raha hai...
+                  </span>
                 )}
-                {form.photo && (
+                {form.photo && !photoUploading && (
                   <span className="text-green-600 text-sm font-medium">✅ Photo upload ho gayi!</span>
+                )}
+                {!photoFile && (
+                  <p className="text-xs text-gray-400">Camera ya gallery se photo select karein (optional)</p>
                 )}
               </div>
             </div>

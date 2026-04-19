@@ -204,9 +204,11 @@ export default function StaffLoginPage() {
           <img src="/logo.png" alt="Brims" className="h-9 w-9 rounded-full bg-white p-0.5 object-contain" />
           <span className="text-white font-bold text-lg">Brims Hospitals</span>
         </a>
-        <a href="/login" className="text-gray-400 text-sm hover:text-white transition-colors">
-          ← Member Login
-        </a>
+        <div className="flex items-center gap-3 text-sm">
+          <a href="/hospital/login" className="text-gray-400 hover:text-white transition-colors hidden sm:block">Hospital</a>
+          <a href="/doctor/login"   className="text-gray-400 hover:text-white transition-colors hidden sm:block">Doctor</a>
+          <a href="/login"          className="text-gray-400 hover:text-white transition-colors">Member Login</a>
+        </div>
       </div>
 
       <div className="flex-1 flex items-center justify-center px-4 py-8">

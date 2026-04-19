@@ -112,6 +112,60 @@ const translations: Record<string, Record<Lang, string>> = {
   "mem.cardNumber":   { en: "Card Number",        hi: "कार्ड नंबर" },
   "mem.familyCard":   { en: "Family Card",        hi: "फैमिली कार्ड" },
   "mem.price":        { en: "₹249/year",          hi: "₹249/वर्ष" },
+
+  // ── OPD Booking ──
+  "opd.title":        { en: "OPD Appointment",        hi: "OPD अपॉइंटमेंट" },
+  "opd.subtitle":     { en: "Book in 3 simple steps", hi: "3 आसान चरणों में बुक करें" },
+  "opd.step1":        { en: "Doctor",                 hi: "डॉक्टर" },
+  "opd.step2":        { en: "Patient",                hi: "मरीज" },
+  "opd.step3":        { en: "Confirm",                hi: "पुष्टि करें" },
+  "opd.selectDoc":    { en: "Select Doctor & Time Slot", hi: "डॉक्टर और समय चुनें" },
+  "opd.selectDate":   { en: "Select Date",            hi: "तारीख चुनें" },
+  "opd.selectSlot":   { en: "Select Time Slot",       hi: "समय स्लॉट चुनें" },
+  "opd.whoPatient":   { en: "Who is the patient?",    hi: "मरीज कौन है?" },
+  "opd.confirmPay":   { en: "Confirm & Payment",      hi: "पुष्टि और भुगतान" },
+  "opd.selectPayMode":{ en: "Select Payment Mode",    hi: "भुगतान विधि चुनें" },
+  "opd.promoCode":    { en: "Promo Code (Optional)",  hi: "प्रोमो कोड (वैकल्पिक)" },
+  "opd.symptoms":     { en: "Symptoms / Reason",      hi: "लक्षण / कारण" },
+  "opd.nextPatient":  { en: "Next: Patient Details →","hi": "आगे: मरीज विवरण →" },
+  "opd.confirmBtn":   { en: "Confirm Booking ✓",      hi: "बुकिंग पुष्टि करें ✓" },
+  "opd.success":      { en: "Booking Confirmed!",     hi: "बुकिंग पक्की हो गई!" },
+  "opd.successSub":   { en: "Your OPD appointment is booked", hi: "आपकी OPD अपॉइंटमेंट बुक हो गई" },
+  "opd.newBooking":   { en: "New Booking",            hi: "नई बुकिंग" },
+
+  // ── My Bookings ──
+  "book.title":       { en: "My Bookings",            hi: "मेरी बुकिंग" },
+  "book.filter.all":  { en: "All",                    hi: "सभी" },
+  "book.cancelBtn":   { en: "Cancel Booking",         hi: "बुकिंग रद्द करें" },
+  "book.joinCall":    { en: "Join Video Call",         hi: "वीडियो कॉल जॉइन करें" },
+  "book.noBookings":  { en: "No bookings yet",        hi: "अभी तक कोई बुकिंग नहीं" },
+  "book.insurance":   { en: "Insurance Details",      hi: "बीमा विवरण" },
+
+  // ── Insurance ──
+  "ins.policyNo":     { en: "Policy Number",          hi: "पॉलिसी नंबर" },
+  "ins.company":      { en: "Insurance Company",      hi: "बीमा कंपनी" },
+  "ins.tpa":          { en: "TPA Name",               hi: "TPA का नाम" },
+  "ins.note":         { en: "Our team will contact within 24h for cashless/reimbursement", hi: "हमारी टीम 24 घंटे में कैशलेस/रीइंबर्समेंट के लिए संपर्क करेगी" },
+
+  // ── Notifications ──
+  "notif.title":      { en: "Notifications",          hi: "सूचनाएं" },
+  "notif.markAll":    { en: "Mark all read",          hi: "सब पढ़ा हुआ" },
+  "notif.empty":      { en: "No notifications yet",   hi: "अभी कोई सूचना नहीं" },
+
+  // ── Lab Tests ──
+  "lab.title":        { en: "Lab Tests",              hi: "लैब टेस्ट" },
+  "lab.subtitle":     { en: "Book from home",         hi: "घर से बुक करें" },
+  "lab.homeCollection":{ en: "Home Collection",       hi: "होम कलेक्शन" },
+  "lab.fasting":      { en: "Fasting Required",       hi: "उपवास जरूरी" },
+
+  // ── Profile ──
+  "profile.title":    { en: "My Profile",             hi: "मेरी प्रोफाइल" },
+  "profile.edit":     { en: "Edit Profile",           hi: "प्रोफाइल संपादित करें" },
+  "profile.name":     { en: "Full Name",              hi: "पूरा नाम" },
+  "profile.age":      { en: "Age",                    hi: "उम्र" },
+  "profile.gender":   { en: "Gender",                 hi: "लिंग" },
+  "profile.mobile":   { en: "Mobile",                 hi: "मोबाइल" },
+  "profile.district": { en: "District",               hi: "जिला" },
 };
 
 // Main translation function

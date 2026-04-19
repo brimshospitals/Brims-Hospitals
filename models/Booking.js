@@ -36,6 +36,9 @@ const bookingSchema = new mongoose.Schema(
     collectedBy:       { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     collectedByName:   { type: String },
     collectedAt:       { type: Date },
+    // Reminder tracking (avoid duplicate SMS)
+    reminderToday:     { type: Boolean, default: false },
+    reminderTomorrow:  { type: Boolean, default: false },
   },
   { timestamps: true }
 );

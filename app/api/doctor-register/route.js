@@ -7,6 +7,19 @@ import { hashPassword } from "../../../lib/auth";
 
 export const dynamic = "force-dynamic";
 
+async function generateDoctorId() {
+  // Format: BRIMS-DR-XXXX (4 uppercase alphanumeric, unique)
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  for (let attempts = 0; attempts < 10; attempts++) {
+    const suffix = Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+    const id = `BRIMS-DR-${suffix}`;
+    const exists = await Doctor.findOne({ doctorId: id }).lean();
+    if (!exists) return id;
+  }
+  // Fallback: timestamp-based
+  return "BRIMS-DR-" + Date.now().toString(36).toUpperCase().slice(-4);
+}
+
 export async function POST(request) {
   try {
     const body = await request.json();
@@ -58,8 +71,8 @@ export async function POST(request) {
       );
     }
 
-    // Resolve hospital name from DB if hospitalId provided (Brims network hospital)
-    let resolvedHospitalId  = undefined;
+    // Resolve hospital from DB if hospitalId provided (Brims network hospital)
+    let resolvedHospitalId   = undefined;
     let resolvedHospitalName = hospitalName?.trim() || "";
 
     if (hospitalId) {
@@ -70,29 +83,32 @@ export async function POST(request) {
       }
     }
 
-    // Parse degrees (array of {degree, university, year})
+    // Parse degrees
     let parsedDegrees = [];
     if (Array.isArray(degrees)) {
       parsedDegrees = degrees.map(d => {
-        if (typeof d === 'string') return { degree: d, university: "", year: null };
+        if (typeof d === "string") return { degree: d, university: "", year: null };
         return d;
       });
-    } else if (typeof degrees === 'string' && degrees.trim()) {
+    } else if (typeof degrees === "string" && degrees.trim()) {
       parsedDegrees = [{ degree: degrees.trim(), university: "", year: null }];
     }
 
-    // Create User account for doctor with professional login
+    // Generate unique Doctor ID
+    const doctorId = await generateDoctorId();
+
+    // Create User account — doctorId is the primary loginId
     const hashedPassword = await hashPassword(password);
-    const professionalId = email || `doctor_${mobile}`;
+    const professionalId = doctorId; // BRIMS-DR-XXXX
 
     const user = await User.create({
       mobile: mobile.trim(),
       email: email?.trim() || null,
       name: name.trim(),
-      age: 30,  // Default
-      gender: "male",  // Can be updated later
+      age: 30,
+      gender: "male",
       role: "doctor",
-      professionalId: professionalId,
+      professionalId,
       professionalPassword: hashedPassword,
       professionalType: "doctor",
       isActive: true,
@@ -100,6 +116,7 @@ export async function POST(request) {
 
     // Save doctor with complete profile
     const doctor = await Doctor.create({
+      doctorId,
       name:        name.trim(),
       mobile:      mobile.trim(),
       email:       email?.trim() || "",
@@ -108,10 +125,10 @@ export async function POST(request) {
       speciality:  speciality  || "",
       degrees:     parsedDegrees,
       registrationNumber: registrationNumber?.trim() || null,
-      collegeUG: collegeUG?.trim() || "",
-      collegePG: collegePG?.trim() || "",
-      collegeMCH: collegeMCH?.trim() || "",
-      about: about?.trim() || "",
+      collegeUG:   collegeUG?.trim()  || "",
+      collegePG:   collegePG?.trim()  || "",
+      collegeMCH:  collegeMCH?.trim() || "",
+      about:       about?.trim()      || "",
       profileComplete: false,
       experience:  Number(experience) || 0,
       opdFee:      Number(opdFee),
@@ -130,13 +147,13 @@ export async function POST(request) {
     user.doctorId = doctor._id;
     await user.save();
 
-    console.log(`🩺 New Doctor Registration: ${name} (${mobile}) — pending admin approval. Doctor _id: ${doctor._id}`);
+    console.log(`🩺 New Doctor Registration: ${name} (${mobile}) — Doctor ID: ${doctorId} — pending admin approval`);
 
     return NextResponse.json({
-      success:  true,
-      message:  "Aapki registration request submit ho gayi! Admin approval ke baad login kar sakenge. Password se staff-login page pe login kar sakte ho.",
-      doctorId: doctor._id.toString(),
-      loginId: professionalId,
+      success:     true,
+      message:     "Aapki registration request submit ho gayi! Admin approval ke baad login kar sakenge.",
+      doctorId,
+      loginId:     professionalId,
     });
   } catch (error) {
     console.error("Doctor Register Error:", error);
@@ -146,4 +163,3 @@ export async function POST(request) {
     );
   }
 }
-

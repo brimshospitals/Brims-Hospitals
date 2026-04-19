@@ -38,8 +38,8 @@ export async function GET(request) {
       matchQuery.collectedBy = staffId;
     }
 
-    const [summary, byType, byMode, recent] = await Promise.all([
-      // Summary totals
+    const [summary, refundSummary, byType, byMode, recent] = await Promise.all([
+      // Gross totals (paid)
       Booking.aggregate([
         { $match: matchQuery },
         { $group: {
@@ -48,6 +48,12 @@ export async function GET(request) {
             count:   { $sum: 1 },
             avgAmt:  { $avg: "$amount" },
         }},
+      ]),
+
+      // Refunded totals
+      Booking.aggregate([
+        { $match: { paymentStatus: "refunded", collectedAt: { $gte: dateFrom } } },
+        { $group: { _id: null, refunds: { $sum: "$amount" } } },
       ]),
 
       // By booking type
@@ -87,10 +93,15 @@ export async function GET(request) {
       return { ...b, patientName: n.patientName || "—" };
     });
 
+    const gross   = summary[0]?.total    || 0;
+    const refunds = refundSummary[0]?.refunds || 0;
+
     return NextResponse.json({
       success: true,
       summary: {
-        total:   summary[0]?.total || 0,
+        total:   gross,
+        refunds: refunds,
+        net:     gross - refunds,
         count:   summary[0]?.count || 0,
         avgAmt:  Math.round(summary[0]?.avgAmt || 0),
       },

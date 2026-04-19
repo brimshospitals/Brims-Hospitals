@@ -26,9 +26,11 @@ const hospitalSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ["Single Specialist", "Multi Specialist", "Super Specialist"],
+    enum: ["Single Specialist", "Multi Specialist", "Super Specialist", "Clinic", "Diagnostic Lab", "Nursing Home"],
   },
   departments: [{ type: String }],
+  specialties:  [{ type: String }],
+  spocEmail:    { type: String },
   photos: [{ type: String }],
   rating: { type: Number, default: 0 },
   totalReviews: { type: Number, default: 0 },

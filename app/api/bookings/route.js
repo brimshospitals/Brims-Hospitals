@@ -2,9 +2,12 @@ import { NextResponse } from "next/server";
 import connectDB from "../../../lib/mongodb";
 import Booking from "../../../models/Booking";
 import User from "../../../models/User";
+import Doctor from "../../../models/Doctor";
+import Hospital from "../../../models/Hospital";
 import Notification from "../../../models/Notification";
 import PromoCode from "../../../models/PromoCode";
 import { requireAuth } from "../../../lib/auth";
+import { sendPushMulticast } from "../../../lib/fcm-admin";
 
 export const dynamic = "force-dynamic";
 
@@ -60,7 +63,13 @@ export async function POST(request) {
 
     const bookingId = await generateBookingId(type);
 
-    // Encode patient info + symptoms in notes if new patient
+    // Encode patient info + symptoms + insurance fields in notes
+    const {
+      insurancePolicyNo,
+      insurerName,
+      tpaName,
+    } = body;
+
     const notes = JSON.stringify({
       patientName,
       patientMobile,
@@ -69,9 +78,12 @@ export async function POST(request) {
       symptoms: symptoms || "",
       paymentMode: paymentMode || "counter",
       isNewPatient: !!isNewPatient,
-      ...(promoCode     && { promoCode }),
-      ...(promoDiscount && { promoDiscount }),
-      ...(homeAddress   && { homeAddress }),
+      ...(promoCode          && { promoCode }),
+      ...(promoDiscount      && { promoDiscount }),
+      ...(homeAddress        && { homeAddress }),
+      ...(insurancePolicyNo  && { insurancePolicyNo }),
+      ...(insurerName        && { insurerName }),
+      ...(tpaName            && { tpaName }),
     });
 
     // Increment promo usage count
@@ -126,8 +138,54 @@ export async function POST(request) {
         );
       }
     } catch (notifErr) {
-      // Don't fail the booking if notification fails
       console.error("Notification error:", notifErr.message);
+    }
+
+    // ── FCM Push Notifications ─────────────────────────────────
+    try {
+      const pushTitle = `Naya ${typeLabel} Booking 🔔`;
+      const pushBody  = `${patientName} · ${dateLabel}${slot ? " " + slot : ""} · ₹${amount || 0}`;
+
+      // Collect FCM tokens: doctor + hospital users + all admins
+      const fcmTargets = [];
+
+      if (doctorId) {
+        const doc = await Doctor.findById(doctorId).select("userId").lean();
+        if (doc?.userId) {
+          const docUser = await User.findById(doc.userId).select("fcmToken").lean();
+          if (docUser?.fcmToken) fcmTargets.push(docUser.fcmToken);
+        }
+      }
+
+      if (hospitalId) {
+        const hosp = await Hospital.findById(hospitalId).select("userId").lean();
+        if (hosp?.userId) {
+          const hospUser = await User.findById(hosp.userId).select("fcmToken").lean();
+          if (hospUser?.fcmToken) fcmTargets.push(hospUser.fcmToken);
+        }
+      }
+
+      const adminTokens = await User.find({ role: "admin", fcmToken: { $ne: null } })
+        .select("fcmToken").lean();
+      adminTokens.forEach((u) => u.fcmToken && fcmTargets.push(u.fcmToken));
+
+      if (fcmTargets.length) {
+        await sendPushMulticast(fcmTargets, pushTitle, pushBody, { bookingId }, "/staff-dashboard");
+      }
+
+      // Also push to the patient (booking confirmation)
+      const patientUser = await User.findById(session.userId).select("fcmToken").lean();
+      if (patientUser?.fcmToken) {
+        await sendPushMulticast(
+          [patientUser.fcmToken],
+          `✅ Booking Confirmed — ${typeLabel}`,
+          `ID: ${bookingId} · ${dateLabel}${slot ? " " + slot : ""}`,
+          { bookingId },
+          "/my-bookings"
+        );
+      }
+    } catch (fcmErr) {
+      console.error("FCM push error:", fcmErr.message);
     }
     // ────────────────────────────────────────────────────────────
 

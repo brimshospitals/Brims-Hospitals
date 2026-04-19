@@ -19,7 +19,7 @@ export async function POST(request) {
       street, district, city, pincode,
       spocName, spocContact, spocEmail,
       ownerName, ownerContact,
-      departments,
+      departments, specialties,
       password,
     } = body;
 
@@ -37,10 +37,17 @@ export async function POST(request) {
       );
     }
 
+    if (!/^\d{10}$/.test(mobile.trim())) {
+      return NextResponse.json(
+        { success: false, message: "Valid 10-digit mobile number daalo" },
+        { status: 400 }
+      );
+    }
+
     await connectDB();
 
     // Check duplicate hospital
-    const existingHosp = await Hospital.findOne({ mobile });
+    const existingHosp = await Hospital.findOne({ mobile: mobile.trim() });
     if (existingHosp) {
       return NextResponse.json(
         { success: false, message: "Is mobile number se pehle se hospital registered hai" },
@@ -49,7 +56,7 @@ export async function POST(request) {
     }
 
     // Check duplicate user with this mobile
-    const existingUser = await User.findOne({ mobile });
+    const existingUser = await User.findOne({ mobile: mobile.trim() });
     if (existingUser) {
       return NextResponse.json(
         { success: false, message: "Is mobile number se pehle se account hai" },
@@ -57,40 +64,43 @@ export async function POST(request) {
       );
     }
 
+    const hospitalId = generateHospitalId();
+
     // Create hospital first
     const hospital = await Hospital.create({
-      hospitalId: generateHospitalId(),
+      hospitalId,
       name,
       type,
       registrationNo,
       rohiniNo,
-      mobile,
-      email,
+      mobile: mobile.trim(),
+      email: email?.trim() || null,
       website,
       address: { street, district, city, pincode, state: "Bihar" },
       spocName,
       spocContact,
-      spocEmail,
+      spocEmail: spocEmail?.trim() || null,
       ownerName,
       ownerContact,
-      departments,
+      departments: departments || [],
+      specialties: specialties || [],
       isVerified: false,
       isActive: false,
     });
 
-    // Create User account with professional login credentials
+    // Create User account — use hospitalId as primary loginId
     const hashedPassword = await hashPassword(password);
-    const professionalId = email || `hospital_${mobile}`;
+    const professionalId = hospitalId; // BRIMS-HOSP-XXXXX is the login ID
 
     const user = await User.create({
-      mobile,
-      email: email || null,
+      mobile: mobile.trim(),
+      email: email?.trim() || null,
       name: spocName || name,
-      age: 30,  // Default
-      gender: "male",  // Can be updated later
+      age: 30,
+      gender: "male",
       role: "hospital",
       hospitalId: hospital._id,
-      professionalId: professionalId,
+      professionalId,
       professionalPassword: hashedPassword,
       professionalType: "hospital",
       isActive: true,
@@ -100,10 +110,12 @@ export async function POST(request) {
     hospital.userId = user._id;
     await hospital.save();
 
+    console.log(`🏥 New Hospital Registration: ${name} (${mobile}) — Hospital ID: ${hospitalId}`);
+
     return NextResponse.json({
       success: true,
-      message: "Application submit ho gayi! Team jald contact karegi. Apna password se login kar sakte ho.",
-      hospitalId: hospital.hospitalId,
+      message: "Application submit ho gayi! Team jald contact karegi.",
+      hospitalId,
       loginId: professionalId,
     });
 

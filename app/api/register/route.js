@@ -19,24 +19,36 @@ export async function POST(request) {
       idType, idNumber, email,
       district, prakhand, village,
       preExistingDiseases, height, weight,
+      photo,
       referralCode: inputReferralCode,
     } = body;
 
-    if (!userId || !mobile || !name || !age || !gender || !idType || !idNumber || !district) {
+    if (!mobile || !name || !age || !gender || !idType || !idNumber || !district) {
       return NextResponse.json(
-        { success: false, message: "Sabhi zaruri fields bharo" },
+        { success: false, message: "Sabhi zaruri fields bharo: naam, umar, ling, ID type, ID number, aur zila" },
         { status: 400 }
       );
     }
 
     await connectDB();
 
-    const user = await User.findById(userId);
+    // Find user by userId (normal flow) or by mobile (staff-initiated flow)
+    let user = null;
+    if (userId) {
+      user = await User.findById(userId);
+    }
+    if (!user && mobile) {
+      user = await User.findOne({ mobile: mobile.trim() });
+    }
+    // If still not found, create a new user (staff walk-in registration)
     if (!user) {
-      return NextResponse.json(
-        { success: false, message: "User nahi mila" },
-        { status: 404 }
-      );
+      user = await User.create({
+        mobile: mobile.trim(),
+        name:   name.trim(),
+        age:    parseInt(age),
+        gender,
+        role:   "user",
+      });
     }
 
     // Referral code generate karo
@@ -50,6 +62,7 @@ export async function POST(request) {
     user.idType = idType;
     user.idNumber = idNumber;
     user.email = email || "";
+    if (photo) user.photo = photo;
     user.address = {
       state: "Bihar",
       district,

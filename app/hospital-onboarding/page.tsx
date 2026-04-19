@@ -1,5 +1,6 @@
 "use client";
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 const BIHAR_DISTRICTS = [
   "Araria","Arwal","Aurangabad","Banka","Begusarai","Bhagalpur","Bhojpur","Buxar",
@@ -16,10 +17,19 @@ const DEPARTMENTS = [
   "Physiotherapy","Urology","Nephrology","Oncology","Gastroenterology","Other",
 ];
 
+const SPECIALTIES = [
+  "Laparoscopic Surgery","Joint Replacement","Cardiac Surgery","Neuro Surgery",
+  "Cancer Care / Oncology","Maternity & Delivery","Neonatology","Renal Transplant",
+  "Liver Transplant","Bariatric Surgery","Spine Surgery","Vascular Surgery",
+  "Plastic & Cosmetic Surgery","IVF & Fertility","Dialysis Center",
+  "Trauma & Emergency","ICU & Critical Care","Blood Bank",
+  "Robotic Surgery","Endoscopy","Cath Lab","NICU","PICU",
+];
+
 const STEPS = [
-  { id: 1, label: "Hospital Info",   icon: "🏥" },
-  { id: 2, label: "Contact Details", icon: "📞" },
-  { id: 3, label: "Departments",     icon: "🏷️" },
+  { id: 1, label: "Hospital Info",    icon: "🏥" },
+  { id: 2, label: "Contact & Login",  icon: "📞" },
+  { id: 3, label: "Specializations",  icon: "🏷️" },
 ];
 
 const inp = "w-full border border-gray-200 rounded-xl px-3.5 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 focus:border-teal-400 transition bg-white";
@@ -33,7 +43,46 @@ function Label({ children, required }: { children: React.ReactNode; required?: b
   );
 }
 
-export default function HospitalOnboardingPage() {
+function CheckGrid({
+  items, selected, onToggle, color = "teal",
+}: {
+  items: string[];
+  selected: string[];
+  onToggle: (item: string) => void;
+  color?: "teal" | "purple";
+}) {
+  const active = color === "purple"
+    ? "border-purple-500 bg-purple-50 text-purple-800 font-semibold"
+    : "border-teal-500 bg-teal-50 text-teal-800 font-semibold";
+  const check = color === "purple" ? "bg-purple-600 border-purple-600" : "bg-teal-600 border-teal-600";
+
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+      {items.map((item) => (
+        <label key={item}
+          className={`flex items-center gap-2.5 p-3 rounded-xl border cursor-pointer transition text-sm ${
+            selected.includes(item) ? active : "border-gray-200 text-gray-600 hover:border-teal-300 hover:bg-teal-50/50"
+          }`}>
+          <div className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border ${selected.includes(item) ? check : "border-gray-300"}`}>
+            {selected.includes(item) && (
+              <svg viewBox="0 0 12 12" fill="none" className="w-3 h-3 text-white" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M2 6l3 3 5-5" />
+              </svg>
+            )}
+          </div>
+          <span className="leading-tight">{item}</span>
+          <input type="checkbox" className="hidden" checked={selected.includes(item)} onChange={() => onToggle(item)} />
+        </label>
+      ))}
+    </div>
+  );
+}
+
+// ── Inner component that uses useSearchParams ──────────────────────────────
+function HospitalOnboardingForm() {
+  const searchParams = useSearchParams();
+  const fromAdmin = searchParams.get("from") === "admin";
+
   const [step, setStep] = useState(1);
   const [form, setForm] = useState({
     name: "", type: "", registrationNo: "", rohiniNo: "",
@@ -42,32 +91,39 @@ export default function HospitalOnboardingPage() {
     spocName: "", spocContact: "", spocEmail: "",
     ownerName: "", ownerContact: "",
     departments: [] as string[],
-    password: "",
+    specialties: [] as string[],
+    password: "", confirmPassword: "",
   });
-  const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState("");
-  const [success, setSuccess] = useState<string>("");
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState("");
+  const [result, setResult]     = useState<{ hospitalId: string; loginId: string } | null>(null);
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
-  const toggleDept = (d: string) =>
-    setForm((f) => ({ ...f, departments: f.departments.includes(d) ? f.departments.filter((x) => x !== d) : [...f.departments, d] }));
+  const toggleList = (key: "departments" | "specialties", item: string) =>
+    setForm((f) => ({
+      ...f,
+      [key]: (f[key] as string[]).includes(item)
+        ? (f[key] as string[]).filter((x) => x !== item)
+        : [...(f[key] as string[]), item],
+    }));
 
   function validate() {
     setError("");
     if (step === 1) {
-      if (!form.name.trim())     return setError("Hospital naam zaruri hai"),     false;
-      if (!form.type)            return setError("Hospital type zaruri hai"),      false;
-      if (!/^\d{10}$/.test(form.mobile.trim())) return setError("Valid 10-digit mobile daalo"), false;
-      if (!form.district)        return setError("District select karein"),        false;
+      if (!form.name.trim())     { setError("Hospital naam zaruri hai"); return false; }
+      if (!form.type)            { setError("Hospital type zaruri hai"); return false; }
+      if (!/^\d{10}$/.test(form.mobile.trim())) { setError("Valid 10-digit mobile daalo"); return false; }
+      if (!form.district)        { setError("District select karein"); return false; }
     }
     if (step === 2) {
-      if (!form.spocName.trim())    return setError("SPOC ka naam zaruri hai"),    false;
-      if (!form.spocContact.trim()) return setError("SPOC ka mobile zaruri hai"),  false;
-      if (!form.ownerName.trim())   return setError("Owner ka naam zaruri hai"),   false;
-      if (!form.password || form.password.length < 6) return setError("Password kam se kam 6 characters ka hona chahiye"), false;
+      if (!form.spocName.trim())    { setError("SPOC ka naam zaruri hai"); return false; }
+      if (!form.spocContact.trim()) { setError("SPOC ka mobile zaruri hai"); return false; }
+      if (!form.ownerName.trim())   { setError("Owner ka naam zaruri hai"); return false; }
+      if (!form.password || form.password.length < 6) { setError("Password kam se kam 6 characters ka hona chahiye"); return false; }
+      if (form.password !== form.confirmPassword) { setError("Dono passwords match nahi kar rahe"); return false; }
     }
     if (step === 3) {
-      if (form.departments.length === 0) return setError("Kam se kam ek department select karein"), false;
+      if (form.departments.length === 0) { setError("Kam se kam ek department select karein"); return false; }
     }
     return true;
   }
@@ -82,8 +138,11 @@ export default function HospitalOnboardingPage() {
         body:    JSON.stringify(form),
       });
       const data = await res.json();
-      if (data.success) setSuccess(data.hospitalId || "SUBMITTED");
-      else setError(data.message);
+      if (data.success) {
+        setResult({ hospitalId: data.hospitalId, loginId: data.loginId });
+      } else {
+        setError(data.message);
+      }
     } catch {
       setError("Network error. Dobara try karein.");
     }
@@ -91,76 +150,105 @@ export default function HospitalOnboardingPage() {
   }
 
   // ── Success Screen ──────────────────────────────────────────────────────────
-  if (success) {
+  if (result) {
     return (
-      <main className="min-h-screen bg-gradient-to-br from-teal-600 via-teal-700 to-teal-800 flex items-center justify-center p-4">
-        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-8 text-center">
+      <div className={fromAdmin ? "" : "min-h-screen bg-gradient-to-br from-teal-600 via-teal-700 to-teal-800 flex items-center justify-center p-4"}>
+        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-8 text-center mx-auto">
           <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-5">
             <svg viewBox="0 0 24 24" fill="none" className="w-10 h-10 text-green-600" stroke="currentColor" strokeWidth={2.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
             </svg>
           </div>
-          <h1 className="text-2xl font-bold text-gray-800 mb-2">Application Submit Ho Gayi!</h1>
-          <p className="text-gray-500 text-sm leading-relaxed mb-1">
-            <strong>{form.name}</strong> ka application successfully submit ho gaya.
+          <h1 className="text-2xl font-bold text-gray-800 mb-2">
+            {fromAdmin ? "Hospital Added!" : "Application Submit Ho Gayi!"}
+          </h1>
+          <p className="text-gray-500 text-sm leading-relaxed mb-5">
+            <strong>{form.name}</strong> ka account successfully create ho gaya.
           </p>
-          <p className="text-gray-400 text-sm mb-6">Hamari team <strong>2–3 working days</strong> mein aapse contact karegi.</p>
 
-          <div className="bg-teal-50 border border-teal-200 rounded-2xl p-4 text-left mb-6 space-y-2">
-            <p className="text-xs font-bold text-teal-700 uppercase tracking-wide mb-2">Aage kya hoga</p>
-            {[
-              "Document verification (Registration, Rohini No.)",
-              "Hamari team ka site visit (agar zaruri ho)",
-              "Agreement signing online ya in-person",
-              "Hospital dashboard access aur portal training",
-            ].map((s, i) => (
-              <div key={i} className="flex items-start gap-2">
-                <div className="w-5 h-5 bg-teal-600 rounded-full flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0 mt-0.5">{i + 1}</div>
-                <p className="text-sm text-teal-700">{s}</p>
+          {/* Credential Card */}
+          <div className="bg-teal-50 border border-teal-300 rounded-2xl p-5 text-left mb-5 space-y-3">
+            <p className="text-xs font-bold text-teal-700 uppercase tracking-wide">Login Credentials</p>
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between bg-white rounded-xl px-3 py-2.5 border border-teal-200">
+                <span className="text-xs text-gray-500 font-medium">Hospital ID / Login ID</span>
+                <span className="text-sm font-bold text-teal-700 font-mono">{result.loginId}</span>
               </div>
-            ))}
+              <div className="flex items-center justify-between bg-white rounded-xl px-3 py-2.5 border border-teal-200">
+                <span className="text-xs text-gray-500 font-medium">Mobile</span>
+                <span className="text-sm font-semibold text-gray-700">{form.mobile}</span>
+              </div>
+              <div className="flex items-center justify-between bg-white rounded-xl px-3 py-2.5 border border-teal-200">
+                <span className="text-xs text-gray-500 font-medium">Password</span>
+                <span className="text-sm font-semibold text-gray-700">{"•".repeat(Math.min(form.password.length, 10))}</span>
+              </div>
+            </div>
+            <p className="text-[11px] text-teal-600 leading-relaxed mt-1">
+              ⚠️ Yeh credentials save kar lein. Hospital ID se Hospital Login page pe login kar sakte hain.
+            </p>
           </div>
 
-          <div className="bg-gray-50 rounded-xl px-4 py-3 mb-6">
-            <p className="text-xs text-gray-400">Application ID</p>
-            <p className="text-sm font-mono font-bold text-gray-700 mt-0.5">{success}</p>
-          </div>
+          {!fromAdmin && (
+            <>
+              <div className="bg-gray-50 rounded-xl px-4 py-3 mb-5 text-left">
+                <p className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-2.5">Aage kya hoga</p>
+                {["Document verification", "Admin ka approval (2–3 din)", "Hospital dashboard access"].map((s, i) => (
+                  <div key={i} className="flex items-center gap-2 mb-1.5">
+                    <div className="w-5 h-5 bg-teal-600 rounded-full flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">{i + 1}</div>
+                    <p className="text-sm text-gray-600">{s}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-3">
+                <a href="/" className="flex-1 border border-gray-200 text-gray-600 py-3 rounded-xl text-sm font-semibold text-center hover:bg-gray-50 transition">
+                  🏠 Home
+                </a>
+                <a href="/hospital/login" className="flex-1 bg-teal-600 hover:bg-teal-700 text-white py-3 rounded-xl text-sm font-semibold text-center transition">
+                  Hospital Login →
+                </a>
+              </div>
+            </>
+          )}
 
-          <div className="flex gap-3">
-            <a href="/" className="flex-1 border border-gray-200 text-gray-600 py-3 rounded-xl text-sm font-semibold text-center hover:bg-gray-50 transition">
-              🏠 Home
-            </a>
-            <a href="/login" className="flex-1 bg-teal-600 hover:bg-teal-700 text-white py-3 rounded-xl text-sm font-semibold text-center transition">
-              Login Karein →
-            </a>
-          </div>
+          {fromAdmin && (
+            <button
+              onClick={() => { setResult(null); setStep(1); setForm({ name:"",type:"",registrationNo:"",rohiniNo:"",mobile:"",email:"",website:"",street:"",district:"",city:"",pincode:"",spocName:"",spocContact:"",spocEmail:"",ownerName:"",ownerContact:"",departments:[],specialties:[],password:"",confirmPassword:"" }); }}
+              className="w-full bg-teal-600 hover:bg-teal-700 text-white py-3 rounded-xl text-sm font-semibold transition"
+            >
+              + Aur Hospital Add Karein
+            </button>
+          )}
         </div>
-      </main>
+      </div>
     );
   }
 
   // ── Form ────────────────────────────────────────────────────────────────────
   return (
-    <main className="min-h-screen bg-gray-50">
-      {/* Top bar */}
-      <div className="bg-teal-700 px-5 py-3.5 flex items-center justify-between">
-        <a href="/" className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center text-xl">🏥</div>
-          <span className="text-white font-bold text-lg">Brims Hospitals</span>
-        </a>
-        <a href="/login" className="text-teal-200 text-sm hover:text-white transition">Login →</a>
-      </div>
+    <div className={fromAdmin ? "" : "min-h-screen bg-gray-50"}>
+      {/* Top bar — hidden when embedded from admin */}
+      {!fromAdmin && (
+        <div className="bg-teal-700 px-5 py-3.5 flex items-center justify-between">
+          <a href="/" className="flex items-center gap-3">
+            <img src="/logo.png" alt="Brims" className="h-9 w-9 rounded-full bg-white p-0.5 object-contain" />
+            <span className="text-white font-bold text-lg">Brims Hospitals</span>
+          </a>
+          <a href="/hospital/login" className="text-teal-200 text-sm hover:text-white transition">Hospital Login →</a>
+        </div>
+      )}
 
-      <div className="max-w-2xl mx-auto px-4 py-8">
+      <div className={`max-w-2xl mx-auto px-4 ${fromAdmin ? "py-4" : "py-8"}`}>
 
         {/* Page Header */}
-        <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-gray-800">Hospital Onboarding</h1>
-          <p className="text-gray-500 text-sm mt-1">Brims Health Network mein apna hospital register karein</p>
-        </div>
+        {!fromAdmin && (
+          <div className="text-center mb-8">
+            <h1 className="text-2xl font-bold text-gray-800">Hospital Onboarding</h1>
+            <p className="text-gray-500 text-sm mt-1">Brims Health Network mein apna hospital register karein</p>
+          </div>
+        )}
 
         {/* Step Indicators */}
-        <div className="flex items-center justify-center gap-0 mb-8">
+        <div className="flex items-center justify-center gap-0 mb-6">
           {STEPS.map((s, i) => (
             <div key={s.id} className="flex items-center">
               <div className="flex flex-col items-center">
@@ -170,7 +258,7 @@ export default function HospitalOnboardingPage() {
                 <p className={`text-[10px] font-semibold mt-1 ${step >= s.id ? "text-teal-700" : "text-gray-400"}`}>{s.label}</p>
               </div>
               {i < STEPS.length - 1 && (
-                <div className={`h-0.5 w-16 mx-2 mb-5 rounded transition-all ${step > s.id ? "bg-teal-500" : "bg-gray-200"}`} />
+                <div className={`h-0.5 w-14 mx-2 mb-5 rounded transition-all ${step > s.id ? "bg-teal-500" : "bg-gray-200"}`} />
               )}
             </div>
           ))}
@@ -261,14 +349,14 @@ export default function HospitalOnboardingPage() {
             </div>
           )}
 
-          {/* ── Step 2: Contact Details ── */}
+          {/* ── Step 2: Contact & Login ── */}
           {step === 2 && (
             <div className="space-y-5">
-              <h2 className="font-bold text-gray-800 text-lg mb-4 flex items-center gap-2">📞 Contact Ki Jankari</h2>
+              <h2 className="font-bold text-gray-800 text-lg mb-4 flex items-center gap-2">📞 Contact & Login Setup</h2>
 
               <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
                 <p className="text-sm font-semibold text-blue-700">SPOC — Single Point of Contact</p>
-                <p className="text-xs text-blue-600 mt-0.5">Jo vyakti Brims team se coordinate karega verification aur setup ke liye</p>
+                <p className="text-xs text-blue-600 mt-0.5">Jo vyakti Brims team se coordinate karega</p>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -308,55 +396,86 @@ export default function HospitalOnboardingPage() {
               </div>
 
               <div className="border-t border-gray-100 pt-5">
-                <p className="text-sm font-bold text-gray-700 mb-4">🔐 Login Password</p>
-                <div>
-                  <Label required>Password (Login ke liye)</Label>
-                  <input 
-                    className={inp} 
-                    type="password" 
-                    value={form.password} 
-                    onChange={(e) => set("password", e.target.value)} 
-                    placeholder="Kam se kam 6 characters" 
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Staff-login page se apna mobile number aur password use karke login kar sakte ho</p>
+                <p className="text-sm font-bold text-gray-700 mb-1">🔐 Login Password Set Karein</p>
+                <p className="text-xs text-gray-400 mb-4">Hospital ID aur yeh password se Hospital Login page pe login kar sakte hain</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label required>Password</Label>
+                    <input className={inp} type="password" value={form.password} onChange={(e) => set("password", e.target.value)} placeholder="Kam se kam 6 characters" />
+                  </div>
+                  <div>
+                    <Label required>Confirm Password</Label>
+                    <input className={inp} type="password" value={form.confirmPassword} onChange={(e) => set("confirmPassword", e.target.value)} placeholder="Password dobara" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Credential Preview */}
+              <div className="bg-teal-50 border border-teal-200 rounded-xl p-4">
+                <p className="text-xs font-bold text-teal-700 uppercase tracking-wide mb-3">Login Credentials Preview</p>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-500">Login ID</span>
+                    <span className="text-xs font-semibold text-teal-700">Hospital ID (assigned after submission)</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-500">Mobile</span>
+                    <span className="text-xs font-semibold text-gray-700">{form.mobile || "—"}</span>
+                  </div>
+                  {form.email && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-500">Email</span>
+                      <span className="text-xs font-semibold text-gray-700">{form.email}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-500">Login Page</span>
+                    <span className="text-xs font-semibold text-teal-600">/hospital/login</span>
+                  </div>
                 </div>
               </div>
             </div>
           )}
 
-          {/* ── Step 3: Departments ── */}
+          {/* ── Step 3: Departments + Specialties ── */}
           {step === 3 && (
-            <div>
-              <h2 className="font-bold text-gray-800 text-lg mb-1 flex items-center gap-2">🏷️ Departments</h2>
-              <p className="text-sm text-gray-500 mb-5">Jo departments aapke hospital mein available hain woh select karein:</p>
-
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {DEPARTMENTS.map((d) => (
-                  <label key={d}
-                    className={`flex items-center gap-2.5 p-3 rounded-xl border cursor-pointer transition text-sm ${
-                      form.departments.includes(d)
-                        ? "border-teal-500 bg-teal-50 text-teal-800 font-semibold"
-                        : "border-gray-200 text-gray-600 hover:border-teal-300 hover:bg-teal-50/50"
-                    }`}>
-                    <div className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border ${form.departments.includes(d) ? "bg-teal-600 border-teal-600" : "border-gray-300"}`}>
-                      {form.departments.includes(d) && (
-                        <svg viewBox="0 0 12 12" fill="none" className="w-3 h-3 text-white" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M2 6l3 3 5-5" />
-                        </svg>
-                      )}
-                    </div>
-                    <span>{d}</span>
-                    <input type="checkbox" className="hidden" checked={form.departments.includes(d)} onChange={() => toggleDept(d)} />
-                  </label>
-                ))}
+            <div className="space-y-7">
+              {/* Departments */}
+              <div>
+                <h2 className="font-bold text-gray-800 text-lg mb-1 flex items-center gap-2">🏷️ Departments</h2>
+                <p className="text-sm text-gray-500 mb-4">Jo departments available hain woh select karein: <span className="text-red-500">*</span></p>
+                <CheckGrid items={DEPARTMENTS} selected={form.departments} onToggle={(d) => toggleList("departments", d)} color="teal" />
+                {form.departments.length > 0 && (
+                  <div className="mt-3 bg-teal-50 border border-teal-200 rounded-xl px-4 py-2.5 flex items-center gap-2">
+                    <span className="text-teal-600">✅</span>
+                    <p className="text-sm font-semibold text-teal-700">{form.departments.length} department{form.departments.length > 1 ? "s" : ""} selected</p>
+                  </div>
+                )}
               </div>
 
-              {form.departments.length > 0 && (
-                <div className="mt-4 bg-teal-50 border border-teal-200 rounded-xl px-4 py-3 flex items-center gap-2">
-                  <span className="text-teal-600 text-lg">✅</span>
-                  <p className="text-sm font-semibold text-teal-700">{form.departments.length} department{form.departments.length > 1 ? "s" : ""} selected</p>
-                </div>
-              )}
+              {/* Specialties */}
+              <div>
+                <h2 className="font-bold text-gray-800 text-base mb-1 flex items-center gap-2">⭐ Special Services / Expertise</h2>
+                <p className="text-sm text-gray-500 mb-4">Jo special facilities ya expertise available hain (optional):</p>
+                <CheckGrid items={SPECIALTIES} selected={form.specialties} onToggle={(s) => toggleList("specialties", s)} color="purple" />
+                {form.specialties.length > 0 && (
+                  <div className="mt-3 bg-purple-50 border border-purple-200 rounded-xl px-4 py-2.5 flex items-center gap-2">
+                    <span className="text-purple-600">⭐</span>
+                    <p className="text-sm font-semibold text-purple-700">{form.specialties.length} specialty selected</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Final summary before submit */}
+              <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-2">
+                <p className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-2">Application Summary</p>
+                <SummaryRow label="Hospital" value={form.name} />
+                <SummaryRow label="Type" value={form.type} />
+                <SummaryRow label="District" value={form.district} />
+                <SummaryRow label="Mobile" value={form.mobile} />
+                {form.email && <SummaryRow label="Email" value={form.email} />}
+                <SummaryRow label="Login ID" value="Hospital ID (assigned after submission)" />
+              </div>
             </div>
           )}
 
@@ -387,26 +506,51 @@ export default function HospitalOnboardingPage() {
           </div>
         </div>
 
-        {/* Benefits strip */}
-        <div className="mt-8 grid grid-cols-3 gap-4">
-          {[
-            { icon: "🔒", title: "Secure",     desc: "Data encrypted aur safe" },
-            { icon: "⚡", title: "Fast",        desc: "2–3 din mein approval" },
-            { icon: "📊", title: "Dashboard",  desc: "Full analytics access" },
-          ].map(({ icon, title, desc }) => (
-            <div key={title} className="bg-white rounded-2xl border border-gray-100 p-4 text-center shadow-sm">
-              <p className="text-2xl mb-1">{icon}</p>
-              <p className="text-sm font-bold text-gray-700">{title}</p>
-              <p className="text-xs text-gray-400 mt-0.5">{desc}</p>
+        {/* Benefits strip — hidden in admin mode */}
+        {!fromAdmin && (
+          <>
+            <div className="mt-8 grid grid-cols-3 gap-4">
+              {[
+                { icon: "🔒", title: "Secure",    desc: "Data encrypted aur safe" },
+                { icon: "⚡", title: "Fast",       desc: "2–3 din mein approval" },
+                { icon: "📊", title: "Dashboard", desc: "Full analytics access" },
+              ].map(({ icon, title, desc }) => (
+                <div key={title} className="bg-white rounded-2xl border border-gray-100 p-4 text-center shadow-sm">
+                  <p className="text-2xl mb-1">{icon}</p>
+                  <p className="text-sm font-bold text-gray-700">{title}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{desc}</p>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-
-        <p className="text-center text-sm text-gray-400 mt-6">
-          Pehle se registered hain?{" "}
-          <a href="/login" className="text-teal-600 font-medium hover:underline">Login karein →</a>
-        </p>
+            <p className="text-center text-sm text-gray-400 mt-6">
+              Pehle se registered hain?{" "}
+              <a href="/hospital/login" className="text-teal-600 font-medium hover:underline">Hospital Login →</a>
+            </p>
+          </>
+        )}
       </div>
-    </main>
+    </div>
+  );
+}
+
+function SummaryRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-xs text-gray-500">{label}</span>
+      <span className="text-xs font-semibold text-gray-700 max-w-[60%] text-right truncate">{value || "—"}</span>
+    </div>
+  );
+}
+
+// ── Export — must wrap in Suspense because of useSearchParams ──────────────
+export default function HospitalOnboardingPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-teal-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    }>
+      <HospitalOnboardingForm />
+    </Suspense>
   );
 }

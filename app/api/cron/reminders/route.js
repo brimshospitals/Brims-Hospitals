@@ -1,57 +1,20 @@
 import { NextResponse } from "next/server";
-import connectDB     from "../../../../lib/mongodb";
-import Booking       from "../../../../models/Booking";
-import User          from "../../../../models/User";
-import Notification  from "../../../../models/Notification";
+import connectDB from "../../../../lib/mongodb";
+import Booking from "../../../../models/Booking";
+import User from "../../../../models/User";
+import { sendSms } from "../../../../lib/sms";
 
 export const dynamic = "force-dynamic";
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// Vercel cron calls this endpoint automatically.
+// vercel.json schedules:
+//   "0 2 * * *" → 7:30 AM IST → aaj ke appointments reminder
+//   "0 8 * * *" → 1:30 PM IST → kal ke appointments reminder
 
-async function sendSms(mobile, message) {
-  const apiKey = process.env.FAST2SMS_API_KEY;
-  if (!apiKey) {
-    console.log(`📱 [DEV] SMS to ${mobile}: ${message}`);
-    return;
-  }
-  try {
-    await fetch("https://www.fast2sms.com/dev/bulkV2", {
-      method: "POST",
-      headers: { authorization: apiKey, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        route:   "q",          // transactional / quick route
-        message,
-        flash:   0,
-        numbers: mobile,
-      }),
-    });
-  } catch (err) {
-    console.error("SMS send error:", err.message);
-  }
-}
-
-function getPatientInfo(booking) {
-  let info = {};
-  try { info = booking.notes ? JSON.parse(booking.notes) : {}; } catch {}
-  return info;
-}
-
-function typeLabel(type) {
-  return { OPD: "OPD Appointment", Lab: "Lab Test", Surgery: "Surgery", Consultation: "Teleconsultation" }[type] || type;
-}
-
-function formatDate(d) {
-  return new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-}
-
-// ── GET — called by Vercel Cron every hour ─────────────────────────────────
-// Vercel passes Authorization: Bearer <CRON_SECRET> header automatically.
-// We verify CRON_SECRET env var to prevent unauthorized triggers.
 export async function GET(request) {
-  // Security: only allow Vercel cron calls or internal calls with secret
+  // Optional: CRON_SECRET env var se unauthorized access rok sakte ho
   const authHeader = request.headers.get("authorization");
   const cronSecret = process.env.CRON_SECRET;
-
   if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
   }
@@ -59,103 +22,104 @@ export async function GET(request) {
   try {
     await connectDB();
 
-    const now  = new Date();
-    const sent = { oneDayReminders: 0, oneHourReminders: 0, notifications: 0 };
+    // IST = UTC + 5h 30m
+    const now    = new Date();
+    const offset = 5.5 * 60 * 60 * 1000;
+    const istNow = new Date(now.getTime() + offset);
+    const hour   = istNow.getUTCHours(); // IST ka current hour
 
-    // ── Window: 1-day reminder ─────────────────────────────────────────────
-    // Match bookings whose appointmentDate falls in a 1-hour window starting 24h from now.
-    // This fires once per hour so we check: now+23h → now+24h
-    const dayFrom = new Date(now.getTime() + 23 * 60 * 60 * 1000);
-    const dayTo   = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    let sent    = 0;
+    let skipped = 0;
+    const errors = [];
 
-    // ── Window: 1-hour reminder ────────────────────────────────────────────
-    // Match bookings whose appointmentDate falls in next 60-90 minutes.
-    const hourFrom = new Date(now.getTime() + 60 * 60 * 1000);
-    const hourTo   = new Date(now.getTime() + 90 * 60 * 1000);
+    // ── 7–9 AM IST: Aaj ke appointments ─────────────────────────────────────
+    if (hour >= 7 && hour <= 9) {
+      // Today in IST → UTC range for DB
+      const todayIST    = new Date(istNow); todayIST.setUTCHours(0,0,0,0);
+      const todayISTEnd = new Date(istNow); todayISTEnd.setUTCHours(23,59,59,999);
+      const fromUTC = new Date(todayIST.getTime()    - offset);
+      const toUTC   = new Date(todayISTEnd.getTime() - offset);
 
-    const [dayBookings, hourBookings] = await Promise.all([
-      Booking.find({
-        appointmentDate: { $gte: dayFrom, $lte: dayTo },
-        status: { $in: ["pending", "confirmed"] },
-      }).lean(),
-      Booking.find({
-        appointmentDate: { $gte: hourFrom, $lte: hourTo },
-        status: { $in: ["pending", "confirmed"] },
-      }).lean(),
-    ]);
+      const bookings = await Booking.find({
+        appointmentDate: { $gte: fromUTC, $lte: toUTC },
+        status:          { $in: ["confirmed", "pending"] },
+        reminderToday:   { $ne: true },
+      }).lean();
 
-    // Collect all userIds to batch-fetch mobiles
-    const allUserIds = [
-      ...dayBookings.map((b) => b.userId.toString()),
-      ...hourBookings.map((b) => b.userId.toString()),
-    ];
-    const uniqueIds = [...new Set(allUserIds)];
+      for (const b of bookings) {
+        try {
+          const user = await User.findById(b.userId).select("mobile name").lean();
+          if (!user?.mobile) { skipped++; continue; }
 
-    const users = await User.find({ _id: { $in: uniqueIds } }).select("_id mobile name").lean();
-    const userMap = {};
-    users.forEach((u) => { userMap[u._id.toString()] = u; });
+          let n = {};
+          try { n = b.notes ? JSON.parse(b.notes) : {}; } catch {}
+          const name = n.patientName || user.name;
+          const slot = b.slot ? ` Samay: ${b.slot}.` : "";
+          const type = b.type;
 
-    // ── Process 1-day reminders ────────────────────────────────────────────
-    for (const booking of dayBookings) {
-      const info   = getPatientInfo(booking);
-      const user   = userMap[booking.userId.toString()];
-      const mobile = info.patientMobile || user?.mobile;
-      const name   = info.patientName   || user?.name || "Patient";
-      const label  = typeLabel(booking.type);
-      const date   = formatDate(booking.appointmentDate);
-      const slot   = booking.slot ? ` at ${booking.slot}` : "";
+          const msg = `Brims Hospitals: ${name} ji, aapka ${type} appointment AAJ hai.${slot} Booking ID: ${b.bookingId}. Samay par aayen. Helpline: 9876543210`;
 
-      const smsMsg =
-        `Reminder: Your ${label} at Brims Hospitals is scheduled TOMORROW (${date}${slot}). ` +
-        `Booking ID: ${booking.bookingId}. Carry this ID & valid ID proof. -Brims Hospitals Patna`;
-
-      if (mobile) await sendSms(mobile, smsMsg);
-      sent.oneDayReminders++;
-
-      // In-app notification
-      try {
-        await Notification.create({
-          userId: booking.userId,
-          type:   "reminder",
-          title:  `Reminder: ${label} kal hai`,
-          message: `Booking ID: ${booking.bookingId} | ${date}${slot} | Patient: ${name}`,
-        });
-        sent.notifications++;
-      } catch {}
+          const r = await sendSms(user.mobile, msg);
+          if (r.success) {
+            await Booking.findByIdAndUpdate(b._id, { $set: { reminderToday: true } });
+            sent++;
+          } else {
+            errors.push(`${b.bookingId}: ${r.error}`);
+          }
+        } catch (e) {
+          errors.push(`${b.bookingId}: ${e.message}`);
+        }
+      }
     }
 
-    // ── Process 1-hour reminders ───────────────────────────────────────────
-    for (const booking of hourBookings) {
-      const info   = getPatientInfo(booking);
-      const user   = userMap[booking.userId.toString()];
-      const mobile = info.patientMobile || user?.mobile;
-      const name   = info.patientName   || user?.name || "Patient";
-      const label  = typeLabel(booking.type);
-      const slot   = booking.slot ? ` at ${booking.slot}` : "";
+    // ── 13–15 PM IST: Kal ke appointments ───────────────────────────────────
+    if (hour >= 13 && hour <= 15) {
+      const tomorrowIST    = new Date(istNow); tomorrowIST.setUTCDate(tomorrowIST.getUTCDate()+1); tomorrowIST.setUTCHours(0,0,0,0);
+      const tomorrowISTEnd = new Date(tomorrowIST); tomorrowISTEnd.setUTCHours(23,59,59,999);
+      const fromUTC = new Date(tomorrowIST.getTime()    - offset);
+      const toUTC   = new Date(tomorrowISTEnd.getTime() - offset);
 
-      const smsMsg =
-        `Alert: Your ${label} at Brims Hospitals is in 1 HOUR${slot}. ` +
-        `Booking ID: ${booking.bookingId}. Please be on time. -Brims Hospitals Patna`;
+      const bookings = await Booking.find({
+        appointmentDate:  { $gte: fromUTC, $lte: toUTC },
+        status:           { $in: ["confirmed", "pending"] },
+        reminderTomorrow: { $ne: true },
+      }).lean();
 
-      if (mobile) await sendSms(mobile, smsMsg);
-      sent.oneHourReminders++;
+      for (const b of bookings) {
+        try {
+          const user = await User.findById(b.userId).select("mobile name").lean();
+          if (!user?.mobile) { skipped++; continue; }
 
-      try {
-        await Notification.create({
-          userId: booking.userId,
-          type:   "reminder",
-          title:  `${label} 1 ghante mein hai!`,
-          message: `Booking ID: ${booking.bookingId}${slot} | Patient: ${name}`,
-        });
-        sent.notifications++;
-      } catch {}
+          let n = {};
+          try { n = b.notes ? JSON.parse(b.notes) : {}; } catch {}
+          const name = n.patientName || user.name;
+          const slot = b.slot ? ` Samay: ${b.slot}.` : "";
+          const type = b.type;
+
+          const msg = `Brims Hospitals: ${name} ji, aapka ${type} appointment KAL hai.${slot} Booking ID: ${b.bookingId}. Samay par aayen. Helpline: 9876543210`;
+
+          const r = await sendSms(user.mobile, msg);
+          if (r.success) {
+            await Booking.findByIdAndUpdate(b._id, { $set: { reminderTomorrow: true } });
+            sent++;
+          } else {
+            errors.push(`${b.bookingId}: ${r.error}`);
+          }
+        } catch (e) {
+          errors.push(`${b.bookingId}: ${e.message}`);
+        }
+      }
     }
 
-    console.log(`[Cron] Reminders sent at ${now.toISOString()}:`, sent);
-    return NextResponse.json({ success: true, ...sent, runAt: now.toISOString() });
+    return NextResponse.json({
+      success:  true,
+      sent,
+      skipped,
+      ist_hour: hour,
+      errors:   errors.length ? errors : undefined,
+    });
 
   } catch (err) {
-    console.error("[Cron] Reminders error:", err.message);
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });
   }
 }

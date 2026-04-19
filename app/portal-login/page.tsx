@@ -90,7 +90,8 @@ export default function PortalLoginPage() {
 
         setSuccess(`Welcome, ${data.name}! Redirect ho rahe hain...`);
         setTimeout(() => {
-          window.location.href = data.redirect || (data.role === "doctor" ? "/doctor-dashboard" : "/hospital-dashboard");
+          const dashMap: Record<string,string> = { doctor: "/doctor-dashboard", hospital: "/hospital-dashboard", staff: "/staff-dashboard", admin: "/admin" };
+          window.location.href = data.redirect || dashMap[data.role] || "/dashboard";
         }, 800);
       } else {
         setError(data.message);

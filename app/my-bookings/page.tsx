@@ -1,6 +1,9 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import Header from "../components/header";
+import LangToggle from "../components/LangToggle";
+import { useLang } from "@/app/providers/LangProvider";
+import { t } from "@/lib/i18n";
 
 const TYPE_CONFIG: Record<string, { label: string; icon: string; bg: string; text: string; border: string }> = {
   OPD:          { label: "OPD",           icon: "🩺", bg: "bg-blue-50",   text: "text-blue-700",   border: "border-blue-400"   },
@@ -273,6 +276,27 @@ function BookingCard({ b, onCancel, onReview }: { b: any; onCancel: (b: any) => 
                 </p>
               </div>
             )}
+            {notes.insurancePolicyNo && (
+              <div className="bg-indigo-50 rounded-xl px-3 py-2.5 border border-indigo-200">
+                <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-wide mb-1.5">🛡️ Insurance Details</p>
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-500">Policy No.</span>
+                    <span className="font-semibold text-gray-800 font-mono">{notes.insurancePolicyNo}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-500">Company</span>
+                    <span className="font-semibold text-gray-800">{notes.insurerName}</span>
+                  </div>
+                  {notes.tpaName && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-gray-500">TPA</span>
+                      <span className="font-semibold text-gray-800">{notes.tpaName}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
             {notes.symptoms && (
               <div className="bg-amber-50 rounded-xl px-3 py-2.5 border border-amber-100">
                 <p className="text-[10px] font-bold text-amber-500 uppercase tracking-wide mb-1">Symptoms</p>
@@ -342,6 +366,7 @@ function BookingCard({ b, onCancel, onReview }: { b: any; onCancel: (b: any) => 
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function MyBookingsPage() {
+  const { lang } = useLang();
   const [bookings, setBookings]     = useState<any[]>([]);
   const [summary, setSummary]       = useState<any>({});
   const [loading, setLoading]       = useState(true);
@@ -431,7 +456,10 @@ export default function MyBookingsPage() {
 
         {/* Header */}
         <div className="mb-5">
-          <h1 className="text-2xl font-bold text-gray-800">📋 Meri Bookings</h1>
+          <div className="flex items-center justify-between">
+            <h1 className="text-2xl font-bold text-gray-800">📋 {t("book.title", lang)}</h1>
+            <LangToggle />
+          </div>
           <p className="text-sm text-gray-500 mt-0.5">Aapki aur family ki sabhi appointments</p>
         </div>
 

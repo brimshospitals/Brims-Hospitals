@@ -163,6 +163,9 @@ const userSchema = new mongoose.Schema(
     hospitalId: { type: mongoose.Schema.Types.ObjectId, ref: "Hospital" },
     staffId:    { type: mongoose.Schema.Types.ObjectId, ref: "Staff" },
 
+    // FCM Push Notification token (web/mobile)
+    fcmToken: { type: String, default: null },
+
     isActive: { type: Boolean, default: true },
   },
   { timestamps: true }

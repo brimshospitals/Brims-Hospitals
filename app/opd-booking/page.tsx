@@ -3,6 +3,9 @@ import { useState, useEffect, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import Header from "../components/header";
 import PatientSelector, { SelectedPatient } from "../components/PatientSelector";
+import LangToggle from "../components/LangToggle";
+import { useLang } from "@/app/providers/LangProvider";
+import { t } from "@/lib/i18n";
 
 const timeSlots = [
   "9:00 AM","9:30 AM","10:00 AM","10:30 AM","11:00 AM","11:30 AM",
@@ -18,6 +21,7 @@ const PAYMENT_MODES = [
 
 function OPDBookingContent() {
   const router = useRouter();
+  const { lang } = useLang();
 
   // Steps: 1=Doctor, 2=Patient, 3=Confirm+Pay, 4=Success
   const [step, setStep]               = useState(1);
@@ -46,6 +50,11 @@ function OPDBookingContent() {
   const [promoData, setPromoData]     = useState<any>(null);
   const [promoLoading, setPromoLoading] = useState(false);
   const [promoError, setPromoError]   = useState("");
+
+  // Insurance fields
+  const [insurancePolicyNo, setInsurancePolicyNo] = useState("");
+  const [insurerName, setInsurerName]             = useState("");
+  const [tpaName, setTpaName]                     = useState("");
 
   // Booking result
   const [booking, setBooking]         = useState<any>(null);
@@ -112,6 +121,10 @@ function OPDBookingContent() {
 
   async function handleConfirmBooking() {
     if (!selectedDoctor || !selectedDate || !selectedSlot || !selectedPatient || !paymentMode) return;
+    if (paymentMode === "insurance" && (!insurancePolicyNo.trim() || !insurerName.trim())) {
+      setError("Insurance payment ke liye Policy Number aur Company naam zaruri hai.");
+      return;
+    }
     setSubmitting(true);
     setError("");
     try {
@@ -139,6 +152,11 @@ function OPDBookingContent() {
           amount: finalAmount,
           familyCardId,
           ...(promoData && { promoCode: promoData.code, promoDiscount: promoData.discount }),
+          ...(paymentMode === "insurance" && {
+            insurancePolicyNo: insurancePolicyNo.trim(),
+            insurerName: insurerName.trim(),
+            tpaName: tpaName.trim() || undefined,
+          }),
         }),
       });
       const data = await res.json();
@@ -167,6 +185,9 @@ function OPDBookingContent() {
     setPromoInput("");
     setPromoData(null);
     setPromoError("");
+    setInsurancePolicyNo("");
+    setInsurerName("");
+    setTpaName("");
   }
 
   const todayStr = new Date().toISOString().split("T")[0];
@@ -176,9 +197,12 @@ function OPDBookingContent() {
       <Header />
 
       {/* Hero */}
-      <div className="bg-gradient-to-br from-blue-600 to-blue-800 px-4 py-8 text-center">
-        <h1 className="text-white text-2xl font-bold mb-1">OPD Appointment</h1>
-        <p className="text-blue-200 text-sm">3 simple steps mein book karein</p>
+      <div className="bg-gradient-to-br from-blue-600 to-blue-800 px-4 py-8 text-center relative">
+        <div className="absolute top-3 right-3">
+          <LangToggle variant="icon" />
+        </div>
+        <h1 className="text-white text-2xl font-bold mb-1">{t("opd.title", lang)}</h1>
+        <p className="text-blue-200 text-sm">{t("opd.subtitle", lang)}</p>
       </div>
 
       {/* Progress */}
@@ -186,9 +210,9 @@ function OPDBookingContent() {
         <div className="max-w-lg mx-auto px-4 py-5">
           <div className="flex items-center justify-between">
             {[
-              { n: 1, label: "Doctor" },
-              { n: 2, label: "Patient" },
-              { n: 3, label: "Confirm" },
+              { n: 1, label: t("opd.step1", lang) },
+              { n: 2, label: t("opd.step2", lang) },
+              { n: 3, label: t("opd.step3", lang) },
             ].map((s, i) => (
               <div key={s.n} className="flex items-center flex-1">
                 <div className="flex flex-col items-center">
@@ -217,7 +241,7 @@ function OPDBookingContent() {
         {/* ── STEP 1: Doctor Selection ── */}
         {step === 1 && (
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-            <h2 className="font-bold text-gray-800 text-base mb-4">Doctor aur Time Slot chunein</h2>
+            <h2 className="font-bold text-gray-800 text-base mb-4">{t("opd.selectDoc", lang)}</h2>
 
             {/* Specialization filter */}
             <div className="flex flex-wrap gap-2 mb-4">
@@ -300,7 +324,7 @@ function OPDBookingContent() {
             {selectedDoctor && (
               <div className="space-y-4 border-t border-gray-100 pt-4">
                 <div>
-                  <label className="text-xs font-semibold text-gray-600 mb-1.5 block">Date chunein</label>
+                  <label className="text-xs font-semibold text-gray-600 mb-1.5 block">{t("opd.selectDate", lang)}</label>
                   <input
                     type="date"
                     value={selectedDate}
@@ -310,7 +334,7 @@ function OPDBookingContent() {
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-semibold text-gray-600 mb-1.5 block">Time Slot chunein</label>
+                  <label className="text-xs font-semibold text-gray-600 mb-1.5 block">{t("opd.selectSlot", lang)}</label>
                   <div className="flex flex-wrap gap-2">
                     {timeSlots.map((slot) => (
                       <button key={slot} type="button" onClick={() => setSelectedSlot(slot)}
@@ -336,7 +360,7 @@ function OPDBookingContent() {
               }}
               className="w-full mt-5 bg-blue-600 hover:bg-blue-700 text-white py-3.5 rounded-2xl font-bold transition"
             >
-              Next: Patient Details →
+              {t("opd.nextPatient", lang)}
             </button>
             {error && <p className="text-red-500 text-xs text-center mt-2">{error}</p>}
           </div>
@@ -345,8 +369,8 @@ function OPDBookingContent() {
         {/* ── STEP 2: Patient Selection ── */}
         {step === 2 && (
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-            <h2 className="font-bold text-gray-800 text-base mb-1">Patient kaun hai?</h2>
-            <p className="text-xs text-gray-400 mb-4">Family member chunein ya naya patient add karein</p>
+            <h2 className="font-bold text-gray-800 text-base mb-1">{t("opd.whoPatient", lang)}</h2>
+            <p className="text-xs text-gray-400 mb-4">{lang === "hi" ? "फैमिली मेंबर चुनें या नया मरीज जोड़ें" : "Select family member or add new patient"}</p>
 
             {profileLoading ? (
               <div className="flex justify-center py-8">
@@ -389,7 +413,7 @@ function OPDBookingContent() {
         {/* ── STEP 3: Confirm & Pay ── */}
         {step === 3 && selectedDoctor && selectedPatient && (
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-            <h2 className="font-bold text-gray-800 text-base mb-4">Confirm aur Payment</h2>
+            <h2 className="font-bold text-gray-800 text-base mb-4">{t("opd.confirmPay", lang)}</h2>
 
             {/* Booking Summary */}
             <div className="bg-blue-50 rounded-2xl p-4 border border-blue-100 space-y-2.5 mb-5">
@@ -427,7 +451,7 @@ function OPDBookingContent() {
 
             {/* Payment Mode */}
             <div className="mb-5">
-              <label className="text-xs font-semibold text-gray-600 mb-2 block">Payment Mode chunein</label>
+              <label className="text-xs font-semibold text-gray-600 mb-2 block">{t("opd.selectPayMode", lang)}</label>
               <div className="grid grid-cols-2 gap-2">
                 {PAYMENT_MODES.map((p) => (
                   <button key={p.id} type="button" onClick={() => setPaymentMode(p.id)}
@@ -442,6 +466,54 @@ function OPDBookingContent() {
                 ))}
               </div>
             </div>
+
+            {/* ── Insurance Fields ── */}
+            {paymentMode === "insurance" && (
+              <div className="mb-5 bg-indigo-50 border border-indigo-200 rounded-2xl p-4 space-y-3">
+                <p className="text-xs font-bold text-indigo-700 uppercase tracking-wider flex items-center gap-1.5">
+                  🛡️ Insurance Details
+                </p>
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 mb-1 block">
+                    Policy Number <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={insurancePolicyNo}
+                    onChange={(e) => setInsurancePolicyNo(e.target.value)}
+                    placeholder="e.g. POL-123456789"
+                    className="w-full border border-indigo-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 mb-1 block">
+                    Insurance Company <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={insurerName}
+                    onChange={(e) => setInsurerName(e.target.value)}
+                    placeholder="e.g. Star Health, HDFC ERGO, Niva Bupa..."
+                    className="w-full border border-indigo-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 mb-1 block">
+                    TPA Name <span className="text-gray-400 font-normal">(Optional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={tpaName}
+                    onChange={(e) => setTpaName(e.target.value)}
+                    placeholder="e.g. Medi Assist, Health India, Paramount..."
+                    className="w-full border border-indigo-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 bg-white"
+                  />
+                </div>
+                <p className="text-xs text-indigo-500">
+                  ℹ️ Aapki insurance team 24h mein contact karegi cashless/reimbursement ke liye.
+                </p>
+              </div>
+            )}
 
             {/* Promo Code */}
             <div className="mb-5">
@@ -509,8 +581,8 @@ function OPDBookingContent() {
                 className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-2xl font-bold transition disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {submitting ? (
-                  <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Booking...</>
-                ) : "Booking Confirm Karein ✓"}
+                  <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> {lang === "hi" ? "बुक हो रहा है..." : "Booking..."}</>
+                ) : t("opd.confirmBtn", lang)}
               </button>
             </div>
           </div>

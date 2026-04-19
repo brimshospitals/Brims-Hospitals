@@ -12,6 +12,7 @@ const degreeSchema = new mongoose.Schema({
 });
 
 const doctorSchema = new mongoose.Schema({
+  doctorId: { type: String, unique: true, sparse: true },  // BRIMS-DR-XXXX
   name: { type: String, required: true },
   // Auth link — a doctor User account is linked here
   userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },

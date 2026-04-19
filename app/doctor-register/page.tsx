@@ -24,11 +24,13 @@ type HospitalOption = {
 
 type Step = "form" | "success";
 type HospitalMode = "network" | "private";
+type SuccessData = { doctorId: string; loginId: string } | null;
 
 export default function DoctorRegisterPage() {
-  const [step, setStep]   = useState<Step>("form");
+  const [step, setStep]       = useState<Step>("form");
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState("");
+  const [successData, setSuccessData] = useState<SuccessData>(null);
 
   // Hospital selection
   const [hospitalMode, setHospitalMode]   = useState<HospitalMode>("network");
@@ -55,6 +57,7 @@ export default function DoctorRegisterPage() {
     hospitalName: "",
     district:     "",
     city:         "",
+    confirmPassword: "",
   });
 
   useEffect(() => {
@@ -81,6 +84,9 @@ export default function DoctorRegisterPage() {
     }
     if (!password || password.length < 6) {
       setError("Password kam se kam 6 characters ka hona chahiye"); return;
+    }
+    if (password !== form.confirmPassword) {
+      setError("Dono passwords match nahi kar rahe"); return;
     }
     if (!/^\d{10}$/.test(mobile.trim())) {
       setError("Valid 10-digit mobile number daalo"); return;
@@ -119,8 +125,12 @@ export default function DoctorRegisterPage() {
         body:    JSON.stringify(payload),
       });
       const data = await res.json();
-      if (data.success) setStep("success");
-      else setError(data.message);
+      if (data.success) {
+        setSuccessData({ doctorId: data.doctorId, loginId: data.loginId });
+        setStep("success");
+      } else {
+        setError(data.message);
+      }
     } catch {
       setError("Network error. Dobara try karein.");
     }
@@ -137,25 +147,42 @@ export default function DoctorRegisterPage() {
             </svg>
           </div>
           <h2 className="text-2xl font-bold text-gray-800">Application Submit!</h2>
-          <p className="text-gray-600 text-sm leading-relaxed">
-            Aapki Doctor Registration request submit ho gayi hai. Admin verification ke baad
-            aapko login credentials mile ge. <strong>2–3 working days</strong> mein aapke mobile
-            par notification aayega.
+          <p className="text-gray-600 text-sm">
+            Aapki registration request submit ho gayi. Admin approval ke baad account activate hoga.
           </p>
-          <div className="bg-blue-50 rounded-2xl p-4 text-sm text-blue-700">
-            <p className="font-medium mb-1">Aage kya hoga?</p>
-            <ol className="text-left space-y-1 list-decimal list-inside text-blue-600">
+
+          {/* Credential Card */}
+          {successData && (
+            <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 text-left space-y-2.5">
+              <p className="text-xs font-bold text-blue-700 uppercase tracking-wide">Aapka Doctor ID</p>
+              <div className="bg-white rounded-xl px-4 py-3 border border-blue-200 flex items-center justify-between">
+                <span className="text-xs text-gray-500">Doctor ID / Login ID</span>
+                <span className="text-base font-bold text-blue-700 font-mono tracking-wider">{successData.doctorId}</span>
+              </div>
+              <div className="bg-white rounded-xl px-4 py-2.5 border border-blue-200 flex items-center justify-between">
+                <span className="text-xs text-gray-500">Mobile</span>
+                <span className="text-sm font-semibold text-gray-700">{form.mobile}</span>
+              </div>
+              <p className="text-[11px] text-blue-600 leading-relaxed pt-1">
+                ⚠️ Yeh ID save kar lein. Admin approval ke baad <strong>/doctor/login</strong> pe is ID aur password se login kar sakte hain.
+              </p>
+            </div>
+          )}
+
+          <div className="bg-gray-50 rounded-xl p-4 text-sm text-left">
+            <p className="font-medium text-gray-700 mb-2">Aage kya hoga?</p>
+            <ol className="space-y-1.5 list-decimal list-inside text-gray-500 text-xs">
               <li>Admin aapka application review karega</li>
-              <li>Approval ke baad aapka account activate hoga</li>
-              <li>Mobile OTP se <a href="/staff-login" className="underline">/staff-login</a> par Doctor login kar sakenge</li>
+              <li>Approval ke baad account activate hoga (2–3 din)</li>
+              <li>Doctor Login page pe Doctor ID + Password se login karein</li>
             </ol>
           </div>
           <div className="flex gap-3 pt-2">
             <a href="/" className="flex-1 py-3 rounded-xl border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition-colors text-center">
               Home
             </a>
-            <a href="/login" className="flex-1 py-3 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors text-center">
-              Member Login
+            <a href="/doctor/login" className="flex-1 py-3 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors text-center">
+              Doctor Login →
             </a>
           </div>
         </div>
@@ -461,13 +488,44 @@ export default function DoctorRegisterPage() {
               Login Credentials
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="sm:col-span-2">
+              <div>
                 <label className="text-xs font-medium text-gray-500">Password *</label>
                 <input type="password" value={form.password} onChange={(e) => setF("password", e.target.value)}
                   placeholder="Kam se kam 6 characters"
                   className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400 transition-all" />
-                <p className="text-xs text-gray-400 mt-1">Staff-login page se is password use karke login kar sakte ho</p>
               </div>
+              <div>
+                <label className="text-xs font-medium text-gray-500">Confirm Password *</label>
+                <input type="password" value={(form as Record<string, string>).confirmPassword || ""} onChange={(e) => setF("confirmPassword", e.target.value)}
+                  placeholder="Password dobara daalen"
+                  className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400 transition-all" />
+              </div>
+            </div>
+
+            {/* Credential Preview */}
+            <div className="mt-4 bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-2.5">
+              <p className="text-xs font-bold text-blue-700 uppercase tracking-wide">Login Credentials Preview</p>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-500">Doctor ID / Login ID</span>
+                <span className="text-xs font-semibold text-blue-700">Assigned after submission (BRIMS-DR-XXXX)</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-500">Mobile</span>
+                <span className="text-xs font-semibold text-gray-700">{form.mobile || "—"}</span>
+              </div>
+              {form.email && (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-500">Email</span>
+                  <span className="text-xs font-semibold text-gray-700">{form.email}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-500">Login Page</span>
+                <span className="text-xs font-semibold text-blue-600">/doctor/login</span>
+              </div>
+              <p className="text-[11px] text-blue-600 leading-relaxed pt-1 border-t border-blue-200">
+                ⚠️ Admin approval ke baad aapka Doctor ID assign hoga. Tab se Doctor Login page pe login kar sakte hain.
+              </p>
             </div>
           </div>
 
