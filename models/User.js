@@ -126,7 +126,7 @@ const userSchema = new mongoose.Schema(
     // Role
     role: {
       type: String,
-      enum: ["user", "member", "doctor", "hospital", "staff", "admin"],
+      enum: ["user", "member", "doctor", "hospital", "staff", "admin", "coordinator"],
       default: "user",
     },
 
@@ -156,12 +156,17 @@ const userSchema = new mongoose.Schema(
       viewAnalytics:       { type: Boolean, default: false }, // View revenue & reports
       manageIPD:           { type: Boolean, default: false }, // IPD admission management
       dispatchAmbulance:   { type: Boolean, default: false }, // Ambulance dispatch
+      manageHospitals:     { type: Boolean, default: false }, // Manage assigned hospitals (doctors/packages/labs)
+      onboardHospitals:    { type: Boolean, default: false }, // Onboard new hospitals
+      // Which hospitals this staff can manage (empty = none, used when manageHospitals=true)
+      assignedHospitalIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "Hospital" }],
     },
 
     // Linked entity IDs
-    doctorId:   { type: mongoose.Schema.Types.ObjectId, ref: "Doctor"   },
-    hospitalId: { type: mongoose.Schema.Types.ObjectId, ref: "Hospital" },
-    staffId:    { type: mongoose.Schema.Types.ObjectId, ref: "Staff" },
+    doctorId:      { type: mongoose.Schema.Types.ObjectId, ref: "Doctor"      },
+    hospitalId:    { type: mongoose.Schema.Types.ObjectId, ref: "Hospital"    },
+    staffId:       { type: mongoose.Schema.Types.ObjectId, ref: "Staff"       },
+    coordinatorId: { type: mongoose.Schema.Types.ObjectId, ref: "Coordinator" },
 
     // FCM Push Notification token (web/mobile)
     fcmToken: { type: String, default: null },

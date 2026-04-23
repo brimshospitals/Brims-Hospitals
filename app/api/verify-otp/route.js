@@ -13,12 +13,13 @@ function isEmail(str) {
 }
 
 const ROLE_REDIRECT = {
-  admin:    "/admin",
-  staff:    "/staff-dashboard",
-  doctor:   "/doctor-dashboard",
-  hospital: "/hospital-dashboard",
-  user:     "/dashboard",
-  member:   "/dashboard",
+  admin:       "/admin",
+  staff:       "/staff-dashboard",
+  doctor:      "/doctor-dashboard",
+  hospital:    "/hospital-dashboard",
+  coordinator: "/coordinator-dashboard",
+  user:        "/dashboard",
+  member:      "/dashboard",
 };
 
 export async function POST(request) {

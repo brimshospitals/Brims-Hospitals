@@ -452,6 +452,16 @@ API Route Protection:
 | 41 | Admin Analytics Dashboard (bar chart trend, type breakdown, revenue, status) | ✅ Done |
 | 42 | Prescription Upload (doctor uploads PDF → patient sees in /reports) | ✅ Done |
 | 43 | Hospital-Doctor association enforced (Brims Network / Private Clinic) | ✅ Done |
+| 44 | Staff Hospital Management (manageHospitals/onboardHospitals permissions + assigned hospitals) | ✅ Done |
+| 45 | Admin → Hospital Manage Panel (doctors/labs/packages per hospital from admin panel) | ✅ Done |
+| 46 | `requireHospitalAccess()` auth guard (admin + hospital owner + assigned staff) | ✅ Done |
+| 47 | `/api/auth/me` returns `staffPermissions` for staff role (dashboard tabs driven by perms) | ✅ Done |
+| 48 | Patient Health Card PDF (credit-card size, front+back, print/download, all family members) | ✅ Done |
+| 49 | Booking Reminder Notifications (Vercel cron `/api/cron/reminders` — 7:30 AM + 1:30 PM IST) | ✅ Done |
+| 50 | Insurance Payment Mode (OPD booking — policy no. + company capture) | ✅ Done |
+| 51 | Push Notifications / FCM (Firebase Cloud Messaging — doctor + hospital alert on new booking) | ✅ Done |
+| 52 | Multi-language Hindi/English (LangProvider + `lib/i18n.ts` + toggle on dashboard) | ✅ Done |
+| 53 | AI Chatbot — Brims Assistant (Claude Haiku, booking help + health info, floating widget all pages) | ✅ Done |
 
 ---
 
@@ -466,24 +476,21 @@ API Route Protection:
 | P3 | ~~**Membership Renewal**~~ | ✅ Done | Expired/expiring banner on dashboard → PhonePe ₹249 → expiry +1yr |
 | P4 | ~~**Doctor Profile Edit**~~ | ✅ Done | Photo, slots, fees, hospital association from /doctor-profile |
 | P5 | ~~**IPD Booking**~~ | ✅ Done | `/ipd-booking` — 4-step: hospital search → room type + dates → patient → deposit + payment |
-| P6 | **Booking Reminder Notifications** | 🟡 Medium | 1-day + 1-hour pehle SMS/notification |
-| P7 | **Patient Health Card PDF** | 🟡 Medium | QR-code wala downloadable card (react-pdf) |
+| P6 | ~~**Booking Reminder Notifications**~~ | ✅ Done | Vercel cron `/api/cron/reminders` — 7:30 AM IST (same-day) + 1:30 PM IST (next-day) |
+| P7 | ~~**Patient Health Card PDF**~~ | ✅ Done | `/health-card` — credit-card size (85.6×54mm), front+back, print/download per member |
 | P8 | ~~**Rating & Reviews**~~ | ✅ Done | Post-appointment 1–5 stars + comment → doctor/hospital rating auto-update |
 
 ### Phase 7 — Analytics & Growth
 
 | # | Feature | Priority | Notes |
 |---|---------|----------|-------|
-| P9 | **Admin Analytics Dashboard** | 🟠 High | Revenue charts, booking trends, user growth (Recharts) on Overview tab |
+| P9 | ~~**Admin Analytics Dashboard**~~ | ✅ Done | Revenue charts, booking trends, bar chart, type breakdown on Overview tab |
 | P10 | ~~**Referral System**~~ | ✅ Done | `/referral` — code display, WhatsApp share, stats (referred count, earned), referred people list |
 | P11 | ~~**Hospital Search Page (Public)**~~ | ✅ Done | `/hospitals` — browse verified hospitals, district/type filter, search, Book OPD CTA |
 | P12 | ~~**SEO — Hospital/Doctor Profiles**~~ | ✅ Done | `/hospitals/[slug]`, `/doctors/[slug]` — Server Components, generateMetadata, reviews, slots |
-| P13 | **Push N
-
-
-otifications** | 🟡 Medium | Firebase Cloud Messaging — new booking alert to doctor/hospital |
-| P14 | **WhatsApp OTP / Notifications** | 🟡 Medium | 360Dialog or WATI integration |
-| P15 | **Multi-language (Hindi/English)** | 🟢 Low | Toggle button — simple string map |
+| P13 | ~~**Push Notifications**~~ | ✅ Done | FCM — doctor + hospital notified on new booking via `lib/fcm-admin` |
+| P14 | **WhatsApp OTP / Notifications** | 🟡 Medium | 360Dialog or WATI integration (not yet started) |
+| P15 | ~~**Multi-language (Hindi/English)**~~ | ✅ Done | LangProvider + `lib/i18n.ts` — toggle on dashboard |
 
 ### Phase 8 — Business Features
 
@@ -491,7 +498,7 @@ otifications** | 🟡 Medium | Firebase Cloud Messaging — new booking alert to
 |---|---------|----------|-------|
 | P16 | ~~**Promo Codes / Discounts**~~ | ✅ Done | Admin panel tab → create/edit/delete codes → validate at OPD checkout → usage tracking |
 | P17 | ~~**Home Sample Collection**~~ | ✅ Done | Lab booking modal: toggle → address form (flat/street/landmark/district/pin) + morning pickup slots → stored in notes.homeAddress |
-| P18 | **Insurance Integration** | 🟡 Medium | Insurance payment mode — capture policy no., route to TPA |
+| P18 | ~~**Insurance Integration**~~ | ✅ Done | OPD booking — insurance mode, policy no. + company name capture |
 | P19 | ~~**Ambulance Booking**~~ | ✅ Done | `/ambulance` — GPS location, vehicle type, emergency type, track by request ID; Admin 🚑 tab with dispatch/ETA/SMS |
 | P20 | ~~**Revenue Reports (Admin)**~~ | ✅ Done | Monthly/weekly/daily breakdown, bar chart, table, CSV export |
 | P21 | **Medicine Delivery** | 🟢 Low | 3rd-party pharmacy API integration |
@@ -671,13 +678,32 @@ git push origin master
 5. ✅ ~~Membership Renewal~~ — expiry detection + ₹249 renewal flow
 6. ✅ ~~Doctor Profile Edit~~ — slots, fees, photo, hospital from /doctor-profile
 7. ✅ ~~Admin Analytics Charts~~ — pure CSS bar charts, trend, revenue, type breakdown
-8. **Referral System** — invite link + ₹50 cashback
-9. **Rating & Reviews** — post-appointment stars
-10. **SEO Profile Pages** — `/hospitals/[slug]`, `/doctors/[slug]`
-11. **Flutter App** — phase 9, same APIs
+8. ✅ ~~**Referral System**~~ — invite link + ₹50 cashback
+9. ✅ ~~**Rating & Reviews**~~ — post-appointment stars
+10. ✅ ~~**SEO Profile Pages**~~ — `/hospitals/[slug]`, `/doctors/[slug]`
+11. ✅ ~~**Patient Health Card PDF**~~ — `/health-card`, credit-card size, print-ready
+12. ✅ ~~**Booking Reminder Notifications**~~ — Vercel cron, SMS via Fast2SMS
+13. ✅ ~~**Insurance Integration**~~ — OPD booking, policy no. capture
+14. ✅ ~~**Push Notifications (FCM)**~~ — doctor/hospital alert on booking
+15. ✅ ~~**Multi-language Hindi/English**~~ — LangProvider + i18n
+16. **WhatsApp OTP** — 360Dialog/WATI (only pending major feature)
+17. **Flutter App** — phase 9, same APIs (shuru karo jab web stable ho)
 
 ---
 
-*Last Updated: April 2026*  
-*Status: Phase 5 Complete ✅ | Phase 6 In Progress 🔄*
+*Last Updated: April 2026 (21 Apr)*  
+*Status: Web App **~97% Complete** ✅ | AI Chatbot added | WhatsApp OTP pending | Flutter — future phase*
+
+### What's fully done (52 features):
+- Full patient flow: register → family card → OPD/Lab/Surgery/IPD/Teleconsult booking → reports → cancellation
+- Hospital & Doctor management: onboarding, admin verification, dashboards, profile edit
+- Staff dashboard: bookings, walk-in, collections, hospital management (permission-based)
+- Admin panel: 8+ tabs, analytics, revenue reports, ambulance, referral, promo codes, SEO pages
+- Auth: JWT cookie, OTP (SMS+Email), FCM push, multi-role, `requireHospitalAccess` guard
+- Patient Health Card (print-ready), Booking Reminders (Vercel cron), Insurance mode, Multi-language
+
+### Only genuinely pending:
+- **WhatsApp OTP** (P14) — 360Dialog/WATI (Medium priority)
+- **Medicine Delivery** (P21) — 3rd party pharmacy API (Low priority)
+- **Flutter App** (P22–P24) — start after web is fully stable
 

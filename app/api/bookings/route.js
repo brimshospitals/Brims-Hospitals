@@ -6,8 +6,12 @@ import Doctor from "../../../models/Doctor";
 import Hospital from "../../../models/Hospital";
 import Notification from "../../../models/Notification";
 import PromoCode from "../../../models/PromoCode";
+import CommissionSlab from "../../../models/CommissionSlab";
+import Coordinator from "../../../models/Coordinator";
 import { requireAuth } from "../../../lib/auth";
 import { sendPushMulticast } from "../../../lib/fcm-admin";
+
+const DEFAULT_COMMISSION = { OPD: 10, Lab: 12, Surgery: 8, Consultation: 15, IPD: 8 };
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +24,7 @@ async function generateBookingId(type) {
 
 // POST — create a new booking
 export async function POST(request) {
-  const { error, session } = await requireAuth(request, ["user", "member", "admin"]);
+  const { error, session } = await requireAuth(request, ["user", "member", "admin", "coordinator"]);
   if (error) return error;
 
   try {
@@ -50,6 +54,11 @@ export async function POST(request) {
       promoDiscount,
       // Home collection
       homeAddress,
+      // Coordinator referral
+      coordinatorUserId,
+      // Partial booking (Surgery)
+      isPartialBooking,
+      depositAmount,
     } = body;
 
     if (!type || !appointmentDate || !patientName || !patientMobile) {
@@ -94,22 +103,65 @@ export async function POST(request) {
       );
     }
 
+    // ── Commission calculation ──────────────────────────────────
+    let commissionPct = DEFAULT_COMMISSION[type] ?? 10;
+    if (hospitalId) {
+      const slab = await CommissionSlab.findOne({ hospitalId, isActive: true }).lean();
+      if (slab?.rates?.[type] != null) commissionPct = slab.rates[type];
+    }
+    const bookingAmount      = amount || 0;
+    const platformCommission = Math.round(bookingAmount * commissionPct / 100);
+    const hospitalPayable    = bookingAmount - platformCommission;
+
+    // ── Coordinator lookup ──────────────────────────────────────
+    let coordId = undefined, coordName = "", coordCommissionAmt = 0, coordCommissionPct = 0;
+    const resolvedCoordUserId = coordinatorUserId || (session.role === "coordinator" ? session.userId : null);
+    if (resolvedCoordUserId) {
+      const coord = await Coordinator.findOne({ userId: resolvedCoordUserId, isActive: true }).lean();
+      if (coord) {
+        coordId = coord._id;
+        coordName = coord.name;
+        coordCommissionPct = coord.commissionRates?.[type] ?? 0;
+        coordCommissionAmt = Math.round(bookingAmount * coordCommissionPct / 100);
+        // Update coordinator stats
+        await Coordinator.findByIdAndUpdate(coord._id, {
+          $inc: { totalBookings: 1, totalEarned: coordCommissionAmt, pendingEarned: coordCommissionAmt },
+        });
+      }
+    }
+
+    // ── Partial booking for Surgery ─────────────────────────────
+    const actualDepositAmount = isPartialBooking && type === "Surgery" ? (depositAmount || 1000) : 0;
+    const balanceAmt = isPartialBooking ? bookingAmount - actualDepositAmount : 0;
+
     const booking = await Booking.create({
       bookingId,
       type,
       userId: session.userId,
-      memberId: patientUserId || undefined,
-      doctorId: doctorId || undefined,
-      hospitalId: hospitalId || undefined,
-      packageId: packageId || undefined,
-      labTestId: labTestId || undefined,
+      memberId:  patientUserId  || undefined,
+      doctorId:  doctorId       || undefined,
+      hospitalId: hospitalId    || undefined,
+      packageId:  packageId     || undefined,
+      labTestId:  labTestId     || undefined,
       appointmentDate: new Date(appointmentDate),
       slot: slot || "",
       status: "pending",
       paymentStatus: paymentMode === "online" ? "pending" : "pending",
-      amount: amount || 0,
+      amount: isPartialBooking ? actualDepositAmount : bookingAmount,
       familyCardId: familyCardId || undefined,
       notes,
+      // Commission
+      platformCommission,
+      commissionPct,
+      hospitalPayable,
+      // Coordinator
+      ...(coordId && { coordinatorId: coordId, coordinatorName: coordName }),
+      coordinatorCommission:    coordCommissionAmt,
+      coordinatorCommissionPct: coordCommissionPct,
+      // Partial booking
+      isPartialBooking: !!isPartialBooking,
+      depositAmount:    actualDepositAmount,
+      balanceAmount:    balanceAmt,
     });
 
     // ── Notifications ──────────────────────────────────────────

@@ -36,6 +36,25 @@ const bookingSchema = new mongoose.Schema(
     collectedBy:       { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     collectedByName:   { type: String },
     collectedAt:       { type: Date },
+    // Coordinator referral
+    coordinatorId:   { type: mongoose.Schema.Types.ObjectId, ref: "Coordinator" },
+    coordinatorName: { type: String },
+
+    // Platform commission (calculated at booking time)
+    platformCommission: { type: Number, default: 0 }, // amount in ₹
+    commissionPct:      { type: Number, default: 0 }, // % used
+    hospitalPayable:    { type: Number, default: 0 }, // amount - commission
+
+    // Coordinator commission
+    coordinatorCommission: { type: Number, default: 0 }, // amount in ₹
+    coordinatorCommissionPct: { type: Number, default: 0 },
+    coordinatorPaid:    { type: Boolean, default: false },
+
+    // Partial / deposit booking (Surgery packages)
+    isPartialBooking:  { type: Boolean, default: false },
+    depositAmount:     { type: Number,  default: 0 },   // amount paid upfront
+    balanceAmount:     { type: Number,  default: 0 },   // remaining to pay at hospital
+
     // Reminder tracking (avoid duplicate SMS)
     reminderToday:     { type: Boolean, default: false },
     reminderTomorrow:  { type: Boolean, default: false },

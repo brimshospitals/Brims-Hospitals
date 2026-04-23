@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import connectDB from "../../../../lib/mongodb";
 import SurgeryPackage from "../../../../models/SurgeryPackage";
 import Hospital from "../../../../models/Hospital";
-import { requireAuth } from "../../../../lib/auth";
+import { requireHospitalAccess } from "../../../../lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -11,12 +11,13 @@ function generatePkgId() {
 }
 
 export async function POST(request) {
-  const { error } = await requireAuth(request, ["hospital", "admin"]);
-  if (error) return error;
-
   try {
     const body = await request.json();
     const { hospitalId, name, category, mrp, offerPrice, description, inclusions, stayDays, roomType, surgeonName, surgeonExperience } = body;
+    // Full field set also available via `body.*` for new fields
+
+    const { error } = await requireHospitalAccess(request, hospitalId);
+    if (error) return error;
 
     if (!hospitalId || !name || !mrp || !offerPrice) {
       return NextResponse.json({ success: false, message: "hospitalId, name, mrp, offerPrice required" }, { status: 400 });
@@ -28,19 +29,30 @@ export async function POST(request) {
     if (!hospital) return NextResponse.json({ success: false, message: "Hospital not found" }, { status: 404 });
 
     const pkg = await SurgeryPackage.create({
-      packageId: generatePkgId(),
-      hospitalId: hospital._id,
-      hospitalName: hospital.name,
+      packageId:            generatePkgId(),
+      hospitalId:           hospital._id,
+      hospitalName:         hospital.name,
       name,
-      category: category || "General Surgery",
-      description: description || "",
-      inclusions: inclusions || [],
+      category:             category             || "General Surgery",
+      description:          description          || "",
+      inclusions:           inclusions           || [],
+      preSurgeryTests:      body.preSurgeryTests  || [],
       mrp,
       offerPrice,
-      stayDays: stayDays || 1,
-      roomType: roomType || "General",
-      surgeonName: surgeonName || "",
-      surgeonExperience: surgeonExperience || 0,
+      membershipPrice:      body.membershipPrice  || offerPrice,
+      stayDays:             stayDays             || 1,
+      roomOptions:          body.roomOptions      || [],
+      roomType:             roomType             || "General",
+      surgeonName:          body.surgeonName      || "",
+      surgeonExperience:    body.surgeonExperience || 0,
+      surgeonDegrees:       body.surgeonDegrees    || [],
+      pickupFromHome:       body.pickupFromHome    || false,
+      pickupCharge:         body.pickupCharge      || 0,
+      dropAvailable:        body.dropAvailable     || false,
+      foodIncluded:         body.foodIncluded      || false,
+      foodDetails:          body.foodDetails       || "",
+      postCareIncluded:     body.postCareIncluded  || false,
+      followUpConsultations: body.followUpConsultations || 0,
       address: {
         district: hospital.address?.district || "",
         city:     hospital.address?.city     || "",
@@ -55,16 +67,16 @@ export async function POST(request) {
 }
 
 export async function PATCH(request) {
-  const { error } = await requireAuth(request, ["hospital", "admin"]);
-  if (error) return error;
-
   try {
     const body = await request.json();
-    const { packageId, ...fields } = body;
+    const { packageId, hospitalId, ...fields } = body;
+
+    const { error } = await requireHospitalAccess(request, hospitalId || null);
+    if (error) return error;
     if (!packageId) return NextResponse.json({ success: false, message: "packageId required" }, { status: 400 });
 
     await connectDB();
-    const allowed = ["name","category","mrp","offerPrice","membershipPrice","description","inclusions","stayDays","roomType","surgeonName","surgeonExperience","isActive"];
+    const allowed = ["name","category","mrp","offerPrice","membershipPrice","description","inclusions","preSurgeryTests","stayDays","roomType","roomOptions","surgeonName","surgeonExperience","surgeonDegrees","pickupFromHome","pickupCharge","dropAvailable","foodIncluded","foodDetails","postCareIncluded","followUpConsultations","isActive"];
     const update = {};
     allowed.forEach((k) => { if (fields[k] !== undefined) update[k] = fields[k]; });
 
@@ -77,11 +89,11 @@ export async function PATCH(request) {
 }
 
 export async function DELETE(request) {
-  const { error } = await requireAuth(request, ["hospital", "admin"]);
-  if (error) return error;
-
   try {
-    const { packageId } = await request.json();
+    const { packageId, hospitalId } = await request.json();
+
+    const { error } = await requireHospitalAccess(request, hospitalId || null);
+    if (error) return error;
     if (!packageId) return NextResponse.json({ success: false, message: "packageId required" }, { status: 400 });
     await connectDB();
     await SurgeryPackage.findByIdAndDelete(packageId);

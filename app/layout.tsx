@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { LangProvider } from "./providers/LangProvider";
 import FCMInit from "./components/FCMInit";
+import ChatBot from "./components/ChatBot";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -33,6 +34,7 @@ export default function RootLayout({
         <LangProvider>
           {children}
           <FCMInit />
+          <ChatBot />
         </LangProvider>
       </body>
     </html>

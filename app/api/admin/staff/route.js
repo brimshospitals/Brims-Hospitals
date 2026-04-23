@@ -30,7 +30,7 @@ export async function GET(request) {
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
-      .select("name mobile email age gender photo isActive memberId staffPermissions createdAt")
+      .select("name mobile email age gender photo isActive memberId staffPermissions professionalId createdAt")
       .lean();
 
     return NextResponse.json({ success: true, staff, total, page, pages: Math.ceil(total / limit) });
@@ -61,14 +61,17 @@ export async function POST(request) {
     const profId     = email?.trim() || mobile.trim();
 
     const perms = {
-      manageBookings:    permissions?.manageBookings    ?? true,
-      collectPayments:   permissions?.collectPayments   ?? true,
-      managePatients:    permissions?.managePatients    ?? false,
-      uploadLabReports:  permissions?.uploadLabReports  ?? false,
-      cancelBookings:    permissions?.cancelBookings    ?? false,
-      viewAnalytics:     permissions?.viewAnalytics     ?? false,
-      manageIPD:         permissions?.manageIPD         ?? false,
-      dispatchAmbulance: permissions?.dispatchAmbulance ?? false,
+      manageBookings:      permissions?.manageBookings      ?? true,
+      collectPayments:     permissions?.collectPayments     ?? true,
+      managePatients:      permissions?.managePatients      ?? false,
+      uploadLabReports:    permissions?.uploadLabReports    ?? false,
+      cancelBookings:      permissions?.cancelBookings      ?? false,
+      viewAnalytics:       permissions?.viewAnalytics       ?? false,
+      manageIPD:           permissions?.manageIPD           ?? false,
+      dispatchAmbulance:   permissions?.dispatchAmbulance   ?? false,
+      manageHospitals:     permissions?.manageHospitals     ?? false,
+      onboardHospitals:    permissions?.onboardHospitals    ?? false,
+      assignedHospitalIds: permissions?.assignedHospitalIds ?? [],
     };
 
     const existing = await User.findOne({ mobile: mobile.trim() });

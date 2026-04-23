@@ -226,7 +226,7 @@ export async function POST(request) {
     }
 
     // Role check — staff/portal flow only for non-member roles
-    const allowedRoles = ["admin", "staff", "doctor", "hospital"];
+    const allowedRoles = ["admin", "staff", "doctor", "hospital", "coordinator"];
     if (!allowedRoles.includes(user.role)) {
       return NextResponse.json(
         { success: false, message: "Member login ke liye brims.in/login par jaiye" },

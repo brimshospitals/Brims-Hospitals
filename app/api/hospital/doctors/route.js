@@ -2,20 +2,28 @@ import { NextResponse } from "next/server";
 import connectDB from "../../../../lib/mongodb";
 import Doctor from "../../../../models/Doctor";
 import Hospital from "../../../../models/Hospital";
-import { requireAuth } from "../../../../lib/auth";
+import { requireHospitalAccess } from "../../../../lib/auth";
 
 export const dynamic = "force-dynamic";
 
+const PROFILE_FIELDS = [
+  "name","department","speciality","mobile","email","photo",
+  "degrees","experience","opdFee","offerFee","registrationNumber",
+  "collegeUG","collegePG","collegeMCH","about",
+  "availableSlots","onlineAvailable","onlineFee","onlineSlots",
+  "previousExperience","awards","isActive","isAvailable",
+];
+
 // POST — add a new doctor for this hospital
 export async function POST(request) {
-  const { error } = await requireAuth(request, ["hospital", "admin"]);
-  if (error) return error;
-
   try {
     const body = await request.json();
-    const { hospitalId, name, department, speciality, mobile, email, degrees, experience, opdFee, offerFee } = body;
+    const { hospitalId, address, district, city } = body;
 
-    if (!hospitalId || !name || !department || !opdFee) {
+    const { error } = await requireHospitalAccess(request, hospitalId);
+    if (error) return error;
+
+    if (!hospitalId || !body.name || !body.department || !body.opdFee) {
       return NextResponse.json(
         { success: false, message: "hospitalId, name, department, opdFee required" },
         { status: 400 }
@@ -29,22 +37,37 @@ export async function POST(request) {
       return NextResponse.json({ success: false, message: "Hospital not found" }, { status: 404 });
     }
 
+    const resolvedDistrict = address?.district || district || hospital.address?.district || "";
+    const resolvedCity     = address?.city     || city     || hospital.address?.city     || "";
+
     const doctor = await Doctor.create({
-      name,
-      department,
-      speciality:   speciality  || "",
-      mobile:       mobile      || "",
-      email:        email       || "",
-      degrees:      degrees     || [],
-      experience:   experience  || 0,
-      opdFee,
-      offerFee:     offerFee    || opdFee,
+      name:               body.name,
+      department:         body.department,
+      speciality:         body.speciality         || "",
+      mobile:             body.mobile             || "",
+      email:              body.email              || "",
+      photo:              body.photo              || "",
+      degrees:            body.degrees            || [],
+      experience:         body.experience         || 0,
+      opdFee:             body.opdFee,
+      offerFee:           body.offerFee           || body.opdFee,
+      registrationNumber: body.registrationNumber || undefined,
+      collegeUG:          body.collegeUG          || "",
+      collegePG:          body.collegePG          || "",
+      collegeMCH:         body.collegeMCH         || "",
+      about:              body.about              || "",
+      availableSlots:     body.availableSlots     || [],
+      onlineAvailable:    body.onlineAvailable    || false,
+      onlineFee:          body.onlineFee          || 0,
+      onlineSlots:        body.onlineSlots        || [],
+      previousExperience: body.previousExperience || [],
+      awards:             body.awards             || [],
       hospitalId:   hospital._id,
       hospitalName: hospital.name,
       address: {
-        district: hospital.address?.district || "",
-        city:     hospital.address?.city     || "",
-        state:    hospital.address?.state    || "Bihar",
+        district: resolvedDistrict,
+        city:     resolvedCity,
+        state:    "Bihar",
       },
     });
 
@@ -57,20 +80,26 @@ export async function POST(request) {
 
 // PATCH — update doctor details
 export async function PATCH(request) {
-  const { error } = await requireAuth(request, ["hospital", "admin"]);
-  if (error) return error;
-
   try {
     const body = await request.json();
-    const { doctorId, ...fields } = body;
+    const { doctorId, hospitalId, address, ...fields } = body;
     if (!doctorId) return NextResponse.json({ success: false, message: "doctorId required" }, { status: 400 });
 
-    await connectDB();
-    const allowed = ["name","department","speciality","mobile","email","degrees","experience","opdFee","offerFee","isActive","isAvailable","availableSlots","photo"];
-    const update = {};
-    allowed.forEach((k) => { if (fields[k] !== undefined) update[k] = fields[k]; });
+    const { error } = await requireHospitalAccess(request, hospitalId || null);
+    if (error) return error;
 
-    const doctor = await Doctor.findByIdAndUpdate(doctorId, update, { new: true });
+    await connectDB();
+
+    const update = {};
+    PROFILE_FIELDS.forEach((k) => { if (fields[k] !== undefined) update[k] = fields[k]; });
+
+    // Handle address fields
+    if (address || fields.district || fields.city) {
+      update["address.district"] = address?.district || fields.district || "";
+      update["address.city"]     = address?.city     || fields.city     || "";
+    }
+
+    const doctor = await Doctor.findByIdAndUpdate(doctorId, { $set: update }, { new: true });
     if (!doctor) return NextResponse.json({ success: false, message: "Doctor not found" }, { status: 404 });
     return NextResponse.json({ success: true, doctor });
   } catch (error) {
@@ -80,12 +109,12 @@ export async function PATCH(request) {
 
 // DELETE — remove a doctor
 export async function DELETE(request) {
-  const { error } = await requireAuth(request, ["hospital", "admin"]);
-  if (error) return error;
-
   try {
-    const { doctorId } = await request.json();
+    const { doctorId, hospitalId } = await request.json();
     if (!doctorId) return NextResponse.json({ success: false, message: "doctorId required" }, { status: 400 });
+
+    const { error } = await requireHospitalAccess(request, hospitalId || null);
+    if (error) return error;
 
     await connectDB();
     await Doctor.findByIdAndDelete(doctorId);

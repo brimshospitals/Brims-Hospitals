@@ -26,8 +26,10 @@ export async function POST(request) {
     const {
       name, mobile, email, department, speciality,
       degrees, experience, hospitalId, hospitalName,
-      district, city, opdFee, registrationNumber, password,
-      collegeUG, collegePG, collegeMCH, about,
+      district, city, address, opdFee, offerFee, registrationNumber, password,
+      collegeUG, collegePG, collegeMCH, about, photo,
+      availableSlots, onlineAvailable, onlineFee, onlineSlots,
+      previousExperience, awards,
     } = body;
 
     if (!name || !mobile || !department || !opdFee) {
@@ -115,31 +117,42 @@ export async function POST(request) {
     });
 
     // Save doctor with complete profile
+    const resolvedDistrict = address?.district || district || "";
+    const resolvedCity     = address?.city     || city     || "";
+
     const doctor = await Doctor.create({
       doctorId,
-      name:        name.trim(),
-      mobile:      mobile.trim(),
-      email:       email?.trim() || "",
-      userId:      user._id,
+      name:               name.trim(),
+      mobile:             mobile.trim(),
+      email:              email?.trim()              || "",
+      photo:              photo                      || "",
+      userId:             user._id,
       department,
-      speciality:  speciality  || "",
-      degrees:     parsedDegrees,
+      speciality:         speciality                 || "",
+      degrees:            parsedDegrees,
       registrationNumber: registrationNumber?.trim() || null,
-      collegeUG:   collegeUG?.trim()  || "",
-      collegePG:   collegePG?.trim()  || "",
-      collegeMCH:  collegeMCH?.trim() || "",
-      about:       about?.trim()      || "",
-      profileComplete: false,
-      experience:  Number(experience) || 0,
-      opdFee:      Number(opdFee),
-      hospitalId:  resolvedHospitalId,
-      hospitalName: resolvedHospitalName,
+      collegeUG:          collegeUG?.trim()           || "",
+      collegePG:          collegePG?.trim()           || "",
+      collegeMCH:         collegeMCH?.trim()          || "",
+      about:              about?.trim()               || "",
+      profileComplete:    false,
+      experience:         Number(experience)          || 0,
+      opdFee:             Number(opdFee),
+      offerFee:           Number(offerFee)            || Number(opdFee),
+      availableSlots:     availableSlots              || [],
+      onlineAvailable:    onlineAvailable             || false,
+      onlineFee:          onlineFee                   || 0,
+      onlineSlots:        onlineSlots                 || [],
+      previousExperience: previousExperience          || [],
+      awards:             awards                      || [],
+      hospitalId:         resolvedHospitalId,
+      hospitalName:       resolvedHospitalName,
       address: {
-        district: district || "",
-        city:     city     || "",
+        district: resolvedDistrict,
+        city:     resolvedCity,
         state:    "Bihar",
       },
-      isActive:    false,   // Pending admin approval
+      isActive:    false,
       isAvailable: false,
     });
 

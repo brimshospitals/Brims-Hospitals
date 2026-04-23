@@ -1,8 +1,10 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
+import DoctorFullForm from "@/app/components/DoctorFullForm";
+import LabTestFullForm from "@/app/components/LabTestFullForm";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type Tab = "overview" | "members" | "hospitals" | "doctors" | "packages" | "labtests" | "bookings" | "staff" | "promo" | "reports" | "accounting" | "ambulance" | "articles" | "notifications";
+type Tab = "overview" | "members" | "hospitals" | "doctors" | "packages" | "labtests" | "bookings" | "staff" | "promo" | "reports" | "accounting" | "ambulance" | "articles" | "notifications" | "coordinators";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   pending:   { label: "Pending",   color: "bg-yellow-100 text-yellow-700 border-yellow-200" },
@@ -836,8 +838,700 @@ function MembersTab({ onOpenPatient }: { onOpenPatient: (id: string) => void }) 
   );
 }
 
+// ── Hospital Manage Panel Modals ──────────────────────────────────────────────
+const DEPT_LIST = ["General Medicine","General Surgery","Pediatrics","Gynecology & Obstetrics","Orthopedics","Cardiology","Dermatology","ENT","Ophthalmology","Neurology","Psychiatry","Radiology","Pathology","Anesthesiology","Dentistry","Physiotherapy","Urology","Nephrology","Oncology","Gastroenterology","Other"];
+const LAB_CAT   = ["Blood Test","Urine Test","Stool Test","Imaging","ECG","X-Ray","Ultrasound","MRI","CT Scan","Pathology","Other"];
+const SUR_CAT   = ["General Surgery","Orthopedic","Cardiac","Neuro Surgery","Gynecology","Urology","Oncology","Ophthalmology","ENT","Dental","Plastic Surgery","Other"];
+
+// Surgery names grouped by department
+const SURGERY_BY_DEPT: Record<string, string[]> = {
+  "General Surgery":  ["Appendectomy (Appendix Removal)","Laparoscopic Hernia Repair","Inguinal Hernia Repair","Cholecystectomy (Gallbladder Removal)","Hemorrhoidectomy (Piles)","Fistula-in-Ano Surgery","Thyroidectomy","Varicose Vein Surgery","Pilonidal Sinus Surgery","Adult Circumcision","Lipoma Removal","Umbilical Hernia Repair","Abscess Drainage"],
+  "Orthopedic":       ["Total Knee Replacement (TKR)","Total Hip Replacement (THR)","Lumbar Disc Surgery","ACL Reconstruction","Fracture Fixation (ORIF)","Shoulder Arthroscopy","Spine Decompression","Bunion (Hallux Valgus) Surgery","Carpal Tunnel Release","Meniscus Repair"],
+  "Cardiac":          ["Coronary Artery Bypass (CABG)","Heart Valve Replacement","Aortic Valve Repair","Pacemaker Implant","ASD/VSD Closure","Coronary Angioplasty (PTCA)","Atrial Fibrillation Ablation"],
+  "Neuro Surgery":    ["Brain Tumor Surgery","Lumbar Disc Surgery","Hydrocephalus Shunt","Skull Fracture Repair","Cervical Disc Surgery","Spine Decompression","Deep Brain Stimulation"],
+  "Gynecology":       ["Hysterectomy (Uterus Removal)","Laparoscopic Myomectomy","Ovarian Cystectomy","D&C (Dilation & Curettage)","Caesarean Section (C-Section)","Tubal Ligation","Endometriosis Surgery","LEEP Procedure (Cervix)","Laparoscopic Sterilization"],
+  "Urology":          ["Kidney Stone (PCNL)","Kidney Stone (URSL)","Prostate Surgery (TURP)","Cystoscopy","Vasectomy","Ureteroscopy (URS)","Nephrectomy","Bladder Stone Removal"],
+  "Oncology":         ["Breast Cancer Surgery","Colorectal Cancer Surgery","Lung Cancer Surgery","Prostate Cancer Surgery","Cervical Cancer Surgery","Thyroid Cancer Surgery","Oral Cancer Surgery"],
+  "Ophthalmology":    ["Cataract Surgery (Phaco)","LASIK Eye Surgery","Pterygium Surgery","Glaucoma Surgery","Retinal Detachment Repair","DCR Surgery (Tear Duct)","Squint Surgery","Vitrectomy"],
+  "ENT":              ["Tonsillectomy","Adenoidectomy","Septoplasty (Deviated Septum)","FESS (Sinus Surgery)","Tympanoplasty (Ear Drum Repair)","Myringotomy","Cochlear Implant","Nasal Polyp Removal"],
+  "Dental":           ["Wisdom Tooth Removal","Dental Implant","Jaw Surgery (Orthognathic)","Cleft Lip/Palate Surgery","Gum Surgery (Gingivectomy)","Root Canal Treatment (RCT)"],
+  "Plastic Surgery":  ["Rhinoplasty (Nose Job)","Liposuction","Breast Augmentation","Breast Reduction","Tummy Tuck (Abdominoplasty)","Eyelid Surgery","Facelift","Scar Revision","Burn Grafting"],
+  "Other":            [],
+};
+
+// Standard package inclusions
+const STD_INCLUSIONS = [
+  "Pre-op Tests","Surgery","Anaesthesia","ICU/HDU (if needed)","Hospital Stay",
+  "Medicines","Post-op Dressing","Light Diet Meals","Ghar se Pickup","Ghar Drop",
+  "Post-surgery Care","Follow-up Consultation(s)","Nursing Care","Blood Transfusion (if needed)",
+];
+
+// Pre-surgery test options
+const PRE_SURGERY_TESTS = [
+  "Blood Test (CBC)","LFT (Liver Function)","KFT (Kidney Function)","ECG",
+  "X-Ray Chest","CT Scan","MRI","Echo (Echocardiography)","Urine Routine",
+  "Blood Sugar (Fasting)","HIV Test","HBsAg (Hepatitis B)","Coagulation Profile (PT/INR)",
+  "Thyroid Profile (TFT)","2D Echo","Serum Electrolytes",
+];
+
+// Room types
+const ROOM_TYPES = ["General Room","Semi-Private Room","Private Room","Deluxe Room","Suite"];
+
+const mInp = "w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 transition";
+const mSel = "w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 bg-white transition";
+
+function HMPDoctorModal({ hospitalId, doctor, onClose, onSaved }: { hospitalId: string; doctor?: any; onClose: () => void; onSaved: () => void }) {
+  const isEdit = !!doctor;
+  const [f, setF] = useState({
+    name: doctor?.name || "", department: doctor?.department || "", speciality: doctor?.speciality || "",
+    mobile: doctor?.mobile || "", email: doctor?.email || "", opdFee: doctor?.opdFee?.toString() || "",
+    offerFee: doctor?.offerFee?.toString() || "", experience: doctor?.experience?.toString() || "",
+    degrees: doctor?.degrees?.map((d: any) => d.degree || d).join(", ") || "",
+    isActive: doctor?.isActive !== false,
+  });
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+  const set = (k: string, v: any) => setF((p) => ({ ...p, [k]: v }));
+
+  async function save() {
+    if (!f.name || !f.department || !f.opdFee) { setErr("Naam, Department aur OPD Fee zaruri hai"); return; }
+    setSaving(true); setErr("");
+    try {
+      const payload: any = {
+        hospitalId, ...f, opdFee: Number(f.opdFee), offerFee: Number(f.offerFee) || Number(f.opdFee),
+        experience: Number(f.experience) || 0,
+        degrees: f.degrees ? f.degrees.split(",").map((s) => ({ degree: s.trim(), university: "", year: null })).filter((d) => d.degree) : [],
+      };
+      if (isEdit) payload.doctorId = doctor._id;
+      const res  = await fetch("/api/hospital/doctors", {
+        method: isEdit ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (data.success) onSaved();
+      else setErr(data.message);
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/50 z-[60]" onClick={onClose} />
+      <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
+          <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-5 rounded-t-2xl flex items-center justify-between flex-shrink-0">
+            <h3 className="text-white font-bold text-lg">{isEdit ? "✏️ Edit Doctor" : "➕ Add Doctor"}</h3>
+            <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white">✕</button>
+          </div>
+          <div className="p-5 space-y-3">
+            {err && <p className="text-sm text-red-600 bg-red-50 rounded-xl px-3 py-2">{err}</p>}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2"><label className="text-xs font-semibold text-gray-500 block mb-1">Doctor Ka Naam *</label><input className={mInp} value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="Dr. Ramesh Kumar" /></div>
+              <div><label className="text-xs font-semibold text-gray-500 block mb-1">Department *</label><select className={mSel} value={f.department} onChange={(e) => set("department", e.target.value)}><option value="">Select</option>{DEPT_LIST.map((d) => <option key={d}>{d}</option>)}</select></div>
+              <div><label className="text-xs font-semibold text-gray-500 block mb-1">Speciality</label><input className={mInp} value={f.speciality} onChange={(e) => set("speciality", e.target.value)} placeholder="e.g. Laparoscopic" /></div>
+              <div><label className="text-xs font-semibold text-gray-500 block mb-1">Mobile</label><input className={mInp} value={f.mobile} onChange={(e) => set("mobile", e.target.value)} maxLength={10} placeholder="10-digit" /></div>
+              <div><label className="text-xs font-semibold text-gray-500 block mb-1">Email</label><input className={mInp} type="email" value={f.email} onChange={(e) => set("email", e.target.value)} placeholder="doctor@email.com" /></div>
+              <div><label className="text-xs font-semibold text-gray-500 block mb-1">OPD Fee (₹) *</label><input className={mInp} type="number" value={f.opdFee} onChange={(e) => set("opdFee", e.target.value)} placeholder="300" /></div>
+              <div><label className="text-xs font-semibold text-gray-500 block mb-1">Offer Fee (₹)</label><input className={mInp} type="number" value={f.offerFee} onChange={(e) => set("offerFee", e.target.value)} placeholder="250" /></div>
+              <div><label className="text-xs font-semibold text-gray-500 block mb-1">Experience (yrs)</label><input className={mInp} type="number" value={f.experience} onChange={(e) => set("experience", e.target.value)} placeholder="5" /></div>
+              <div className="col-span-2"><label className="text-xs font-semibold text-gray-500 block mb-1">Degrees (comma separated)</label><input className={mInp} value={f.degrees} onChange={(e) => set("degrees", e.target.value)} placeholder="MBBS, MD, MS" /></div>
+              {isEdit && <div className="col-span-2 flex items-center gap-3"><label className="text-sm font-medium text-gray-700 cursor-pointer flex items-center gap-2"><input type="checkbox" checked={f.isActive} onChange={(e) => set("isActive", e.target.checked)} className="rounded" /><span>Active (uncheck = On Hold)</span></label></div>}
+            </div>
+          </div>
+          <div className="px-5 pb-5 flex gap-3">
+            <button onClick={onClose} className="flex-1 border border-gray-200 text-gray-600 py-2.5 rounded-xl text-sm font-semibold">Cancel</button>
+            <button onClick={save} disabled={saving} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50">{saving ? "Saving..." : isEdit ? "Update Doctor" : "Add Doctor"}</button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function HMPLabModal({ hospitalId, labTest, onClose, onSaved }: { hospitalId: string; labTest?: any; onClose: () => void; onSaved: () => void }) {
+  const isEdit = !!labTest;
+
+  async function handleSubmit(payload: any) {
+    const apiPayload: any = { ...payload, hospitalId };
+    if (isEdit) apiPayload.testId = labTest._id;
+    const res  = await fetch("/api/hospital/lab-tests", {
+      method: isEdit ? "PATCH" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(apiPayload),
+    });
+    const data = await res.json();
+    if (data.success) { onSaved(); return { success: true }; }
+    return { success: false, message: data.message };
+  }
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/50 z-[60]" onClick={onClose} />
+      <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 overflow-y-auto">
+        <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl my-6">
+          <div className="bg-gradient-to-r from-teal-600 to-teal-700 p-5 rounded-t-2xl flex items-center justify-between">
+            <div>
+              <p className="text-teal-200 text-xs font-medium">Lab Test</p>
+              <h3 className="text-white font-bold text-lg">{isEdit ? "✏️ Edit Lab Test" : "➕ Add Lab Test"}</h3>
+            </div>
+            <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white">✕</button>
+          </div>
+          <div className="p-6">
+            <LabTestFullForm
+              initialData={labTest}
+              showStatusSection={isEdit}
+              isEdit={isEdit}
+              submitLabel={isEdit ? "✓ Save Changes" : "✓ Add Lab Test"}
+              onSubmit={handleSubmit}
+              onCancel={onClose}
+            />
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function HMPSurgeryModal({ hospitalId, pkg, onClose, onSaved }: { hospitalId: string; pkg?: any; onClose: () => void; onSaved: () => void }) {
+  const isEdit = !!pkg;
+
+  // Parse existing roomOptions for edit mode
+  const initRoomOpts = (): Record<string, { enabled: boolean; charge: string }> => {
+    const map: Record<string, { enabled: boolean; charge: string }> = {};
+    ROOM_TYPES.forEach((rt) => map[rt] = { enabled: false, charge: "0" });
+    map["General Room"] = { enabled: true, charge: "0" }; // always included
+    if (pkg?.roomOptions) {
+      pkg.roomOptions.forEach((ro: any) => {
+        if (map[ro.type]) map[ro.type] = { enabled: true, charge: String(ro.extraCharge || 0) };
+      });
+    }
+    return map;
+  };
+
+  const [dept,         setDept]         = useState(pkg?.category || "General Surgery");
+  const [surgeryName,  setSurgeryName]  = useState(pkg?.name || "");
+  const [customName,   setCustomName]   = useState(!(SURGERY_BY_DEPT[pkg?.category || "General Surgery"] || []).includes(pkg?.name || "") ? pkg?.name || "" : "");
+  const [useCustom,    setUseCustom]    = useState(!(SURGERY_BY_DEPT[pkg?.category || "General Surgery"] || []).includes(pkg?.name || "") && !!pkg?.name);
+  const [description,  setDescription]  = useState(pkg?.description || "");
+  const [inclusions,   setInclusions]   = useState<string[]>(pkg?.inclusions || ["Pre-op Tests","Surgery","Anaesthesia","Hospital Stay","Medicines","Post-op Dressing"]);
+  const [preTests,     setPreTests]     = useState<string[]>(pkg?.preSurgeryTests || []);
+  const [roomOpts,     setRoomOpts]     = useState(initRoomOpts());
+  const [surgeonName,  setSurgeonName]  = useState(pkg?.surgeonName || "");
+  const [surgeonExp,   setSurgeonExp]   = useState(String(pkg?.surgeonExperience || ""));
+  const [surgeonDeg,   setSurgeonDeg]   = useState((pkg?.surgeonDegrees || []).join(", "));
+  const [pickup,       setPickup]       = useState(pkg?.pickupFromHome || false);
+  const [pickupCharge, setPickupCharge] = useState(String(pkg?.pickupCharge || "500"));
+  const [drop,         setDrop]         = useState(pkg?.dropAvailable || false);
+  const [food,         setFood]         = useState(pkg?.foodIncluded || false);
+  const [foodDetails,  setFoodDetails]  = useState(pkg?.foodDetails || "Light diet meals included");
+  const [postCare,     setPostCare]     = useState(pkg?.postCareIncluded || false);
+  const [followUp,     setFollowUp]     = useState(String(pkg?.followUpConsultations || "1"));
+  const [stayDays,     setStayDays]     = useState(String(pkg?.stayDays || "2"));
+  const [mrp,          setMrp]          = useState(String(pkg?.mrp || ""));
+  const [offerPrice,   setOfferPrice]   = useState(String(pkg?.offerPrice || ""));
+  const [memberPrice,  setMemberPrice]  = useState(String(pkg?.membershipPrice || ""));
+  const [isActive,     setIsActive]     = useState(pkg?.isActive !== false);
+  const [saving,       setSaving]       = useState(false);
+  const [err,          setErr]          = useState("");
+
+  const surgeryOptions = SURGERY_BY_DEPT[dept] || [];
+
+  function toggleList(list: string[], item: string, setter: (v: string[]) => void) {
+    setter(list.includes(item) ? list.filter((x) => x !== item) : [...list, item]);
+  }
+
+  function updateRoomOpt(rt: string, field: "enabled" | "charge", val: any) {
+    setRoomOpts((p) => ({ ...p, [rt]: { ...p[rt], [field]: val } }));
+  }
+
+  async function save() {
+    const finalName = useCustom ? customName.trim() : surgeryName;
+    if (!finalName)       { setErr("Surgery ka naam daalo"); return; }
+    if (!mrp)             { setErr("MRP zaruri hai"); return; }
+    if (!offerPrice)      { setErr("Offer Price zaruri hai"); return; }
+    setSaving(true); setErr("");
+    try {
+      const activeRoomOptions = ROOM_TYPES
+        .filter((rt) => roomOpts[rt]?.enabled)
+        .map((rt)  => ({ type: rt, extraCharge: Number(roomOpts[rt].charge) || 0 }));
+
+      const payload: any = {
+        hospitalId,
+        name:                  finalName,
+        category:              dept,
+        description,
+        inclusions,
+        preSurgeryTests:       preTests,
+        roomOptions:           activeRoomOptions,
+        surgeonName,
+        surgeonExperience:     Number(surgeonExp) || 0,
+        surgeonDegrees:        surgeonDeg.split(",").map((s) => s.trim()).filter(Boolean),
+        pickupFromHome:        pickup,
+        pickupCharge:          pickup ? Number(pickupCharge) || 0 : 0,
+        dropAvailable:         drop,
+        foodIncluded:          food,
+        foodDetails:           food ? foodDetails : "",
+        postCareIncluded:      postCare,
+        followUpConsultations: Number(followUp) || 0,
+        stayDays:              Number(stayDays) || 1,
+        mrp:                   Number(mrp),
+        offerPrice:            Number(offerPrice),
+        membershipPrice:       Number(memberPrice) || Number(offerPrice),
+        isActive,
+      };
+      if (isEdit) payload.packageId = pkg._id;
+
+      const res  = await fetch("/api/hospital/surgery-packages", {
+        method: isEdit ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (data.success) onSaved();
+      else setErr(data.message);
+    } finally { setSaving(false); }
+  }
+
+  // Section label helper
+  const SLabel = ({ n, title }: { n: string; title: string }) => (
+    <div className="flex items-center gap-2 pt-1">
+      <span className="w-6 h-6 rounded-full bg-purple-100 text-purple-700 text-xs font-bold flex items-center justify-center flex-shrink-0">{n}</span>
+      <p className="text-sm font-bold text-gray-700">{title}</p>
+    </div>
+  );
+
+  const CheckGrid = ({ items, selected, onToggle }: { items: string[]; selected: string[]; onToggle: (v: string) => void }) => (
+    <div className="grid grid-cols-2 gap-1.5">
+      {items.map((item) => (
+        <label key={item} onClick={() => onToggle(item)}
+          className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs cursor-pointer transition select-none ${selected.includes(item) ? "bg-purple-50 border-purple-300 text-purple-800 font-semibold" : "bg-gray-50 border-gray-100 text-gray-600 hover:border-gray-300"}`}>
+          <span className={`w-4 h-4 rounded flex-shrink-0 flex items-center justify-center border ${selected.includes(item) ? "bg-purple-600 border-purple-600 text-white" : "border-gray-300"}`}>
+            {selected.includes(item) && <svg viewBox="0 0 12 12" className="w-3 h-3 fill-white"><path d="M2 6l3 3 5-5"/><polyline points="2,6 5,9 10,4" stroke="white" strokeWidth="2" fill="none"/></svg>}
+          </span>
+          {item}
+        </label>
+      ))}
+    </div>
+  );
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/50 z-[60]" onClick={onClose} />
+      <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 overflow-y-auto">
+        <div className="bg-white rounded-2xl w-full max-w-xl shadow-2xl my-4">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-purple-600 to-purple-700 p-5 rounded-t-2xl flex items-center justify-between sticky top-0 z-10">
+            <div>
+              <p className="text-purple-200 text-xs font-medium">Hospital Surgery Package</p>
+              <h3 className="text-white font-bold text-lg">{isEdit ? "✏️ Edit Package" : "➕ Add Surgery Package"}</h3>
+            </div>
+            <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white">✕</button>
+          </div>
+
+          <div className="p-5 space-y-5">
+            {err && <p className="text-sm text-red-600 bg-red-50 rounded-xl px-3 py-2">{err}</p>}
+
+            {/* ─ Section 1: Department & Surgery ─ */}
+            <SLabel n="1" title="Department & Surgery" />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold text-gray-500 block mb-1">Department *</label>
+                <select className={mSel} value={dept} onChange={(e) => { setDept(e.target.value); setSurgeryName(""); setUseCustom(false); }}>
+                  {SUR_CAT.map((c) => <option key={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-500 block mb-1">Surgery Name *</label>
+                {!useCustom ? (
+                  <select className={mSel} value={surgeryName} onChange={(e) => { if (e.target.value === "__custom__") { setUseCustom(true); setSurgeryName(""); } else setSurgeryName(e.target.value); }}>
+                    <option value="">-- Select Surgery --</option>
+                    {surgeryOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+                    <option value="__custom__">✏️ Custom naam daalo...</option>
+                  </select>
+                ) : (
+                  <div className="relative">
+                    <input className={mInp} value={customName} onChange={(e) => setCustomName(e.target.value)} placeholder="Surgery ka naam..." autoFocus />
+                    <button onClick={() => { setUseCustom(false); setCustomName(""); }} className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-purple-500 hover:text-purple-700">↩ List</button>
+                  </div>
+                )}
+              </div>
+              <div className="col-span-2">
+                <label className="text-xs font-semibold text-gray-500 block mb-1">Short Description</label>
+                <textarea className={mInp + " resize-none"} rows={2} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Safe and effective surgery with experienced team..." />
+              </div>
+            </div>
+
+            {/* ─ Section 2: Inclusions ─ */}
+            <SLabel n="2" title="Package Inclusions (kya kya shamil hai)" />
+            <CheckGrid items={STD_INCLUSIONS} selected={inclusions} onToggle={(item) => toggleList(inclusions, item, setInclusions)} />
+
+            {/* ─ Section 3: Pre-surgery Tests ─ */}
+            <SLabel n="3" title="Pre-surgery Tests (included)" />
+            <CheckGrid items={PRE_SURGERY_TESTS} selected={preTests} onToggle={(item) => toggleList(preTests, item, setPreTests)} />
+
+            {/* ─ Section 4: Room Options ─ */}
+            <SLabel n="4" title="Room Options & Pricing" />
+            <div className="space-y-2">
+              {ROOM_TYPES.map((rt) => {
+                const isGeneral = rt === "General Room";
+                const opt = roomOpts[rt];
+                return (
+                  <div key={rt} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border transition ${opt.enabled ? "bg-purple-50 border-purple-200" : "bg-gray-50 border-gray-100 opacity-60"}`}>
+                    {isGeneral ? (
+                      <span className="w-4 h-4 rounded bg-purple-600 border-purple-600 flex-shrink-0 flex items-center justify-center">
+                        <svg viewBox="0 0 12 12" className="w-3 h-3"><polyline points="2,6 5,9 10,4" stroke="white" strokeWidth="2" fill="none"/></svg>
+                      </span>
+                    ) : (
+                      <input type="checkbox" checked={opt.enabled} onChange={(e) => updateRoomOpt(rt, "enabled", e.target.checked)} className="w-4 h-4 accent-purple-600 flex-shrink-0" />
+                    )}
+                    <span className="text-sm font-medium text-gray-700 flex-1">{rt}</span>
+                    {isGeneral ? (
+                      <span className="text-xs font-semibold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">Base Price (Included)</span>
+                    ) : opt.enabled ? (
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-gray-500">+₹</span>
+                        <input type="number" value={opt.charge} onChange={(e) => updateRoomOpt(rt, "charge", e.target.value)}
+                          className="w-20 border border-purple-200 rounded-lg px-2 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-purple-400" placeholder="0" />
+                        <span className="text-xs text-gray-400">extra</span>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* ─ Section 5: Stay & Surgeon ─ */}
+            <SLabel n="5" title="Stay & Surgeon Details" />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold text-gray-500 block mb-1">Stay Days</label>
+                <input className={mInp} type="number" value={stayDays} onChange={(e) => setStayDays(e.target.value)} placeholder="2" />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-500 block mb-1">Surgeon Experience (yrs)</label>
+                <input className={mInp} type="number" value={surgeonExp} onChange={(e) => setSurgeonExp(e.target.value)} placeholder="10" />
+              </div>
+              <div className="col-span-2">
+                <label className="text-xs font-semibold text-gray-500 block mb-1">Surgeon Name</label>
+                <input className={mInp} value={surgeonName} onChange={(e) => setSurgeonName(e.target.value)} placeholder="Dr. Ramesh Kumar" />
+              </div>
+              <div className="col-span-2">
+                <label className="text-xs font-semibold text-gray-500 block mb-1">Surgeon Degrees (comma separated)</label>
+                <input className={mInp} value={surgeonDeg} onChange={(e) => setSurgeonDeg(e.target.value)} placeholder="MBBS, MS, MCh" />
+              </div>
+            </div>
+
+            {/* ─ Section 6: Logistics & Post-Care ─ */}
+            <SLabel n="6" title="Logistics & Post-surgery Care" />
+            <div className="space-y-3">
+              {/* Pickup */}
+              <div className={`p-3 rounded-xl border transition ${pickup ? "bg-teal-50 border-teal-200" : "bg-gray-50 border-gray-100"}`}>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={pickup} onChange={(e) => setPickup(e.target.checked)} className="w-4 h-4 accent-teal-600" />
+                  <span className="text-sm font-medium text-gray-700">🚗 Ghar se Pickup Available</span>
+                </label>
+                {pickup && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="text-xs text-gray-500">Pickup Charge: ₹</span>
+                    <input type="number" value={pickupCharge} onChange={(e) => setPickupCharge(e.target.value)}
+                      className="w-24 border border-teal-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-teal-400" placeholder="500" />
+                  </div>
+                )}
+              </div>
+              {/* Drop */}
+              <div className={`p-3 rounded-xl border transition ${drop ? "bg-teal-50 border-teal-200" : "bg-gray-50 border-gray-100"}`}>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={drop} onChange={(e) => setDrop(e.target.checked)} className="w-4 h-4 accent-teal-600" />
+                  <span className="text-sm font-medium text-gray-700">🚕 Discharge Drop Available (Free)</span>
+                </label>
+              </div>
+              {/* Food */}
+              <div className={`p-3 rounded-xl border transition ${food ? "bg-amber-50 border-amber-200" : "bg-gray-50 border-gray-100"}`}>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={food} onChange={(e) => setFood(e.target.checked)} className="w-4 h-4 accent-amber-500" />
+                  <span className="text-sm font-medium text-gray-700">🍽️ Food / Meals Included</span>
+                </label>
+                {food && (
+                  <input className="mt-2 w-full border border-amber-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-amber-400" value={foodDetails} onChange={(e) => setFoodDetails(e.target.value)} placeholder="e.g. Light diet 3 times/day" />
+                )}
+              </div>
+              {/* Post care */}
+              <div className={`p-3 rounded-xl border transition ${postCare ? "bg-blue-50 border-blue-200" : "bg-gray-50 border-gray-100"}`}>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={postCare} onChange={(e) => setPostCare(e.target.checked)} className="w-4 h-4 accent-blue-600" />
+                  <span className="text-sm font-medium text-gray-700">🩺 Post-surgery Care Included</span>
+                </label>
+              </div>
+              {/* Follow-up */}
+              <div className="flex items-center gap-3">
+                <label className="text-sm text-gray-600 whitespace-nowrap">📅 Follow-up Consultations:</label>
+                <input type="number" value={followUp} onChange={(e) => setFollowUp(e.target.value)}
+                  className="w-20 border border-gray-200 rounded-xl px-3 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-purple-400" min="0" max="10" />
+              </div>
+            </div>
+
+            {/* ─ Section 7: Pricing ─ */}
+            <SLabel n="7" title="Pricing" />
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="text-xs font-semibold text-gray-500 block mb-1">MRP (₹) *</label>
+                <input className={mInp} type="number" value={mrp} onChange={(e) => setMrp(e.target.value)} placeholder="45000" />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-500 block mb-1">Offer Price (₹) *</label>
+                <input className={mInp} type="number" value={offerPrice} onChange={(e) => setOfferPrice(e.target.value)} placeholder="35000" />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-500 block mb-1">Member Price (₹)</label>
+                <input className={mInp} type="number" value={memberPrice} onChange={(e) => setMemberPrice(e.target.value)} placeholder="30000" />
+              </div>
+            </div>
+            {mrp && offerPrice && (
+              <div className="bg-purple-50 border border-purple-100 rounded-xl px-4 py-2.5 flex items-center gap-4 text-sm">
+                <span className="text-gray-500 line-through">₹{Number(mrp).toLocaleString()}</span>
+                <span className="font-bold text-purple-700 text-base">₹{Number(offerPrice).toLocaleString()}</span>
+                {mrp && offerPrice && Number(mrp) > Number(offerPrice) && (
+                  <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-semibold">
+                    {Math.round(((Number(mrp) - Number(offerPrice)) / Number(mrp)) * 100)}% off
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* ─ Section 8: Status (edit only) ─ */}
+            {isEdit && (
+              <>
+                <SLabel n="8" title="Status" />
+                <label className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition ${isActive ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"}`}>
+                  <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} className="w-4 h-4 accent-green-600" />
+                  <span className="text-sm font-medium text-gray-700">{isActive ? "✅ Active — patients ko dikh raha hai" : "⏸️ On Hold — patients ko nahi dikh raha"}</span>
+                </label>
+              </>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div className="px-5 pb-5 flex gap-3 border-t border-gray-100 pt-4">
+            <button onClick={onClose} className="flex-1 border border-gray-200 text-gray-600 py-2.5 rounded-xl text-sm font-semibold">Cancel</button>
+            <button onClick={save} disabled={saving} className="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50">
+              {saving ? "Saving..." : isEdit ? "✓ Update Package" : "✓ Add Package"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── Hospital Manage Panel (Admin overlay) ─────────────────────────────────────
+function HospitalManagePanel({ hospital, onClose }: { hospital: { _id: string; name: string }; onClose: () => void }) {
+  type HMTab = "doctors" | "labtests" | "packages";
+  const [tab,      setTab]      = useState<HMTab>("doctors");
+  const [data,     setData]     = useState<any>(null);
+  const [loading,  setLoading]  = useState(true);
+  const [modal,    setModal]    = useState<string | null>(null);
+  const [editItem, setEditItem] = useState<any>(null);
+  const [toggling, setToggling] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [toast,    setToast]    = useState("");
+
+  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(""), 3000); };
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res  = await fetch(`/api/hospital/overview?hospitalId=${hospital._id}`);
+      const d    = await res.json();
+      if (d.success) setData(d);
+    } finally { setLoading(false); }
+  }, [hospital._id]);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const mutate = async (url: string, method: string, body: object) => {
+    const res  = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const d    = await res.json();
+    if (d.success) { loadData(); }
+    else showToast(d.message || "Error occurred");
+    return d.success;
+  };
+
+  const doctors  = data?.doctors         || [];
+  const labTests = data?.labTests         || [];
+  const packages = data?.surgeryPackages  || [];
+
+  const TABS = [
+    { key: "doctors",  label: "Doctors",          icon: "🩺", count: doctors.length  },
+    { key: "labtests", label: "Lab Tests",         icon: "🧪", count: labTests.length },
+    { key: "packages", label: "Surgery Packages",  icon: "🏥", count: packages.length },
+  ] as const;
+
+  return (
+    <>
+      {toast && <div className="fixed top-4 right-4 z-[80] bg-teal-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold shadow-lg">{toast}</div>}
+
+      {/* Modals */}
+      {modal === "addDoctor"   && <HMPDoctorModal  hospitalId={hospital._id} onClose={() => setModal(null)} onSaved={() => { setModal(null); loadData(); showToast("Doctor added!"); }} />}
+      {modal === "editDoctor"  && editItem && <HMPDoctorModal  hospitalId={hospital._id} doctor={editItem}  onClose={() => { setModal(null); setEditItem(null); }} onSaved={() => { setModal(null); setEditItem(null); loadData(); showToast("Doctor updated!"); }} />}
+      {modal === "addLab"      && <HMPLabModal     hospitalId={hospital._id} onClose={() => setModal(null)} onSaved={() => { setModal(null); loadData(); showToast("Lab test added!"); }} />}
+      {modal === "editLab"     && editItem && <HMPLabModal     hospitalId={hospital._id} labTest={editItem} onClose={() => { setModal(null); setEditItem(null); }} onSaved={() => { setModal(null); setEditItem(null); loadData(); showToast("Lab test updated!"); }} />}
+      {modal === "addSurgery"  && <HMPSurgeryModal hospitalId={hospital._id} onClose={() => setModal(null)} onSaved={() => { setModal(null); loadData(); showToast("Package added!"); }} />}
+      {modal === "editSurgery" && editItem && <HMPSurgeryModal hospitalId={hospital._id} pkg={editItem} onClose={() => { setModal(null); setEditItem(null); }} onSaved={() => { setModal(null); setEditItem(null); loadData(); showToast("Package updated!"); }} />}
+
+      {/* Backdrop + Panel */}
+      <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
+      <div className="fixed top-0 left-60 right-0 bottom-0 z-50 bg-gray-100 flex flex-col">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-purple-700 to-purple-800 px-6 py-4 flex-shrink-0 flex items-center gap-4 shadow-lg">
+          <button onClick={onClose} className="w-9 h-9 rounded-xl bg-white/20 hover:bg-white/30 flex items-center justify-center text-white font-bold text-lg transition">←</button>
+          <div className="flex-1 min-w-0">
+            <p className="text-purple-300 text-xs font-medium uppercase tracking-wide">Admin · Hospital Management</p>
+            <h2 className="text-white font-bold text-xl truncate">{hospital.name}</h2>
+          </div>
+          <button
+            onClick={() => window.open(`/hospital-onboarding?from=admin`, "_blank")}
+            className="text-xs bg-white/10 hover:bg-white/20 text-white border border-white/20 px-3 py-1.5 rounded-lg transition">
+            + Onboard Hospital
+          </button>
+        </div>
+
+        {/* Sub-tabs */}
+        <div className="bg-white border-b border-gray-200 px-6 flex gap-1 flex-shrink-0">
+          {TABS.map(({ key, label, icon, count }) => (
+            <button key={key} onClick={() => setTab(key)}
+              className={`px-4 py-3.5 text-sm font-semibold transition-all border-b-2 flex items-center gap-2 ${tab === key ? "border-purple-600 text-purple-700" : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"}`}>
+              <span>{icon}</span> {label}
+              {count > 0 && <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${tab === key ? "bg-purple-100 text-purple-700" : "bg-gray-100 text-gray-500"}`}>{count}</span>}
+            </button>
+          ))}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {loading ? <Spinner /> : (
+            <>
+              {/* ── DOCTORS ── */}
+              {tab === "doctors" && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-bold text-gray-800 text-lg">🩺 Doctors ({doctors.length})</h3>
+                    <button onClick={() => setModal("addDoctor")} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition">+ Add Doctor</button>
+                  </div>
+                  {doctors.length === 0 ? <EmptyState icon="🩺" message="Koi doctor nahi hai. Add karein." /> : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {doctors.map((d: any) => (
+                        <div key={d._id} className={`bg-white rounded-2xl border p-4 shadow-sm ${!d.isActive ? "opacity-60 border-red-200" : "border-gray-100"}`}>
+                          <div className="flex items-start gap-3 mb-3">
+                            {d.photo ? <img src={d.photo} alt={d.name} className="w-12 h-12 rounded-xl object-cover flex-shrink-0" /> : <div className="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-lg flex-shrink-0">{d.name?.[0]}</div>}
+                            <div className="flex-1 min-w-0">
+                              <p className="font-bold text-gray-800 text-sm truncate">{d.name}</p>
+                              <p className="text-xs text-gray-500">{d.department}{d.speciality ? ` · ${d.speciality}` : ""}</p>
+                              <p className="text-xs font-semibold text-teal-700 mt-0.5">₹{d.opdFee}/consult</p>
+                            </div>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0 ${d.isActive ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>{d.isActive ? "Active" : "Hold"}</span>
+                          </div>
+                          <div className="flex gap-1.5">
+                            <button onClick={() => mutate("/api/hospital/doctors", "PATCH", { doctorId: d._id, isActive: !d.isActive })} disabled={toggling === d._id}
+                              className={`flex-1 text-xs py-1.5 rounded-lg font-semibold transition ${d.isActive ? "bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100" : "bg-green-50 text-green-700 border border-green-200 hover:bg-green-100"} disabled:opacity-50`}>
+                              {d.isActive ? "On Hold" : "Activate"}
+                            </button>
+                            <button onClick={() => { setEditItem(d); setModal("editDoctor"); }} className="flex-1 text-xs py-1.5 rounded-lg font-semibold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition">Edit</button>
+                            <button onClick={async () => { if (!confirm("Remove karein?")) return; await mutate("/api/hospital/doctors", "DELETE", { doctorId: d._id }); showToast("Doctor removed"); }} disabled={deleting === d._id}
+                              className="flex-1 text-xs py-1.5 rounded-lg font-semibold bg-gray-50 text-gray-500 border border-gray-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition disabled:opacity-50">Delete</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── LAB TESTS ── */}
+              {tab === "labtests" && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-bold text-gray-800 text-lg">🧪 Lab Tests ({labTests.length})</h3>
+                    <button onClick={() => setModal("addLab")} className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-xl text-sm font-semibold transition">+ Add Lab Test</button>
+                  </div>
+                  {labTests.length === 0 ? <EmptyState icon="🧪" message="Koi lab test nahi hai. Add karein." /> : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {labTests.map((t: any) => (
+                        <div key={t._id} className={`bg-white rounded-2xl border p-4 shadow-sm ${!t.isActive ? "opacity-60 border-red-200" : "border-gray-100"}`}>
+                          <div className="mb-3">
+                            <div className="flex items-center justify-between gap-2 mb-1">
+                              <p className="font-bold text-gray-800 text-sm truncate flex-1">{t.name}</p>
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0 ${t.isActive ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>{t.isActive ? "Active" : "Hold"}</span>
+                            </div>
+                            <p className="text-xs text-gray-500">{t.category}</p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <span className="text-xs text-gray-400 line-through">₹{t.mrp}</span>
+                              <span className="text-sm font-bold text-teal-700">₹{t.offerPrice}</span>
+                              {t.homeCollection && <span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full border border-blue-200">Home ✓</span>}
+                              {t.fastingRequired && <span className="text-[10px] bg-orange-50 text-orange-600 px-1.5 py-0.5 rounded-full border border-orange-200">Fasting</span>}
+                            </div>
+                          </div>
+                          <div className="flex gap-1.5">
+                            <button onClick={() => mutate("/api/hospital/lab-tests", "PATCH", { testId: t._id, isActive: !t.isActive })}
+                              className={`flex-1 text-xs py-1.5 rounded-lg font-semibold transition ${t.isActive ? "bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100" : "bg-green-50 text-green-700 border border-green-200 hover:bg-green-100"}`}>
+                              {t.isActive ? "On Hold" : "Activate"}
+                            </button>
+                            <button onClick={() => { setEditItem(t); setModal("editLab"); }} className="flex-1 text-xs py-1.5 rounded-lg font-semibold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition">Edit</button>
+                            <button onClick={async () => { if (!confirm("Remove karein?")) return; await mutate("/api/hospital/lab-tests", "DELETE", { testId: t._id }); showToast("Lab test removed"); }}
+                              className="flex-1 text-xs py-1.5 rounded-lg font-semibold bg-gray-50 text-gray-500 border border-gray-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition">Delete</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── SURGERY PACKAGES ── */}
+              {tab === "packages" && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-bold text-gray-800 text-lg">🏥 Surgery Packages ({packages.length})</h3>
+                    <button onClick={() => setModal("addSurgery")} className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition">+ Add Package</button>
+                  </div>
+                  {packages.length === 0 ? <EmptyState icon="🏥" message="Koi surgery package nahi hai. Add karein." /> : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {packages.map((p: any) => (
+                        <div key={p._id} className={`bg-white rounded-2xl border p-4 shadow-sm ${!p.isActive ? "opacity-60 border-red-200" : "border-gray-100"}`}>
+                          <div className="mb-3">
+                            <div className="flex items-center justify-between gap-2 mb-1">
+                              <p className="font-bold text-gray-800 text-sm truncate flex-1">{p.name}</p>
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0 ${p.isActive ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>{p.isActive ? "Active" : "Hold"}</span>
+                            </div>
+                            <p className="text-xs text-gray-500">{p.category}</p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <span className="text-xs text-gray-400 line-through">₹{p.mrp?.toLocaleString()}</span>
+                              <span className="text-sm font-bold text-teal-700">₹{p.offerPrice?.toLocaleString()}</span>
+                            </div>
+                            {p.stayDays > 0 && <p className="text-xs text-gray-400 mt-0.5">{p.stayDays} day stay included</p>}
+                          </div>
+                          <div className="flex gap-1.5">
+                            <button onClick={() => mutate("/api/hospital/surgery-packages", "PATCH", { packageId: p._id, isActive: !p.isActive })}
+                              className={`flex-1 text-xs py-1.5 rounded-lg font-semibold transition ${p.isActive ? "bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100" : "bg-green-50 text-green-700 border border-green-200 hover:bg-green-100"}`}>
+                              {p.isActive ? "On Hold" : "Activate"}
+                            </button>
+                            <button onClick={() => { setEditItem(p); setModal("editSurgery"); }} className="flex-1 text-xs py-1.5 rounded-lg font-semibold bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 transition">Edit</button>
+                            <button onClick={async () => { if (!confirm("Remove karein?")) return; await mutate("/api/hospital/surgery-packages", "DELETE", { packageId: p._id }); showToast("Package removed"); }}
+                              className="flex-1 text-xs py-1.5 rounded-lg font-semibold bg-gray-50 text-gray-500 border border-gray-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition">Delete</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ── TAB: Hospitals ────────────────────────────────────────────────────────────
-function HospitalsTab({ onRefreshStats }: { onRefreshStats: () => void }) {
+function HospitalsTab({ onRefreshStats, onManageHospital }: { onRefreshStats: () => void; onManageHospital: (h: { _id: string; name: string }) => void }) {
   const [subTab, setSubTab]         = useState<"pending" | "verified">("pending");
   const [hospitals, setHospitals]   = useState<any[]>([]);
   const [loading, setLoading]       = useState(true);
@@ -923,13 +1617,16 @@ function HospitalsTab({ onRefreshStats }: { onRefreshStats: () => void }) {
                         <Badge color={h.isVerified ? "bg-green-100 text-green-700 border-green-200" : "bg-yellow-100 text-yellow-700 border-yellow-200"}>{h.isVerified ? "✓ Verified" : "⏳ Pending"}</Badge>
                       </td>
                       <td className="px-4 py-3">
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 flex-wrap">
                           <button onClick={() => setDetailId(h._id)} className="text-xs bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200 px-2.5 py-1 rounded-lg font-semibold transition">👁 View</button>
                           {!h.isVerified && (
                             <button onClick={() => handleVerify(h._id, true)} disabled={verifying === h._id} className="text-xs bg-green-600 hover:bg-green-700 text-white px-2.5 py-1 rounded-lg font-semibold transition disabled:opacity-50">✓ Verify</button>
                           )}
                           {h.isVerified && (
-                            <button onClick={() => handleVerify(h._id, false)} disabled={verifying === h._id} className="text-xs bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-2.5 py-1 rounded-lg font-semibold transition disabled:opacity-50">✗ Revoke</button>
+                            <>
+                              <button onClick={() => onManageHospital({ _id: h._id, name: h.name })} className="text-xs bg-purple-600 hover:bg-purple-700 text-white px-2.5 py-1 rounded-lg font-semibold transition">🛠 Manage</button>
+                              <button onClick={() => handleVerify(h._id, false)} disabled={verifying === h._id} className="text-xs bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-2.5 py-1 rounded-lg font-semibold transition disabled:opacity-50">✗ Revoke</button>
+                            </>
                           )}
                         </div>
                       </td>
@@ -1309,96 +2006,43 @@ const selectCls = "w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm 
 
 // ── Modal: Add Doctor ─────────────────────────────────────────────────────────
 function AddDoctorModal({ hospitals, onClose, onSaved }: { hospitals: any[]; onClose: () => void; onSaved: () => void }) {
-  const [form, setForm]       = useState({ name: "", mobile: "", email: "", department: "", speciality: "", degrees: "", experience: "", opdFee: "", isActive: true });
-  const [hospMode, setHospMode] = useState<"network"|"private">("network");
-  const [hospitalId, setHospitalId] = useState("");
-  const [privateHospName, setPrivateHospName] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState("");
-  const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
-
-  async function submit(e: React.SyntheticEvent) {
-    e.preventDefault(); setError("");
-    if (!form.name || !form.department || !form.opdFee) { setError("Name, department aur OPD fee zaruri hai"); return; }
-    if (hospMode === "network" && !hospitalId)            { setError("Hospital select karein ya Private choose karein"); return; }
-    if (hospMode === "private" && !privateHospName.trim()){ setError("Private clinic ka naam daalo"); return; }
-    setLoading(true);
-    const payload = {
-      ...form,
-      experience:   Number(form.experience),
-      opdFee:       Number(form.opdFee),
-      hospitalId:   hospMode === "network" ? hospitalId : undefined,
-      hospitalName: hospMode === "private" ? privateHospName.trim() : undefined,
-    };
-    const res  = await fetch("/api/admin/doctors", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  async function handleSubmit(payload: any) {
+    const degreesForApi = (payload.degrees || []).map((d: any) => ({
+      degree: d.degree, university: d.university, year: d.year ? Number(d.year) : null,
+    }));
+    const res  = await fetch("/api/admin/doctors", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...payload, degrees: degreesForApi }),
+    });
     const data = await res.json();
-    if (data.success) { onSaved(); onClose(); }
-    else setError(data.message);
-    setLoading(false);
+    if (data.success) { onSaved(); onClose(); return { success: true }; }
+    return { success: false, message: data.message };
   }
-
-  const selectedHosp = hospitals.find((h: any) => h._id === hospitalId);
 
   return (
     <>
       <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={onClose} />
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl max-h-[90vh] flex flex-col">
-          <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-5 rounded-t-2xl flex items-center justify-between flex-shrink-0">
-            <div><p className="text-xs text-blue-200 font-medium uppercase tracking-wide">Admin Panel</p><h2 className="text-white font-bold text-lg">Add New Doctor</h2></div>
+      <div className="fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto">
+        <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl my-6">
+          <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-5 rounded-t-2xl flex items-center justify-between sticky top-0 z-10">
+            <div>
+              <p className="text-xs text-blue-200 font-medium uppercase tracking-wide">Admin Panel</p>
+              <h2 className="text-white font-bold text-lg">➕ Add New Doctor</h2>
+            </div>
             <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white transition">✕</button>
           </div>
-          <form onSubmit={submit} className="flex-1 overflow-y-auto p-5 space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <FormField label="Full Name" required><input className={inputCls} value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="Dr. Arjun Singh" required /></FormField>
-              <FormField label="Mobile"><input className={inputCls} value={form.mobile} onChange={(e) => set("mobile", e.target.value.replace(/\D/g,""))} maxLength={10} placeholder="10-digit" /></FormField>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <FormField label="Department" required><input className={inputCls} value={form.department} onChange={(e) => set("department", e.target.value)} placeholder="Cardiology" required /></FormField>
-              <FormField label="Speciality"><input className={inputCls} value={form.speciality} onChange={(e) => set("speciality", e.target.value)} placeholder="Heart Surgery" /></FormField>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <FormField label="OPD Fee (₹)" required><input className={inputCls} type="number" min="0" value={form.opdFee} onChange={(e) => set("opdFee", e.target.value)} placeholder="500" required /></FormField>
-              <FormField label="Experience (years)"><input className={inputCls} type="number" min="0" value={form.experience} onChange={(e) => set("experience", e.target.value)} placeholder="10" /></FormField>
-            </div>
-            <FormField label="Degrees (comma-separated)"><input className={inputCls} value={form.degrees} onChange={(e) => set("degrees", e.target.value)} placeholder="MBBS, MD, DM" /></FormField>
-            <FormField label="Email"><input className={inputCls} type="email" value={form.email} onChange={(e) => set("email", e.target.value)} placeholder="doctor@email.com" /></FormField>
-
-            {/* Hospital association — required */}
-            <div>
-              <p className="text-xs font-semibold text-gray-600 mb-2">Hospital / Clinic Association *</p>
-              <div className="flex gap-2 mb-2">
-                {(["network","private"] as const).map((m) => (
-                  <button key={m} type="button" onClick={() => setHospMode(m)}
-                    className={`flex-1 py-2 rounded-xl border text-xs font-medium transition-all ${hospMode === m ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-200 hover:border-blue-300"}`}>
-                    {m === "network" ? "🏥 Brims Network" : "🏠 Private Clinic"}
-                  </button>
-                ))}
-              </div>
-              {hospMode === "network" ? (
-                <>
-                  <select className={selectCls} value={hospitalId} onChange={(e) => setHospitalId(e.target.value)}>
-                    <option value="">— Hospital chunein —</option>
-                    {hospitals.map((h: any) => <option key={h._id} value={h._id}>{h.name}{h.address?.district ? ` (${h.address.district})` : ""}</option>)}
-                  </select>
-                  {selectedHosp && (
-                    <p className="text-xs text-blue-600 mt-1 pl-1">✓ {selectedHosp.name}</p>
-                  )}
-                </>
-              ) : (
-                <input className={inputCls} value={privateHospName} onChange={(e) => setPrivateHospName(e.target.value)} placeholder="Clinic / Hospital naam" />
-              )}
-            </div>
-
-            <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-              <input type="checkbox" checked={form.isActive} onChange={(e) => set("isActive", e.target.checked)} className="rounded" />
-              Directly activate (skip pending approval)
-            </label>
-            {error && <p className="text-sm text-red-600 bg-red-50 rounded-xl px-3 py-2 border border-red-100">{error}</p>}
-          </form>
-          <div className="p-5 border-t border-gray-100 flex gap-3 flex-shrink-0">
-            <button type="button" onClick={onClose} className="flex-1 border border-gray-200 text-gray-600 py-2.5 rounded-xl text-sm font-semibold">Cancel</button>
-            <button onClick={submit} disabled={loading} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50">{loading ? "Adding..." : "Add Doctor"}</button>
+          <div className="p-6">
+            <DoctorFullForm
+              hospitals={hospitals}
+              showHospitalSection={true}
+              showPasswordSection={false}
+              showStatusSection={true}
+              initialData={{ isActive: true, isAvailable: true }}
+              submitLabel="Add Doctor"
+              onSubmit={handleSubmit}
+              onCancel={onClose}
+            />
           </div>
         </div>
       </div>
@@ -1491,6 +2135,8 @@ const STAFF_PERMISSIONS = [
   { key: "viewAnalytics",     label: "Analytics Dekhein",           desc: "Revenue reports aur booking analytics",                 icon: "📊", default: false },
   { key: "manageIPD",         label: "IPD Manage Karein",           desc: "IPD admission, discharge management",                   icon: "🏥", default: false },
   { key: "dispatchAmbulance", label: "Ambulance Dispatch Karein",   desc: "Ambulance requests manage karna aur ETA update",        icon: "🚑", default: false },
+  { key: "manageHospitals",  label: "Hospital Manage Karein",      desc: "Assigned hospitals ka doctors/packages/labtests manage karna", icon: "🏨", default: false },
+  { key: "onboardHospitals", label: "Hospital Onboard Karein",     desc: "Naya hospital onboard karna (hospital-onboarding form)",  icon: "🔧", default: false },
 ];
 
 function defaultPermissions() {
@@ -1786,21 +2432,36 @@ function StaffAccountingView() {
 
 // ── Edit Permissions Modal ────────────────────────────────────────────────────
 function EditPermissionsModal({ staff, onClose, onSaved }: { staff: any; onClose: () => void; onSaved: () => void }) {
-  const [perms,   setPerms]   = useState<Record<string, boolean>>(() => ({
+  const [perms,   setPerms]   = useState<Record<string, any>>(() => ({
     ...defaultPermissions(),
     ...(staff.staffPermissions || {}),
   }));
   const [saving,  setSaving]  = useState(false);
   const [error,   setError]   = useState("");
   const [success, setSuccess] = useState("");
+  const [hospitals, setHospitals] = useState<any[]>([]);
+  const [assignedIds, setAssignedIds] = useState<string[]>(() => {
+    const ids = staff.staffPermissions?.assignedHospitalIds || [];
+    return ids.map((id: any) => (typeof id === "object" ? id._id || id.toString() : id.toString()));
+  });
+
+  useEffect(() => {
+    fetch("/api/admin/hospitals?verified=true&page=1&limit=100")
+      .then((r) => r.json())
+      .then((d) => { if (d.success) setHospitals(d.hospitals || []); });
+  }, []);
 
   const togglePerm = (key: string) => setPerms((p) => ({ ...p, [key]: !p[key] }));
+
+  const toggleHospital = (id: string) => {
+    setAssignedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+  };
 
   async function save() {
     setSaving(true); setError("");
     const res  = await fetch("/api/admin/staff", {
       method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId: staff._id, permissions: perms }),
+      body: JSON.stringify({ userId: staff._id, permissions: { ...perms, assignedHospitalIds: assignedIds } }),
     });
     const data = await res.json();
     if (data.success) { setSuccess("Permissions save ho gayi!"); setTimeout(() => { onSaved(); onClose(); }, 1200); }
@@ -1824,21 +2485,45 @@ function EditPermissionsModal({ staff, onClose, onSaved }: { staff: any; onClose
           <div className="p-5 space-y-3">
             <p className="text-xs text-gray-500">Toggle ON/OFF karne se is staff ko access milega/hatega</p>
             {STAFF_PERMISSIONS.map((p) => (
-              <div key={p.key}
-                onClick={() => togglePerm(p.key)}
-                className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
-                  perms[p.key] ? "bg-teal-50 border-teal-200" : "bg-gray-50 border-gray-200 opacity-60"
-                }`}>
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0 ${perms[p.key] ? "bg-teal-100" : "bg-gray-200"}`}>
-                  {p.icon}
+              <div key={p.key}>
+                <div
+                  onClick={() => togglePerm(p.key)}
+                  className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                    perms[p.key] ? "bg-teal-50 border-teal-200" : "bg-gray-50 border-gray-200 opacity-60"
+                  }`}>
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0 ${perms[p.key] ? "bg-teal-100" : "bg-gray-200"}`}>
+                    {p.icon}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-800">{p.label}</p>
+                    <p className="text-xs text-gray-400 truncate">{p.desc}</p>
+                  </div>
+                  <div className={`w-10 h-6 rounded-full transition-colors flex-shrink-0 ${perms[p.key] ? "bg-teal-500" : "bg-gray-300"}`}>
+                    <div className={`w-5 h-5 bg-white rounded-full shadow mt-0.5 transition-transform ${perms[p.key] ? "translate-x-4" : "translate-x-0.5"}`} />
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-gray-800">{p.label}</p>
-                  <p className="text-xs text-gray-400 truncate">{p.desc}</p>
-                </div>
-                <div className={`w-10 h-6 rounded-full transition-colors flex-shrink-0 ${perms[p.key] ? "bg-teal-500" : "bg-gray-300"}`}>
-                  <div className={`w-5 h-5 bg-white rounded-full shadow mt-0.5 transition-transform ${perms[p.key] ? "translate-x-4" : "translate-x-0.5"}`} />
-                </div>
+                {/* Hospital assignment — shown when manageHospitals is ON */}
+                {p.key === "manageHospitals" && perms[p.key] && hospitals.length > 0 && (
+                  <div className="mt-2 ml-3 border-l-2 border-purple-200 pl-3">
+                    <p className="text-xs font-semibold text-purple-700 mb-2">Kaunse hospitals assign karein?</p>
+                    <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                      {hospitals.map((h: any) => {
+                        const checked = assignedIds.includes(h._id);
+                        return (
+                          <label key={h._id} className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer border transition ${checked ? "bg-purple-50 border-purple-200" : "bg-gray-50 border-gray-100"}`}>
+                            <input type="checkbox" checked={checked} onChange={() => toggleHospital(h._id)}
+                              className="accent-purple-600 w-4 h-4 flex-shrink-0" />
+                            <div className="min-w-0">
+                              <p className="text-xs font-semibold text-gray-800 truncate">{h.name}</p>
+                              <p className="text-xs text-gray-400">{h.address?.district || ""} · {h.hospitalId || ""}</p>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1">{assignedIds.length} hospital(s) selected</p>
+                  </div>
+                )}
               </div>
             ))}
             {error   && <p className="text-sm text-red-600 bg-red-50 rounded-xl px-3 py-2">{error}</p>}
@@ -2617,6 +3302,7 @@ function RevenueReportsTab() {
 // ═══════════════════════════════════════════════════════════════════════════════
 // ── ACCOUNTING TAB ────────────────────────────────────────────────────────────
 function AccountingTab() {
+  const [subTab,     setSubTab]     = useState<"analytics"|"slabs"|"payouts"|"records">("analytics");
   const [view,       setView]       = useState<"summary"|"commissions">("summary");
   const [summary,    setSummary]    = useState<any>(null);
   const [byHospital, setByHospital] = useState<any[]>([]);
@@ -2628,10 +3314,24 @@ function AccountingTab() {
   const [toast,      setToast]      = useState("");
   const [filterHosp, setFilterHosp]= useState("");
   const [filterStatus,setFilterStatus] = useState("");
-  const [payoutModal,setPayoutModal] = useState<any>(null); // { hospitalId, hospitalName, pendingAmt }
+  const [payoutModal,setPayoutModal] = useState<any>(null);
   const [payoutRef,  setPayoutRef]  = useState("");
   const [payoutDate, setPayoutDate] = useState(new Date().toISOString().split("T")[0]);
   const [payoutLoading,setPayoutLoading] = useState(false);
+
+  // Analytics state
+  const [analyticsPeriod, setAnalyticsPeriod] = useState("today");
+  const [analytics,   setAnalytics]   = useState<any>(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+
+  // Commission slabs state
+  const [slabs,        setSlabs]       = useState<any[]>([]);
+  const [slabHospitals,setSlabHospitals] = useState<any[]>([]);
+  const [slabLoading,  setSlabLoading]  = useState(false);
+  const [editSlab,     setEditSlab]     = useState<any>(null); // {hospital, slab}
+  const [slabRates,    setSlabRates]    = useState({ OPD:"", Lab:"", Surgery:"", Consultation:"", IPD:"" });
+  const [slabNotes,    setSlabNotes]    = useState("");
+  const [savingSlabs,  setSavingSlabs]  = useState(false);
 
   const PAYOUT_STATUS_COLORS: Record<string,string> = {
     pending: "bg-amber-100 text-amber-700 border-amber-200",
@@ -2683,6 +3383,41 @@ function AccountingTab() {
     } finally { setSyncing(false); }
   }
 
+  async function fetchAnalytics(period = analyticsPeriod) {
+    setAnalyticsLoading(true);
+    try {
+      const res  = await fetch(`/api/admin/booking-analytics?period=${period}`);
+      const data = await res.json();
+      if (data.success) setAnalytics(data);
+    } finally { setAnalyticsLoading(false); }
+  }
+
+  async function fetchSlabs() {
+    setSlabLoading(true);
+    try {
+      const res  = await fetch("/api/admin/commission-slabs");
+      const data = await res.json();
+      if (data.success) { setSlabs(data.slabs); setSlabHospitals(data.hospitals || []); }
+    } finally { setSlabLoading(false); }
+  }
+
+  async function saveSlab() {
+    if (!editSlab?.hospital?._id) return;
+    setSavingSlabs(true);
+    try {
+      const rates: any = {};
+      Object.entries(slabRates).forEach(([k, v]) => { if (v !== "") rates[k] = Number(v); });
+      const res  = await fetch("/api/admin/commission-slabs", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hospitalId: editSlab.hospital._id, rates, notes: slabNotes }),
+      });
+      const data = await res.json();
+      showToast(data.message || "Slab saved");
+      setEditSlab(null);
+      fetchSlabs();
+    } finally { setSavingSlabs(false); }
+  }
+
   async function markPaid() {
     if (!payoutModal) return;
     setPayoutLoading(true);
@@ -2706,205 +3441,400 @@ function AccountingTab() {
     } finally { setPayoutLoading(false); }
   }
 
-  useEffect(() => { fetchSummary(); }, []);
+  useEffect(() => { fetchSummary(); fetchAnalytics(); fetchSlabs(); }, []);
   useEffect(() => {
     if (view === "commissions") fetchCommissions(1);
   }, [view, filterHosp, filterStatus]);
 
+  const mInp2 = "w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400";
+
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-5">
+      {toast && <div className="fixed top-4 right-4 z-50 bg-teal-700 text-white px-4 py-2.5 rounded-xl shadow-lg text-sm">{toast}</div>}
 
-      {/* Toast */}
-      {toast && (
-        <div className="fixed top-4 right-4 z-50 bg-teal-700 text-white px-4 py-2.5 rounded-xl shadow-lg text-sm">
-          {toast}
-        </div>
-      )}
-
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h2 className="text-xl font-bold text-gray-800">💰 Accounting</h2>
-          <p className="text-sm text-gray-500">Hospital commissions aur payouts manage karein</p>
-        </div>
-        <button
-          onClick={syncCommissions}
-          disabled={syncing}
-          className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold rounded-xl transition disabled:opacity-50 flex items-center gap-2"
-        >
-          {syncing ? (
-            <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Syncing...</>
-          ) : (
-            <>🔄 Sync Bookings</>
-          )}
-        </button>
-      </div>
-
-      {/* Summary cards */}
-      {summary && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {[
-            { label: "Total Revenue",      value: fmtAmt(summary.totalGross),    icon: "💵", color: "text-teal-700 bg-teal-50 border-teal-100" },
-            { label: "Brims Commission",   value: fmtAmt(summary.totalComm),     icon: "🏢", color: "text-blue-700 bg-blue-50 border-blue-100" },
-            { label: "Hospital Earnings",  value: fmtAmt(summary.totalHospital), icon: "🏥", color: "text-purple-700 bg-purple-50 border-purple-100" },
-            { label: "Pending Payout",     value: fmtAmt(summary.pendingPayout), icon: "⏳", color: "text-amber-700 bg-amber-50 border-amber-100" },
-          ].map((c) => (
-            <div key={c.label} className={`rounded-2xl border p-4 ${c.color}`}>
-              <p className="text-2xl mb-1">{c.icon}</p>
-              <p className="text-xl font-black">{c.value}</p>
-              <p className="text-xs font-semibold mt-0.5 opacity-70">{c.label}</p>
-            </div>
+      {/* Header + sub-tabs */}
+      <div>
+        <h2 className="text-xl font-bold text-gray-800 mb-4">💰 Accounting</h2>
+        <div className="flex gap-1 flex-wrap border-b border-gray-100 pb-0">
+          {([
+            { key: "analytics", label: "📊 Analytics" },
+            { key: "slabs",     label: "⚙️ Commission Slabs" },
+            { key: "payouts",   label: "🏥 Payouts" },
+            { key: "records",   label: "📋 Records" },
+          ] as const).map(t => (
+            <button key={t.key} onClick={() => setSubTab(t.key)}
+              className={`px-4 py-2.5 text-sm font-semibold rounded-t-xl border-b-2 transition ${
+                subTab === t.key ? "border-teal-600 text-teal-700 bg-teal-50" : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}>{t.label}</button>
           ))}
         </div>
-      )}
-
-      {/* View toggle */}
-      <div className="flex gap-2 border-b border-gray-100 pb-3">
-        {(["summary", "commissions"] as const).map((v) => (
-          <button key={v} onClick={() => setView(v)}
-            className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${view === v ? "bg-teal-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
-          >
-            {v === "summary" ? "🏥 Hospital-wise" : "📋 Commission Records"}
-          </button>
-        ))}
       </div>
 
-      {loading && (
-        <div className="flex justify-center py-10">
-          <div className="w-8 h-8 border-4 border-teal-500 border-t-transparent rounded-full animate-spin" />
-        </div>
-      )}
-
-      {/* ── Summary View: hospital breakdown ── */}
-      {!loading && view === "summary" && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="px-5 py-3 border-b border-gray-50 bg-gray-50">
-            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Hospital-wise Breakdown</p>
+      {/* ═══ ANALYTICS SUB-TAB ═══════════════════════════════════════════════ */}
+      {subTab === "analytics" && (
+        <div className="space-y-5">
+          {/* Period selector */}
+          <div className="flex gap-2 flex-wrap items-center">
+            {([
+              { v: "today",      l: "Aaj" },
+              { v: "this_month", l: "Is Mahine" },
+              { v: "last_month", l: "Pichle Mahine" },
+            ]).map(p => (
+              <button key={p.v} onClick={() => { setAnalyticsPeriod(p.v); fetchAnalytics(p.v); }}
+                className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${
+                  analyticsPeriod === p.v ? "bg-teal-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                }`}>{p.l}</button>
+            ))}
           </div>
-          {byHospital.length === 0 ? (
-            <div className="py-10 text-center text-gray-400 text-sm">
-              <p className="text-3xl mb-2">📊</p>
-              Koi data nahi — "Sync Bookings" button dabayein pehle
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-[11px] font-bold text-gray-400 uppercase tracking-wide border-b border-gray-100">
-                    <th className="px-4 py-3 text-left">Hospital</th>
-                    <th className="px-4 py-3 text-right">Bookings</th>
-                    <th className="px-4 py-3 text-right">Gross Revenue</th>
-                    <th className="px-4 py-3 text-right">Brims Commission</th>
-                    <th className="px-4 py-3 text-right">Hospital Amt</th>
-                    <th className="px-4 py-3 text-right">Pending Payout</th>
-                    <th className="px-4 py-3 text-center">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {byHospital.map((h: any) => (
-                    <tr key={h._id} className="hover:bg-gray-50 transition">
-                      <td className="px-4 py-3 font-semibold text-gray-800">{h.hospitalName || "Unknown"}</td>
-                      <td className="px-4 py-3 text-right text-gray-600">{h.bookings}</td>
-                      <td className="px-4 py-3 text-right font-semibold text-gray-800">{fmtAmt(h.gross)}</td>
-                      <td className="px-4 py-3 text-right text-blue-700 font-semibold">{fmtAmt(h.commission)}</td>
-                      <td className="px-4 py-3 text-right text-purple-700 font-semibold">{fmtAmt(h.hospitalAmt)}</td>
-                      <td className="px-4 py-3 text-right">
-                        {h.pendingAmt > 0 ? (
-                          <span className="text-amber-700 font-bold">{fmtAmt(h.pendingAmt)}</span>
-                        ) : (
-                          <span className="text-green-600 text-xs font-semibold">✓ Cleared</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        {h.pendingAmt > 0 && (
-                          <button
-                            onClick={() => setPayoutModal({ hospitalId: h._id, hospitalName: h.hospitalName, pendingAmt: h.pendingAmt })}
-                            className="bg-green-600 hover:bg-green-700 text-white text-xs px-3 py-1.5 rounded-lg font-semibold transition"
-                          >
-                            Mark Paid
-                          </button>
-                        )}
-                      </td>
-                    </tr>
+
+          {analyticsLoading && <div className="flex justify-center py-10"><div className="w-8 h-8 border-4 border-teal-200 border-t-teal-600 rounded-full animate-spin" /></div>}
+
+          {analytics && !analyticsLoading && (
+            <>
+              {/* Summary cards */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {[
+                  { label: "Total Bookings",    value: analytics.totals.count,           icon: "📋", color: "text-teal-700 bg-teal-50 border-teal-100" },
+                  { label: "Total Revenue",      value: fmtAmt(analytics.totals.revenue),  icon: "💵", color: "text-green-700 bg-green-50 border-green-100" },
+                  { label: "Brims Commission",   value: fmtAmt(analytics.totals.commission),icon: "🏢", color: "text-blue-700 bg-blue-50 border-blue-100" },
+                  { label: "Hospital Payable",   value: fmtAmt(analytics.totals.hospitalAmt),icon:"🏥", color: "text-purple-700 bg-purple-50 border-purple-100" },
+                ].map(c => (
+                  <div key={c.label} className={`rounded-2xl border p-4 ${c.color}`}>
+                    <p className="text-2xl mb-1">{c.icon}</p>
+                    <p className="text-xl font-black">{c.value}</p>
+                    <p className="text-xs font-semibold mt-0.5 opacity-70">{c.label}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Payment mode breakdown */}
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                <h3 className="font-bold text-gray-700 text-sm mb-4">💳 Payment Mode Breakdown</h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {[
+                    { key: "online",    label: "Online (Hamare paas)",     icon: "💻", color: "bg-blue-50 text-blue-700 border-blue-100" },
+                    { key: "counter",   label: "Counter (Hospital ke paas)",icon: "🏥", color: "bg-amber-50 text-amber-700 border-amber-100" },
+                    { key: "wallet",    label: "Wallet (Hamare paas)",      icon: "👛", color: "bg-green-50 text-green-700 border-green-100" },
+                    { key: "insurance", label: "Insurance (Hamare paas)",   icon: "🛡️", color: "bg-purple-50 text-purple-700 border-purple-100" },
+                  ].map(pm => (
+                    <div key={pm.key} className={`rounded-xl border p-3 ${pm.color}`}>
+                      <p className="text-lg mb-1">{pm.icon}</p>
+                      <p className="font-bold text-base">{analytics.byPayMode[pm.key] || 0} bookings</p>
+                      <p className="font-semibold text-sm">{fmtAmt(analytics.byPayModeRevenue[pm.key] || 0)}</p>
+                      <p className="text-xs opacity-70 mt-0.5">{pm.label}</p>
+                    </div>
                   ))}
-                </tbody>
-              </table>
-            </div>
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <div className="bg-teal-50 border border-teal-100 rounded-xl p-3">
+                    <p className="text-xs text-teal-600 font-medium">💚 Hamare Account mein</p>
+                    <p className="font-black text-teal-800 text-lg">{fmtAmt(analytics.paymentSplit?.toUs || 0)}</p>
+                    <p className="text-xs text-teal-500">(Online + Wallet + Insurance)</p>
+                  </div>
+                  <div className="bg-orange-50 border border-orange-100 rounded-xl p-3">
+                    <p className="text-xs text-orange-600 font-medium">🏥 Hospital ke Counter mein</p>
+                    <p className="font-black text-orange-800 text-lg">{fmtAmt(analytics.paymentSplit?.toHospital || 0)}</p>
+                    <p className="text-xs text-orange-500">(Humara bill bhejna hoga)</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* By Service Type */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                  <h3 className="font-bold text-gray-700 text-sm mb-3">📊 Service Type Wise</h3>
+                  <div className="space-y-2">
+                    {Object.entries(analytics.byType || {}).map(([type, data]: any) => (
+                      <div key={type} className="flex items-center justify-between py-1.5 border-b border-gray-50 last:border-0">
+                        <span className="text-sm font-medium text-gray-600">{type}</span>
+                        <div className="text-right">
+                          <p className="text-sm font-bold text-gray-800">{fmtAmt(data.revenue)}</p>
+                          <p className="text-xs text-gray-400">{data.count} bookings · Commission: {fmtAmt(data.commission)}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* By District */}
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                  <h3 className="font-bold text-gray-700 text-sm mb-3">📍 District Wise</h3>
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {(analytics.byDistrict || []).slice(0, 10).map((d: any) => (
+                      <div key={d.name} className="flex items-center justify-between py-1.5 border-b border-gray-50 last:border-0">
+                        <span className="text-sm font-medium text-gray-600">{d.name}</span>
+                        <div className="text-right">
+                          <p className="text-sm font-bold text-gray-800">{fmtAmt(d.revenue)}</p>
+                          <p className="text-xs text-gray-400">{d.count} bookings</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* By Hospital */}
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                <div className="px-5 py-3 border-b border-gray-50 bg-gray-50">
+                  <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">🏥 Hospital Wise</p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-[11px] font-bold text-gray-400 uppercase tracking-wide border-b border-gray-50">
+                        <th className="px-4 py-3 text-left">Hospital</th>
+                        <th className="px-4 py-3 text-right">Bookings</th>
+                        <th className="px-4 py-3 text-right">Revenue</th>
+                        <th className="px-4 py-3 text-right">Commission</th>
+                        <th className="px-4 py-3 text-right">Hospital Amt</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {(analytics.byHospital || []).map((h: any) => (
+                        <tr key={h.id} className="hover:bg-gray-50 transition">
+                          <td className="px-4 py-3 font-semibold text-gray-800 text-xs">{h.name}</td>
+                          <td className="px-4 py-3 text-right text-gray-600">{h.count}</td>
+                          <td className="px-4 py-3 text-right font-semibold text-gray-800">{fmtAmt(h.revenue)}</td>
+                          <td className="px-4 py-3 text-right text-blue-700">{fmtAmt(h.commission)}</td>
+                          <td className="px-4 py-3 text-right text-purple-700 font-semibold">{fmtAmt(h.hospitalAmt)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
           )}
         </div>
       )}
 
-      {/* ── Commission Records View ── */}
-      {!loading && view === "commissions" && (
+      {/* ═══ COMMISSION SLABS SUB-TAB ════════════════════════════════════════ */}
+      {subTab === "slabs" && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-bold text-gray-700">Commission Slabs</h3>
+              <p className="text-xs text-gray-400 mt-0.5">Har hospital ke liye negotiate kiye gaye rates. Blank = platform default lagega.</p>
+            </div>
+          </div>
+
+          {/* Default rates info */}
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+            <p className="text-sm font-semibold text-blue-800 mb-2">Default Commission Rates (agar custom slab na ho):</p>
+            <div className="flex flex-wrap gap-3">
+              {[["OPD","10%"],["Lab","12%"],["Surgery","8%"],["Consultation","15%"],["IPD","8%"]].map(([t,r]) => (
+                <span key={t} className="bg-white border border-blue-200 text-blue-700 text-xs px-3 py-1.5 rounded-full font-semibold">
+                  {t}: {r}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {slabLoading && <div className="flex justify-center py-10"><div className="w-8 h-8 border-4 border-teal-200 border-t-teal-600 rounded-full animate-spin" /></div>}
+
+          {/* Hospital list with slabs */}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="divide-y divide-gray-50">
+              {slabHospitals.map(({ hospital, slab }: any) => (
+                <div key={hospital._id} className="p-4 flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-gray-800 text-sm">{hospital.name}</p>
+                    <p className="text-xs text-gray-400">{hospital.address?.district}</p>
+                    {slab ? (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {Object.entries(slab.rates).filter(([, v]) => v != null).map(([type, rate]) => (
+                          <span key={type} className="bg-teal-50 border border-teal-200 text-teal-700 text-xs px-2.5 py-0.5 rounded-full font-semibold">
+                            {type}: {rate as number}%
+                          </span>
+                        ))}
+                        {slab.notes && <span className="text-xs text-gray-400 italic">• {slab.notes}</span>}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-400 mt-1">Default rates laagu hain</p>
+                    )}
+                  </div>
+                  <button onClick={() => {
+                    setEditSlab({ hospital, slab });
+                    setSlabRates({
+                      OPD:          slab?.rates?.OPD          != null ? String(slab.rates.OPD)          : "",
+                      Lab:          slab?.rates?.Lab          != null ? String(slab.rates.Lab)          : "",
+                      Surgery:      slab?.rates?.Surgery      != null ? String(slab.rates.Surgery)      : "",
+                      Consultation: slab?.rates?.Consultation != null ? String(slab.rates.Consultation) : "",
+                      IPD:          slab?.rates?.IPD          != null ? String(slab.rates.IPD)          : "",
+                    });
+                    setSlabNotes(slab?.notes || "");
+                  }} className="text-xs bg-teal-50 border border-teal-200 text-teal-700 px-3 py-1.5 rounded-xl font-semibold hover:bg-teal-100 transition flex-shrink-0">
+                    {slab ? "✏️ Edit" : "➕ Set Slab"}
+                  </button>
+                </div>
+              ))}
+              {slabHospitals.length === 0 && <div className="p-8 text-center text-gray-400 text-sm">Koi verified hospital nahi mila</div>}
+            </div>
+          </div>
+
+          {/* Edit Slab Modal */}
+          {editSlab && (
+            <>
+              <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={() => setEditSlab(null)} />
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4">
+                  <div>
+                    <h3 className="font-bold text-gray-800 text-lg">⚙️ Commission Slab Set Karein</h3>
+                    <p className="text-sm text-gray-500 mt-1">{editSlab.hospital.name}</p>
+                    <p className="text-xs text-gray-400">Blank chhodne par default rate lagega</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    {(["OPD","Lab","Surgery","Consultation","IPD"] as const).map(type => (
+                      <div key={type}>
+                        <label className="text-xs font-medium text-gray-500">{type} Commission (%)</label>
+                        <input type="number" min={0} max={100} value={slabRates[type]}
+                          onChange={e => setSlabRates(s => ({ ...s, [type]: e.target.value }))}
+                          placeholder={`Default: ${{"OPD":10,"Lab":12,"Surgery":8,"Consultation":15,"IPD":8}[type]}%`}
+                          className={`mt-1 ${mInp2}`} />
+                      </div>
+                    ))}
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-500">Negotiation Notes</label>
+                    <input value={slabNotes} onChange={e => setSlabNotes(e.target.value)}
+                      placeholder="e.g. Contract dated 1 April 2025" className={`mt-1 ${mInp2}`} />
+                  </div>
+                  <div className="flex gap-3 pt-1">
+                    <button onClick={() => setEditSlab(null)} className="flex-1 border border-gray-200 text-gray-600 py-3 rounded-xl text-sm font-semibold">Cancel</button>
+                    <button onClick={saveSlab} disabled={savingSlabs}
+                      className="flex-1 bg-teal-600 hover:bg-teal-700 text-white py-3 rounded-xl text-sm font-semibold transition disabled:opacity-50">
+                      {savingSlabs ? "Saving..." : "✓ Save Slab"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ═══ PAYOUTS SUB-TAB ════════════════════════════════════════════════ */}
+      {subTab === "payouts" && (
+        <div className="space-y-5">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <h3 className="font-bold text-gray-700">Hospital Payouts</h3>
+              <p className="text-xs text-gray-400 mt-0.5">Commission deduct karke hospital ko transfer karein</p>
+            </div>
+            <button onClick={syncCommissions} disabled={syncing}
+              className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold rounded-xl transition disabled:opacity-50 flex items-center gap-2">
+              {syncing ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Syncing...</> : <>🔄 Sync Bookings</>}
+            </button>
+          </div>
+
+          {summary && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                { label: "Total Revenue",     value: fmtAmt(summary.totalGross),    icon: "💵", color: "text-teal-700 bg-teal-50 border-teal-100" },
+                { label: "Brims Commission",  value: fmtAmt(summary.totalComm),     icon: "🏢", color: "text-blue-700 bg-blue-50 border-blue-100" },
+                { label: "Hospital Earnings", value: fmtAmt(summary.totalHospital), icon: "🏥", color: "text-purple-700 bg-purple-50 border-purple-100" },
+                { label: "Pending Payout",    value: fmtAmt(summary.pendingPayout), icon: "⏳", color: "text-amber-700 bg-amber-50 border-amber-100" },
+              ].map(c => (
+                <div key={c.label} className={`rounded-2xl border p-4 ${c.color}`}>
+                  <p className="text-2xl mb-1">{c.icon}</p>
+                  <p className="text-xl font-black">{c.value}</p>
+                  <p className="text-xs font-semibold mt-0.5 opacity-70">{c.label}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            {byHospital.length === 0 ? (
+              <div className="py-10 text-center text-gray-400 text-sm"><p className="text-3xl mb-2">📊</p>Koi data nahi — "Sync Bookings" button dabayein pehle</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-[11px] font-bold text-gray-400 uppercase tracking-wide border-b border-gray-100">
+                      <th className="px-4 py-3 text-left">Hospital</th>
+                      <th className="px-4 py-3 text-right">Bookings</th>
+                      <th className="px-4 py-3 text-right">Gross</th>
+                      <th className="px-4 py-3 text-right">Commission</th>
+                      <th className="px-4 py-3 text-right">Hospital Amt</th>
+                      <th className="px-4 py-3 text-right">Pending</th>
+                      <th className="px-4 py-3 text-center">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {byHospital.map((h: any) => (
+                      <tr key={h._id} className="hover:bg-gray-50 transition">
+                        <td className="px-4 py-3 font-semibold text-gray-800">{h.hospitalName || "Unknown"}</td>
+                        <td className="px-4 py-3 text-right text-gray-600">{h.bookings}</td>
+                        <td className="px-4 py-3 text-right font-semibold text-gray-800">{fmtAmt(h.gross)}</td>
+                        <td className="px-4 py-3 text-right text-blue-700 font-semibold">{fmtAmt(h.commission)}</td>
+                        <td className="px-4 py-3 text-right text-purple-700 font-semibold">{fmtAmt(h.hospitalAmt)}</td>
+                        <td className="px-4 py-3 text-right">{h.pendingAmt > 0 ? <span className="text-amber-700 font-bold">{fmtAmt(h.pendingAmt)}</span> : <span className="text-green-600 text-xs font-semibold">✓ Cleared</span>}</td>
+                        <td className="px-4 py-3 text-center">{h.pendingAmt > 0 && <button onClick={() => setPayoutModal({ hospitalId: h._id, hospitalName: h.hospitalName, pendingAmt: h.pendingAmt })} className="bg-green-600 hover:bg-green-700 text-white text-xs px-3 py-1.5 rounded-lg font-semibold transition">Mark Paid</button>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ═══ RECORDS SUB-TAB ════════════════════════════════════════════════ */}
+      {subTab === "records" && (
         <div className="space-y-3">
-          {/* Filters */}
           <div className="flex flex-wrap gap-2">
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
-            >
+            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+              className="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400">
               <option value="">All Status</option>
               <option value="pending">Pending</option>
               <option value="paid">Paid</option>
               <option value="on_hold">On Hold</option>
             </select>
           </div>
-
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-[11px] font-bold text-gray-400 uppercase tracking-wide border-b border-gray-100 bg-gray-50">
-                    <th className="px-4 py-3 text-left">Booking</th>
-                    <th className="px-4 py-3 text-left">Hospital</th>
-                    <th className="px-4 py-3 text-right">Gross</th>
-                    <th className="px-4 py-3 text-right">Commission</th>
-                    <th className="px-4 py-3 text-right">Hospital Amt</th>
-                    <th className="px-4 py-3 text-center">Payout</th>
-                    <th className="px-4 py-3 text-right">Date</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {commissions.length === 0 ? (
-                    <tr><td colSpan={7} className="px-4 py-10 text-center text-gray-400">Koi records nahi</td></tr>
-                  ) : (
-                    commissions.map((c: any) => (
-                      <tr key={c._id} className="hover:bg-gray-50 transition">
-                        <td className="px-4 py-3">
-                          <p className="font-mono text-xs text-gray-600">{c.bookingRef}</p>
-                          <p className="text-[11px] text-gray-400 mt-0.5">{c.type}</p>
-                        </td>
-                        <td className="px-4 py-3 text-gray-700 text-xs">{c.hospitalName || "—"}</td>
-                        <td className="px-4 py-3 text-right font-semibold text-gray-800">{fmtAmt(c.grossAmount)}</td>
-                        <td className="px-4 py-3 text-right text-blue-700 text-xs">
-                          {fmtAmt(c.commissionAmt)}
-                          <span className="text-gray-400 ml-1">({c.commissionPct}%)</span>
-                        </td>
-                        <td className="px-4 py-3 text-right text-purple-700 font-semibold">{fmtAmt(c.hospitalAmt)}</td>
-                        <td className="px-4 py-3 text-center">
-                          <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold border ${PAYOUT_STATUS_COLORS[c.payoutStatus]}`}>
-                            {c.payoutStatus}
-                          </span>
-                          {c.payoutRef && <p className="text-[10px] text-gray-400 mt-0.5">{c.payoutRef}</p>}
-                        </td>
-                        <td className="px-4 py-3 text-right text-xs text-gray-400">{fmtDate(c.createdAt)}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Pagination */}
+            {loading ? <div className="flex justify-center py-10"><div className="w-8 h-8 border-4 border-teal-500 border-t-transparent rounded-full animate-spin" /></div> : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-[11px] font-bold text-gray-400 uppercase tracking-wide border-b border-gray-100 bg-gray-50">
+                      <th className="px-4 py-3 text-left">Booking</th>
+                      <th className="px-4 py-3 text-left">Hospital</th>
+                      <th className="px-4 py-3 text-right">Gross</th>
+                      <th className="px-4 py-3 text-right">Commission</th>
+                      <th className="px-4 py-3 text-right">Hospital Amt</th>
+                      <th className="px-4 py-3 text-center">Payout</th>
+                      <th className="px-4 py-3 text-right">Date</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {commissions.length === 0 ? <tr><td colSpan={7} className="px-4 py-10 text-center text-gray-400">Koi records nahi — Payouts tab se Sync karein</td></tr> : (
+                      commissions.map((c: any) => (
+                        <tr key={c._id} className="hover:bg-gray-50 transition">
+                          <td className="px-4 py-3"><p className="font-mono text-xs text-gray-600">{c.bookingRef}</p><p className="text-[11px] text-gray-400 mt-0.5">{c.type}</p></td>
+                          <td className="px-4 py-3 text-gray-700 text-xs">{c.hospitalName || "—"}</td>
+                          <td className="px-4 py-3 text-right font-semibold text-gray-800">{fmtAmt(c.grossAmount)}</td>
+                          <td className="px-4 py-3 text-right text-blue-700 text-xs">{fmtAmt(c.commissionAmt)}<span className="text-gray-400 ml-1">({c.commissionPct}%)</span></td>
+                          <td className="px-4 py-3 text-right text-purple-700 font-semibold">{fmtAmt(c.hospitalAmt)}</td>
+                          <td className="px-4 py-3 text-center">
+                            <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold border ${PAYOUT_STATUS_COLORS[c.payoutStatus]}`}>{c.payoutStatus}</span>
+                            {c.payoutRef && <p className="text-[10px] text-gray-400 mt-0.5">{c.payoutRef}</p>}
+                          </td>
+                          <td className="px-4 py-3 text-right text-xs text-gray-400">{fmtDate(c.createdAt)}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
             {total > 20 && (
               <div className="px-4 py-3 border-t border-gray-50 flex items-center justify-between text-sm text-gray-500">
                 <span>{total} records</span>
                 <div className="flex gap-2">
-                  <button disabled={page <= 1} onClick={() => { const p = page - 1; setPage(p); fetchCommissions(p); }}
-                    className="px-3 py-1.5 border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-50 transition">← Prev</button>
-                  <button disabled={page >= Math.ceil(total/20)} onClick={() => { const p = page + 1; setPage(p); fetchCommissions(p); }}
-                    className="px-3 py-1.5 border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-50 transition">Next →</button>
+                  <button disabled={page <= 1} onClick={() => { const p = page - 1; setPage(p); fetchCommissions(p); }} className="px-3 py-1.5 border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-50 transition">← Prev</button>
+                  <button disabled={page >= Math.ceil(total/20)} onClick={() => { const p = page + 1; setPage(p); fetchCommissions(p); }} className="px-3 py-1.5 border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-50 transition">Next →</button>
                 </div>
               </div>
             )}
@@ -2912,7 +3842,7 @@ function AccountingTab() {
         </div>
       )}
 
-      {/* ── Payout Modal ── */}
+      {/* Payout Modal */}
       {payoutModal && (
         <>
           <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={() => setPayoutModal(null)} />
@@ -2927,26 +3857,15 @@ function AccountingTab() {
               <div className="space-y-3">
                 <div>
                   <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">UTR / Reference No.</label>
-                  <input
-                    value={payoutRef}
-                    onChange={(e) => setPayoutRef(e.target.value)}
-                    placeholder="Bank transfer UTR ya UPI ref"
-                    className="mt-1.5 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
-                  />
+                  <input value={payoutRef} onChange={e => setPayoutRef(e.target.value)} placeholder="Bank transfer UTR ya UPI ref" className={`mt-1.5 ${mInp2}`} />
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Payout Date</label>
-                  <input
-                    type="date"
-                    value={payoutDate}
-                    onChange={(e) => setPayoutDate(e.target.value)}
-                    className="mt-1.5 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
-                  />
+                  <input type="date" value={payoutDate} onChange={e => setPayoutDate(e.target.value)} className={`mt-1.5 ${mInp2}`} />
                 </div>
               </div>
               <div className="flex gap-3 pt-1">
-                <button onClick={() => setPayoutModal(null)}
-                  className="flex-1 border border-gray-200 text-gray-600 py-3 rounded-xl text-sm font-semibold">Cancel</button>
+                <button onClick={() => setPayoutModal(null)} className="flex-1 border border-gray-200 text-gray-600 py-3 rounded-xl text-sm font-semibold">Cancel</button>
                 <button onClick={markPaid} disabled={payoutLoading || !payoutRef}
                   className="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl text-sm font-semibold transition disabled:opacity-50">
                   {payoutLoading ? "Saving..." : "✓ Mark as Paid"}
@@ -2956,7 +3875,344 @@ function AccountingTab() {
           </div>
         </>
       )}
+    </div>
+  );
+}
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// ── COORDINATORS TAB ──────────────────────────────────────────────────────────
+function CoordinatorsTab() {
+  const [coordinators, setCoordinators] = useState<any[]>([]);
+  const [loading,      setLoading]      = useState(false);
+  const [toast,        setToast]        = useState("");
+  const [showAdd,      setShowAdd]      = useState(false);
+  const [selected,     setSelected]     = useState<any>(null); // detail view
+  const [saving,       setSaving]       = useState(false);
+
+  // Add form state
+  const [form, setForm] = useState({
+    name: "", mobile: "", email: "", district: "", area: "", type: "health_worker",
+    commOPD: "0", commLab: "30", commSurgery: "20", commConsultation: "0", commIPD: "10",
+  });
+
+  const COORD_TYPES: Record<string, string> = {
+    health_worker: "Health Worker", gp: "General Practitioner",
+    pharmacist: "Pharmacist", other: "Other",
+  };
+
+  const INP = "w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400";
+
+  function showToast(msg: string) { setToast(msg); setTimeout(() => setToast(""), 3000); }
+  function setF(k: string, v: string) { setForm(f => ({ ...f, [k]: v })); }
+
+  async function fetchCoordinators() {
+    setLoading(true);
+    try {
+      const res  = await fetch("/api/admin/coordinators");
+      const data = await res.json();
+      if (data.success) setCoordinators(data.coordinators || []);
+    } finally { setLoading(false); }
+  }
+
+  async function fetchDetail(id: string) {
+    try {
+      const res  = await fetch(`/api/admin/coordinators?id=${id}`);
+      const data = await res.json();
+      if (data.success) setSelected(data.coordinator);
+    } catch {}
+  }
+
+  async function addCoordinator() {
+    if (!form.name || !form.mobile) return showToast("Name aur mobile zaruri hai");
+    setSaving(true);
+    try {
+      const res  = await fetch("/api/admin/coordinators", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: form.name, mobile: form.mobile, email: form.email,
+          district: form.district, area: form.area, type: form.type,
+          commissionRates: {
+            OPD: Number(form.commOPD), Lab: Number(form.commLab),
+            Surgery: Number(form.commSurgery), Consultation: Number(form.commConsultation),
+            IPD: Number(form.commIPD),
+          },
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast("Coordinator add ho gaya!");
+        setShowAdd(false);
+        setForm({ name: "", mobile: "", email: "", district: "", area: "", type: "health_worker", commOPD: "0", commLab: "30", commSurgery: "20", commConsultation: "0", commIPD: "10" });
+        fetchCoordinators();
+      } else { showToast(data.message || "Error"); }
+    } finally { setSaving(false); }
+  }
+
+  async function toggleActive(id: string, isActive: boolean) {
+    try {
+      const res  = await fetch("/api/admin/coordinators", {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, isActive: !isActive }),
+      });
+      const data = await res.json();
+      if (data.success) { showToast("Updated!"); fetchCoordinators(); }
+    } catch {}
+  }
+
+  useEffect(() => { fetchCoordinators(); }, []);
+
+  const BIHAR_DISTRICTS = ["Araria","Arwal","Aurangabad","Banka","Begusarai","Bhagalpur","Bhojpur","Buxar","Darbhanga","East Champaran","Gaya","Gopalganj","Jamui","Jehanabad","Kaimur","Katihar","Khagaria","Kishanganj","Lakhisarai","Madhepura","Madhubani","Munger","Muzaffarpur","Nalanda","Nawada","Patna","Purnia","Rohtas","Saharsa","Samastipur","Saran","Sheikhpura","Sheohar","Sitamarhi","Siwan","Supaul","Vaishali","West Champaran"];
+
+  return (
+    <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-5">
+      {toast && <div className="fixed top-4 right-4 z-50 bg-teal-700 text-white px-4 py-2.5 rounded-xl shadow-lg text-sm">{toast}</div>}
+
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-gray-800">🤝 Health Coordinators</h2>
+          <p className="text-sm text-gray-400 mt-0.5">Local health workers jo booking karwate hain aur commission paate hain</p>
+        </div>
+        <button onClick={() => setShowAdd(true)}
+          className="px-4 py-2.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold rounded-xl transition">
+          + Add Coordinator
+        </button>
+      </div>
+
+      {/* Stats summary */}
+      {coordinators.length > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[
+            { label: "Total",       value: coordinators.length,                                          color: "bg-teal-50  border-teal-100  text-teal-700"   },
+            { label: "Active",      value: coordinators.filter(c => c.isActive).length,                  color: "bg-green-50 border-green-100 text-green-700"   },
+            { label: "Bookings",    value: coordinators.reduce((s, c) => s + (c.totalBookings || 0), 0), color: "bg-blue-50  border-blue-100  text-blue-700"    },
+            { label: "Pending Pay", value: "₹" + coordinators.reduce((s, c) => s + (c.pendingEarned || 0), 0).toLocaleString("en-IN"), color: "bg-amber-50 border-amber-100 text-amber-700" },
+          ].map(c => (
+            <div key={c.label} className={`rounded-2xl border p-4 ${c.color}`}>
+              <p className="text-xl font-black">{c.value}</p>
+              <p className="text-xs font-semibold mt-0.5 opacity-70">{c.label}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Table */}
+      {loading ? (
+        <div className="flex justify-center py-12"><div className="w-8 h-8 border-4 border-teal-200 border-t-teal-600 rounded-full animate-spin" /></div>
+      ) : coordinators.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-12 text-center">
+          <p className="text-4xl mb-3">🤝</p>
+          <p className="text-gray-500 font-medium">Koi coordinator nahi mila</p>
+          <p className="text-xs text-gray-400 mt-1">"Add Coordinator" dabao naaya health worker add karne ke liye</p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-[11px] font-bold text-gray-400 uppercase tracking-wide border-b border-gray-100 bg-gray-50">
+                  <th className="px-4 py-3 text-left">Coordinator</th>
+                  <th className="px-4 py-3 text-left">Type</th>
+                  <th className="px-4 py-3 text-left">District</th>
+                  <th className="px-4 py-3 text-right">Bookings</th>
+                  <th className="px-4 py-3 text-right">Earned</th>
+                  <th className="px-4 py-3 text-right">Pending</th>
+                  <th className="px-4 py-3 text-center">Status</th>
+                  <th className="px-4 py-3 text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {coordinators.map((c: any) => (
+                  <tr key={c._id} className="hover:bg-gray-50 transition">
+                    <td className="px-4 py-3">
+                      <p className="font-semibold text-gray-800">{c.name}</p>
+                      <p className="text-xs text-gray-400">{c.mobile}{c.coordinatorId ? ` · ${c.coordinatorId}` : ""}</p>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-gray-600">{COORD_TYPES[c.type] || c.type}</td>
+                    <td className="px-4 py-3 text-xs text-gray-600">{c.district || "—"}</td>
+                    <td className="px-4 py-3 text-right font-semibold text-gray-700">{c.totalBookings || 0}</td>
+                    <td className="px-4 py-3 text-right text-green-700 font-semibold">₹{(c.totalEarned || 0).toLocaleString("en-IN")}</td>
+                    <td className="px-4 py-3 text-right">
+                      {(c.pendingEarned || 0) > 0
+                        ? <span className="text-amber-700 font-bold">₹{c.pendingEarned.toLocaleString("en-IN")}</span>
+                        : <span className="text-gray-400 text-xs">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold border ${c.isActive ? "bg-green-100 text-green-700 border-green-200" : "bg-red-100 text-red-700 border-red-200"}`}>
+                        {c.isActive ? "Active" : "Inactive"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <div className="flex items-center justify-center gap-2">
+                        <button onClick={() => fetchDetail(c._id)}
+                          className="text-xs bg-blue-50 border border-blue-200 text-blue-700 px-2.5 py-1 rounded-lg font-semibold hover:bg-blue-100 transition">
+                          View
+                        </button>
+                        <button onClick={() => toggleActive(c._id, c.isActive)}
+                          className={`text-xs px-2.5 py-1 rounded-lg font-semibold border transition ${c.isActive ? "bg-red-50 border-red-200 text-red-600 hover:bg-red-100" : "bg-green-50 border-green-200 text-green-700 hover:bg-green-100"}`}>
+                          {c.isActive ? "Deactivate" : "Activate"}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Add Coordinator Modal */}
+      {showAdd && (
+        <>
+          <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={() => setShowAdd(false)} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
+            <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl p-6 space-y-5 my-8">
+              <div>
+                <h3 className="font-bold text-gray-800 text-lg">🤝 New Health Coordinator</h3>
+                <p className="text-sm text-gray-400 mt-0.5">Ek user account bhi ban jayega automatically</p>
+              </div>
+
+              {/* Basic info */}
+              <div className="space-y-3">
+                <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Basic Info</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-medium text-gray-500">Name *</label>
+                    <input value={form.name} onChange={e => setF("name", e.target.value)} placeholder="Full name" className={`mt-1 ${INP}`} />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-500">Mobile *</label>
+                    <input value={form.mobile} onChange={e => setF("mobile", e.target.value)} placeholder="10-digit" maxLength={10} className={`mt-1 ${INP}`} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-medium text-gray-500">Email</label>
+                    <input value={form.email} onChange={e => setF("email", e.target.value)} placeholder="Optional" className={`mt-1 ${INP}`} />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-500">Type</label>
+                    <select value={form.type} onChange={e => setF("type", e.target.value)} className={`mt-1 ${INP}`}>
+                      {Object.entries(COORD_TYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-medium text-gray-500">District</label>
+                    <select value={form.district} onChange={e => setF("district", e.target.value)} className={`mt-1 ${INP}`}>
+                      <option value="">Select district</option>
+                      {BIHAR_DISTRICTS.map(d => <option key={d} value={d}>{d}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-500">Area / Village</label>
+                    <input value={form.area} onChange={e => setF("area", e.target.value)} placeholder="Area ya gaon" className={`mt-1 ${INP}`} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Commission rates */}
+              <div className="space-y-3">
+                <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Commission Rates (%)</p>
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { k: "commSurgery",      label: "Surgery",      placeholder: "20" },
+                    { k: "commLab",          label: "Lab",          placeholder: "30" },
+                    { k: "commIPD",          label: "IPD",          placeholder: "10" },
+                    { k: "commOPD",          label: "OPD",          placeholder: "0"  },
+                    { k: "commConsultation", label: "Consultation", placeholder: "0"  },
+                  ].map(({ k, label, placeholder }) => (
+                    <div key={k}>
+                      <label className="text-xs font-medium text-gray-500">{label} %</label>
+                      <input type="number" min={0} max={50} value={(form as any)[k]}
+                        onChange={e => setF(k, e.target.value)} placeholder={placeholder}
+                        className={`mt-1 ${INP}`} />
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-400">Example: Surgery 20% → ₹10,000 surgery pe ₹2,000 milega coordinator ko</p>
+              </div>
+
+              <div className="flex gap-3 pt-1">
+                <button onClick={() => setShowAdd(false)} className="flex-1 border border-gray-200 text-gray-600 py-3 rounded-xl text-sm font-semibold">Cancel</button>
+                <button onClick={addCoordinator} disabled={saving}
+                  className="flex-1 bg-teal-600 hover:bg-teal-700 text-white py-3 rounded-xl text-sm font-semibold transition disabled:opacity-50">
+                  {saving ? "Adding..." : "✓ Add Coordinator"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Detail Drawer */}
+      {selected && (
+        <>
+          <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={() => setSelected(null)} />
+          <div className="fixed right-0 top-0 h-full w-full max-w-md bg-white z-50 shadow-2xl overflow-y-auto">
+            <div className="p-5 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white">
+              <div>
+                <h3 className="font-bold text-gray-800">{selected.name}</h3>
+                <p className="text-xs text-gray-400">{selected.coordinatorId} · {COORD_TYPES[selected.type] || selected.type}</p>
+              </div>
+              <button onClick={() => setSelected(null)} className="text-gray-400 hover:text-gray-600 text-2xl">×</button>
+            </div>
+            <div className="p-5 space-y-5">
+              {/* Stats */}
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { label: "Bookings",  value: selected.totalBookings || 0,          color: "bg-blue-50  text-blue-700"   },
+                  { label: "Earned",    value: "₹" + (selected.totalEarned || 0).toLocaleString("en-IN"),  color: "bg-green-50 text-green-700"  },
+                  { label: "Pending",   value: "₹" + (selected.pendingEarned || 0).toLocaleString("en-IN"), color: "bg-amber-50 text-amber-700" },
+                ].map(c => (
+                  <div key={c.label} className={`rounded-xl p-3 ${c.color}`}>
+                    <p className="font-black text-lg">{c.value}</p>
+                    <p className="text-xs opacity-70 font-medium">{c.label}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Commission rates */}
+              <div className="bg-gray-50 rounded-xl p-4">
+                <p className="text-xs font-bold text-gray-500 uppercase mb-3">Commission Rates</p>
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(selected.commissionRates || {}).map(([t, r]) => (
+                    <span key={t} className="bg-white border border-gray-200 text-gray-700 text-xs px-3 py-1.5 rounded-full font-semibold">
+                      {t}: {r as number}%
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* Recent bookings */}
+              {selected.bookings && selected.bookings.length > 0 && (
+                <div>
+                  <p className="text-xs font-bold text-gray-500 uppercase mb-3">Recent Bookings</p>
+                  <div className="space-y-2">
+                    {selected.bookings.slice(0, 10).map((b: any) => {
+                      let pn = ""; try { pn = JSON.parse(b.notes || "{}").patientName || ""; } catch {}
+                      return (
+                        <div key={b._id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+                          <div>
+                            <p className="text-sm font-semibold text-gray-700">{pn || "Patient"}</p>
+                            <p className="text-xs text-gray-400">{b.bookingId} · {b.type}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-bold text-green-700">₹{(b.coordinatorCommission || 0).toLocaleString("en-IN")}</p>
+                            <p className="text-xs text-gray-400">{new Date(b.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -3479,6 +4735,7 @@ export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [stats, setStats]       = useState<any>(null);
   const [drawerUserId, setDrawerUserId] = useState<string | null>(null);
+  const [managingHospital, setManagingHospital] = useState<{ _id: string; name: string } | null>(null);
 
   useEffect(() => {
     const id   = localStorage.getItem("adminId");
@@ -3515,6 +4772,7 @@ export default function AdminPage() {
     { key: "promo",         icon: "🎟️", label: "Promo Codes"                            },
     { key: "reports",       icon: "📈", label: "Revenue Reports"                        },
     { key: "accounting",    icon: "💰", label: "Accounting"                             },
+    { key: "coordinators",  icon: "🤝", label: "Coordinators"                           },
     { key: "ambulance",     icon: "🚑", label: "Ambulance"                              },
     { key: "articles",      icon: "📰", label: "Articles"                               },
     { key: "notifications", icon: "🔔", label: "Notifications"                          },
@@ -3576,7 +4834,7 @@ export default function AdminPage() {
       <main className="ml-60 flex-1 p-6 min-h-screen">
         {activeTab === "overview"  && <OverviewTab stats={stats} onNavigate={setActiveTab} />}
         {activeTab === "members"   && <MembersTab onOpenPatient={setDrawerUserId} />}
-        {activeTab === "hospitals" && <HospitalsTab onRefreshStats={fetchStats} />}
+        {activeTab === "hospitals" && <HospitalsTab onRefreshStats={fetchStats} onManageHospital={setManagingHospital} />}
         {activeTab === "doctors"   && <DoctorsTab onRefreshStats={fetchStats} />}
         {activeTab === "packages"  && <PackagesTab />}
         {activeTab === "labtests"  && <LabTestsTab />}
@@ -3585,10 +4843,16 @@ export default function AdminPage() {
         {activeTab === "promo"         && <PromoCodesTab />}
         {activeTab === "reports"       && <RevenueReportsTab />}
         {activeTab === "accounting"    && <AccountingTab />}
+        {activeTab === "coordinators"  && <CoordinatorsTab />}
         {activeTab === "ambulance"     && <AmbulanceTab />}
         {activeTab === "articles"      && <ArticlesTab />}
         {activeTab === "notifications" && <NotificationsTab />}
       </main>
+
+      {/* Hospital Manage Panel overlay */}
+      {managingHospital && (
+        <HospitalManagePanel hospital={managingHospital} onClose={() => setManagingHospital(null)} />
+      )}
     </div>
   );
 }

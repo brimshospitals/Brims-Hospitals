@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "../../../../lib/auth";
+import connectDB from "../../../../lib/mongodb";
+import User from "../../../../models/User";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +13,8 @@ export async function GET() {
     if (!session) {
       return NextResponse.json({ success: false, loggedIn: false }, { status: 401 });
     }
-    return NextResponse.json({
+
+    const base = {
       success:  true,
       loggedIn: true,
       userId:   session.userId,
@@ -21,7 +24,18 @@ export async function GET() {
       // Entity-specific IDs (only present if relevant role)
       ...(session.doctorId        && { doctorId:        session.doctorId }),
       ...(session.hospitalMongoId && { hospitalMongoId: session.hospitalMongoId }),
-    });
+    };
+
+    // For staff: include permissions so the dashboard can show the right tabs
+    if (session.role === "staff" && session.userId) {
+      await connectDB();
+      const user = await User.findById(session.userId).select("staffPermissions").lean();
+      if (user?.staffPermissions) {
+        base.staffPermissions = user.staffPermissions;
+      }
+    }
+
+    return NextResponse.json(base);
   } catch {
     return NextResponse.json({ success: false, loggedIn: false }, { status: 500 });
   }

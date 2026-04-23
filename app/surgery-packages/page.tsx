@@ -28,6 +28,7 @@ export default function SurgeryPackagesPage() {
   const [hasMembership, setHasMembership] = useState(false);
   const [booking, setBooking] = useState(false);
   const [message, setMessage] = useState("");
+  const [isPartialBooking, setIsPartialBooking] = useState(false);
 
   useEffect(() => {
     fetchPackages();
@@ -102,6 +103,8 @@ export default function SurgeryPackagesPage() {
           paymentMode: "counter",
           amount: getPrice(selectedPackage) + getRoomPrice(selectedPackage),
           familyCardId,
+          isPartialBooking,
+          depositAmount: isPartialBooking ? 1000 : undefined,
         }),
       });
       const data = await res.json();
@@ -249,7 +252,7 @@ export default function SurgeryPackagesPage() {
                     </div>
                   </div>
 
-                  <button onClick={() => { setSelectedPackage(pkg); setSelectedRoom(pkg.roomType); setMessage(""); setSelectedPatient(null); }}
+                  <button onClick={() => { setSelectedPackage(pkg); setSelectedRoom(pkg.roomType); setMessage(""); setSelectedPatient(null); setIsPartialBooking(false); }}
                     className="w-full bg-teal-600 hover:bg-teal-700 text-white font-semibold py-3 rounded-lg transition text-sm">
                     Details Dekhein & Book Karein
                   </button>
@@ -353,6 +356,33 @@ export default function SurgeryPackagesPage() {
                   )}
                 </div>
 
+                {/* Partial Booking Option */}
+                <div className="mb-4">
+                  <p className="text-sm font-semibold text-gray-700 mb-2">Booking Type</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border cursor-pointer transition ${!isPartialBooking ? "border-teal-500 bg-teal-50" : "border-gray-200 hover:border-gray-300"}`}>
+                      <input type="radio" name="bookingType" checked={!isPartialBooking} onChange={() => setIsPartialBooking(false)} className="sr-only" />
+                      <span className="text-xl">💳</span>
+                      <span className="text-sm font-bold text-gray-800">Full Payment</span>
+                      <span className="text-xs text-gray-500 text-center">Poori payment counter par jama karein</span>
+                    </label>
+                    <label className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border cursor-pointer transition ${isPartialBooking ? "border-amber-500 bg-amber-50" : "border-gray-200 hover:border-gray-300"}`}>
+                      <input type="radio" name="bookingType" checked={isPartialBooking} onChange={() => setIsPartialBooking(true)} className="sr-only" />
+                      <span className="text-xl">🤝</span>
+                      <span className="text-sm font-bold text-gray-800">Partial Booking</span>
+                      <span className="text-xs text-gray-500 text-center">Sirf ₹1,000 advance, baaki baad mein</span>
+                    </label>
+                  </div>
+                  {isPartialBooking && (
+                    <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
+                      <p className="font-semibold mb-0.5">Partial Booking ke baare mein:</p>
+                      <p>• Abhi ₹1,000 advance counter par jama karein</p>
+                      <p>• Baaki ₹{(getPrice(selectedPackage) + getRoomPrice(selectedPackage) - 1000).toLocaleString()} surgery ke din jama hoga</p>
+                      <p>• Hamari team 24 ghante mein date confirm karegi</p>
+                    </div>
+                  )}
+                </div>
+
                 {/* Total Price */}
                 <div className="bg-teal-50 rounded-xl p-4 mb-4">
                   <div className="flex justify-between items-center">
@@ -370,6 +400,18 @@ export default function SurgeryPackagesPage() {
                   {getRoomPrice(selectedPackage) > 0 && (
                     <p className="text-xs text-gray-500 mt-1">Room upgrade charge: +₹{getRoomPrice(selectedPackage).toLocaleString()}</p>
                   )}
+                  {isPartialBooking && (
+                    <div className="mt-2 pt-2 border-t border-teal-200">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-amber-700 font-semibold">Abhi pay karein (Advance)</span>
+                        <span className="text-amber-700 font-black">₹1,000</span>
+                      </div>
+                      <div className="flex justify-between text-xs text-gray-500 mt-0.5">
+                        <span>Balance (surgery ke din)</span>
+                        <span>₹{(getPrice(selectedPackage) + getRoomPrice(selectedPackage) - 1000).toLocaleString()}</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {message && (
@@ -379,8 +421,8 @@ export default function SurgeryPackagesPage() {
                 )}
 
                 <button onClick={handleBooking} disabled={booking}
-                  className="w-full bg-teal-600 hover:bg-teal-700 text-white font-semibold py-3 rounded-lg transition disabled:opacity-50">
-                  {booking ? "Booking ho rahi hai..." : `Book Karein — ₹${(getPrice(selectedPackage) + getRoomPrice(selectedPackage)).toLocaleString()}`}
+                  className={`w-full font-semibold py-3 rounded-lg transition disabled:opacity-50 text-white ${isPartialBooking ? "bg-amber-500 hover:bg-amber-600" : "bg-teal-600 hover:bg-teal-700"}`}>
+                  {booking ? "Booking ho rahi hai..." : isPartialBooking ? "Partial Book Karein — ₹1,000 Advance" : `Book Karein — ₹${(getPrice(selectedPackage) + getRoomPrice(selectedPackage)).toLocaleString()}`}
                 </button>
 
                 <p className="text-xs text-gray-400 text-center mt-3">
