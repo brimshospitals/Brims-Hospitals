@@ -114,7 +114,8 @@ export async function POST(request) {
       message: `${name} Health Coordinator ban gaye. Login: ${mobile} (Mobile OTP se)`,
     });
   } catch (err) {
-    return NextResponse.json({ success: false, message: err.message }, { status: 500 });
+    console.error("Coordinator POST error:", err);
+    return NextResponse.json({ success: false, message: err.message || "Server error" }, { status: 500 });
   }
 }
 
@@ -124,15 +125,16 @@ export async function PATCH(request) {
   if (error) return error;
 
   try {
-    const { coordinatorId, ...fields } = await request.json();
-    if (!coordinatorId) return NextResponse.json({ success: false, message: "coordinatorId zaruri hai" }, { status: 400 });
+    const body = await request.json();
+    const docId = body.id || body.coordinatorId;
+    if (!docId) return NextResponse.json({ success: false, message: "id zaruri hai" }, { status: 400 });
 
     await connectDB();
     const allowed = ["name","email","district","area","type","commissionRates","isActive"];
     const update = {};
-    allowed.forEach(k => { if (fields[k] !== undefined) update[k] = fields[k]; });
+    allowed.forEach(k => { if (body[k] !== undefined) update[k] = body[k]; });
 
-    const coord = await Coordinator.findByIdAndUpdate(coordinatorId, { $set: update }, { new: true });
+    const coord = await Coordinator.findByIdAndUpdate(docId, { $set: update }, { new: true });
     if (!coord) return NextResponse.json({ success: false, message: "Coordinator not found" }, { status: 404 });
 
     return NextResponse.json({ success: true, coordinator: coord, message: "Updated" });
