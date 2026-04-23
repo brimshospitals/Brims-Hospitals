@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 type ChatMsg = { role: "user" | "assistant"; content: string };
 
 type BookingStep =
-  | "idle" | "mobile" | "name" | "symptoms"
+  | "idle" | "loading_session" | "patient_select"
+  | "mobile" | "name" | "symptoms"
   | "loading_doctors" | "doctors" | "datetime"
   | "confirm" | "success";
 
@@ -16,6 +17,7 @@ interface Doctor {
 
 interface BookingState {
   step:           BookingStep;
+  userId:         string;   // set if user is logged in
   mobile:         string;
   name:           string;
   age:            string;
@@ -32,7 +34,7 @@ interface BookingState {
 }
 
 const DEFAULT_BOOKING: BookingState = {
-  step: "idle", mobile: "", name: "", age: "", gender: "",
+  step: "idle", userId: "", mobile: "", name: "", age: "", gender: "",
   district: "", symptoms: "", department: "", doctors: [],
   selectedDoctor: null, date: "", slot: "", bookingId: "", error: "",
 };
@@ -165,13 +167,16 @@ function linkify(text: string) {
 
 const today = () => new Date().toISOString().split("T")[0];
 
-const STEP_LABELS: Partial<Record<BookingStep, string>> = {
-  mobile: "📱", name: "👤", symptoms: "🤒", doctors: "🩺", datetime: "📅", confirm: "✓",
-};
-
-function StepBar({ step }: { step: BookingStep }) {
-  const steps: BookingStep[] = ["mobile","name","symptoms","doctors","datetime","confirm"];
-  const idx = steps.indexOf(step === "loading_doctors" ? "doctors" : step);
+function StepBar({ step, loggedIn }: { step: BookingStep; loggedIn: boolean }) {
+  const steps = loggedIn
+    ? ["patient_select","symptoms","doctors","datetime","confirm"] as BookingStep[]
+    : ["mobile","name","symptoms","doctors","datetime","confirm"] as BookingStep[];
+  const icons: Partial<Record<BookingStep, string>> = {
+    patient_select: "👤", mobile: "📱", name: "📋",
+    symptoms: "🤒", doctors: "🩺", datetime: "📅", confirm: "✓",
+  };
+  const resolvedStep = step === "loading_doctors" ? "doctors" : step;
+  const idx = steps.indexOf(resolvedStep);
   if (idx < 0) return null;
   return (
     <div className="flex items-center gap-1 px-3 py-2 bg-teal-50 border-b border-teal-100">
@@ -182,7 +187,7 @@ function StepBar({ step }: { step: BookingStep }) {
             : i === idx ? "bg-teal-600 text-white ring-2 ring-teal-200"
             : "bg-gray-100 text-gray-300"
           }`}>
-            {i < idx ? "✓" : STEP_LABELS[s] || String(i + 1)}
+            {i < idx ? "✓" : icons[s] || String(i + 1)}
           </div>
           {i < steps.length - 1 && <div className={`flex-1 h-0.5 ${i < idx ? "bg-teal-400" : "bg-gray-200"}`} />}
         </div>
@@ -192,19 +197,20 @@ function StepBar({ step }: { step: BookingStep }) {
 }
 
 export default function ChatBot() {
-  const [open,      setOpen]      = useState(false);
-  const [view,      setView]      = useState<"chat" | "booking">("chat");
-  const [messages,  setMessages]  = useState<ChatMsg[]>([]);
-  const [input,     setInput]     = useState("");
-  const [loading,   setLoading]   = useState(false);
-  const [unread,    setUnread]    = useState(0);
-  const [booking,   setBooking]   = useState<BookingState>({ ...DEFAULT_BOOKING });
-  const [bLoading,  setBLoading]  = useState(false);
-  const [deptTab,   setDeptTab]   = useState("general"); // active dept tab in symptoms step
+  const [open,        setOpen]        = useState(false);
+  const [view,        setView]        = useState<"chat" | "booking">("chat");
+  const [messages,    setMessages]    = useState<ChatMsg[]>([]);
+  const [input,       setInput]       = useState("");
+  const [loading,     setLoading]     = useState(false);
+  const [unread,      setUnread]      = useState(0);
+  const [booking,     setBooking]     = useState<BookingState>({ ...DEFAULT_BOOKING });
+  const [bLoading,    setBLoading]    = useState(false);
+  const [deptTab,     setDeptTab]     = useState("general");
+  const [sessionUser, setSessionUser] = useState<any>(null);    // logged-in user profile
+  const [newPatient,  setNewPatient]  = useState(false);        // "New Patient" toggle in patient_select
   const deptTabRef = useRef<HTMLDivElement>(null);
-
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const inputRef  = useRef<HTMLInputElement>(null);
+  const bottomRef  = useRef<HTMLDivElement>(null);
+  const inputRef   = useRef<HTMLInputElement>(null);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, open, booking.step]);
   useEffect(() => {
@@ -230,13 +236,39 @@ export default function ChatBot() {
   }
 
   // ── Booking flow ─────────────────────────────────────────────────────────────
-  function startBooking() {
+  async function startBooking() {
     setView("booking");
-    setBooking({ ...DEFAULT_BOOKING, step: "mobile" });
+    setNewPatient(false);
+    setBooking({ ...DEFAULT_BOOKING, step: "loading_session" as BookingStep });
+    setBLoading(true);
+    try {
+      // Check if user is logged in
+      const meRes  = await fetch("/api/auth/me");
+      const meData = await meRes.json();
+      if (meData.success && meData.loggedIn) {
+        // Fetch full profile (family members + district)
+        const profRes  = await fetch("/api/profile");
+        const profData = await profRes.json();
+        const user     = profData.user || profData;
+        setSessionUser(user);
+        setBooking({ ...DEFAULT_BOOKING, step: "patient_select",
+          district: user.address?.district || "",
+          userId:   meData.userId || "",
+        });
+      } else {
+        setSessionUser(null);
+        setBooking({ ...DEFAULT_BOOKING, step: "mobile" });
+      }
+    } catch {
+      setSessionUser(null);
+      setBooking({ ...DEFAULT_BOOKING, step: "mobile" });
+    } finally { setBLoading(false); }
   }
 
   function cancelBooking() {
     setBooking({ ...DEFAULT_BOOKING });
+    setSessionUser(null);
+    setNewPatient(false);
     setView("chat");
   }
 
@@ -290,11 +322,17 @@ export default function ChatBot() {
         const res  = await fetch("/api/chat/book", { method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action: "create_booking",
-            mobile: b.mobile, name: b.name, age: Number(b.age),
-            gender: b.gender, district: b.district, symptoms: b.symptoms,
+            mobile:   b.mobile   || sessionUser?.mobile || "",
+            name:     b.name,
+            age:      Number(b.age)   || sessionUser?.age    || 18,
+            gender:   b.gender        || sessionUser?.gender || "male",
+            district: b.district      || sessionUser?.address?.district || "",
+            userId:   b.userId        || sessionUser?.userId || "",
+            symptoms: b.symptoms,
             doctorId: b.selectedDoctor?._id, doctorName: b.selectedDoctor?.name,
             date: b.date, slot: b.slot,
             amount: b.selectedDoctor?.offerFee || b.selectedDoctor?.opdFee || 0,
+            isLoggedIn: !!sessionUser,
           }),
         });
         const data = await res.json();
@@ -365,8 +403,120 @@ export default function ChatBot() {
           {/* ════════════════ BOOKING WIZARD ════════════════ */}
           {view === "booking" && (
             <div className="flex-1 flex flex-col overflow-hidden">
-              {b.step !== "success" && <StepBar step={b.step} />}
+              {b.step !== "success" && b.step !== "loading_session" && (
+                <StepBar step={b.step} loggedIn={!!sessionUser} />
+              )}
               <div className="flex-1 overflow-y-auto">
+
+                {/* ── Step: Loading session ── */}
+                {b.step === "loading_session" && (
+                  <div className="flex flex-col items-center justify-center py-16 gap-3">
+                    <div className="w-10 h-10 border-4 border-teal-500 border-t-transparent rounded-full animate-spin" />
+                    <p className="text-teal-600 font-medium text-sm">Checking login status...</p>
+                  </div>
+                )}
+
+                {/* ── Step: Patient Selector (logged-in) ── */}
+                {b.step === "patient_select" && sessionUser && (
+                  <div className="p-4 space-y-3">
+                    {/* Welcome */}
+                    <div className="bg-teal-50 rounded-2xl p-3 flex items-center gap-3 border border-teal-100">
+                      <div className="w-10 h-10 bg-teal-500 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                        {sessionUser.name?.charAt(0)?.toUpperCase() || "U"}
+                      </div>
+                      <div>
+                        <p className="text-xs text-teal-500 font-semibold">Welcome back!</p>
+                        <p className="font-bold text-teal-800">{sessionUser.name}</p>
+                        <p className="text-[11px] text-teal-500">📍 {sessionUser.address?.district || "Bihar"} · {sessionUser.mobile}</p>
+                      </div>
+                      <span className="ml-auto text-green-500 text-lg">✓</span>
+                    </div>
+
+                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Kis ke liye appointment chahiye?</p>
+
+                    {/* Primary member */}
+                    {[
+                      { name: sessionUser.name, age: sessionUser.age, gender: sessionUser.gender, label: "You (Primary)", self: true },
+                      ...(sessionUser.familyMembers || []).map((m: any) => ({ name: m.name, age: m.age, gender: m.gender, label: m.relationship || "Family Member", self: false })),
+                    ].map((member, i) => (
+                      <button key={i}
+                        onClick={() => {
+                          setNewPatient(false);
+                          setBooking(p => ({
+                            ...p,
+                            name: member.name, age: String(member.age || ""),
+                            gender: member.gender || "", error: "",
+                          }));
+                        }}
+                        className={`w-full text-left flex items-center gap-3 p-3 rounded-2xl border-2 transition ${
+                          b.name === member.name && !newPatient
+                            ? "border-teal-500 bg-teal-50"
+                            : "border-gray-200 hover:border-teal-300 bg-white"
+                        }`}>
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0 ${
+                          b.name === member.name && !newPatient ? "bg-teal-500 text-white" : "bg-gray-100 text-gray-500"
+                        }`}>
+                          {member.name?.charAt(0)?.toUpperCase() || "?"}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-gray-800 text-sm">{member.name}</p>
+                          <p className="text-xs text-gray-400">{member.age}yr · {member.gender === "male" ? "♂ Male" : "♀ Female"} · {member.label}</p>
+                        </div>
+                        {b.name === member.name && !newPatient && <span className="text-teal-500 font-bold">✓</span>}
+                      </button>
+                    ))}
+
+                    {/* New Patient option */}
+                    <button onClick={() => { setNewPatient(true); setBooking(p => ({ ...p, name: "", age: "", gender: "", error: "" })); }}
+                      className={`w-full text-left flex items-center gap-3 p-3 rounded-2xl border-2 transition ${
+                        newPatient ? "border-blue-400 bg-blue-50" : "border-dashed border-gray-300 hover:border-blue-300 bg-white"
+                      }`}>
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl flex-shrink-0 ${newPatient ? "bg-blue-500" : "bg-gray-100"}`}>
+                        {newPatient ? <span className="text-white font-bold text-sm">+</span> : "👤"}
+                      </div>
+                      <div>
+                        <p className="font-bold text-gray-700 text-sm">Naya Patient</p>
+                        <p className="text-xs text-gray-400">Family ke bahar kisi ke liye</p>
+                      </div>
+                    </button>
+
+                    {/* New patient mini-form */}
+                    {newPatient && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-2xl p-3 space-y-2">
+                        <input type="text" value={b.name} placeholder="Poora Naam *"
+                          onChange={e => setBooking(p => ({ ...p, name: e.target.value, error: "" }))}
+                          className="w-full border border-blue-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white"
+                        />
+                        <div className="flex gap-2">
+                          <input type="number" value={b.age} placeholder="Age *" min="1" max="120"
+                            onChange={e => setBooking(p => ({ ...p, age: e.target.value, error: "" }))}
+                            className="flex-1 border border-blue-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white"
+                          />
+                          <div className="flex gap-1">
+                            {["male","female"].map(g => (
+                              <button key={g} onClick={() => setBooking(p => ({ ...p, gender: g, error: "" }))}
+                                className={`px-3 py-2 rounded-xl text-xs font-bold border-2 transition ${
+                                  b.gender === g ? (g === "male" ? "border-blue-500 bg-blue-500 text-white" : "border-pink-500 bg-pink-500 text-white") : "border-gray-200 bg-white text-gray-500"
+                                }`}>
+                                {g === "male" ? "♂" : "♀"}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {b.error && <p className="text-xs text-red-500 bg-red-50 border border-red-200 rounded-xl px-3 py-2">⚠️ {b.error}</p>}
+
+                    <button onClick={() => {
+                      if (!b.name.trim()) { setBooking(p => ({ ...p, error: "Patient select karein ya naam likhein" })); return; }
+                      if (newPatient && (!b.age || !b.gender)) { setBooking(p => ({ ...p, error: "Age aur gender fill karein" })); return; }
+                      setBooking(p => ({ ...p, step: "symptoms", error: "" }));
+                    }} className="w-full bg-teal-600 hover:bg-teal-700 text-white py-3 rounded-xl font-bold transition">
+                      Symptoms Batayein →
+                    </button>
+                  </div>
+                )}
 
                 {/* ── Step: Mobile ── */}
                 {b.step === "mobile" && (
