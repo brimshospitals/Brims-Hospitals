@@ -18,6 +18,9 @@ interface BookingState {
   step:           BookingStep;
   mobile:         string;
   name:           string;
+  age:            string;
+  gender:         string;
+  district:       string;
   symptoms:       string;
   department:     string;
   doctors:        Doctor[];
@@ -29,10 +32,18 @@ interface BookingState {
 }
 
 const DEFAULT_BOOKING: BookingState = {
-  step: "idle", mobile: "", name: "", symptoms: "",
-  department: "", doctors: [], selectedDoctor: null,
-  date: "", slot: "", bookingId: "", error: "",
+  step: "idle", mobile: "", name: "", age: "", gender: "",
+  district: "", symptoms: "", department: "", doctors: [],
+  selectedDoctor: null, date: "", slot: "", bookingId: "", error: "",
 };
+
+const BIHAR_DISTRICTS = [
+  "Araria","Arwal","Aurangabad","Banka","Begusarai","Bhagalpur","Bhojpur","Buxar",
+  "Darbhanga","East Champaran","Gaya","Gopalganj","Jamui","Jehanabad","Kaimur",
+  "Katihar","Khagaria","Kishanganj","Lakhisarai","Madhepura","Madhubani","Munger",
+  "Muzaffarpur","Nalanda","Nawada","Patna","Purnia","Rohtas","Saharsa","Samastipur",
+  "Saran","Sheikhpura","Sheohar","Sitamarhi","Siwan","Supaul","Vaishali","West Champaran",
+];
 
 // Department-wise symptom library
 const DEPT_SYMPTOMS: Record<string, { icon: string; label: string; symptoms: string[] }> = {
@@ -154,19 +165,25 @@ function linkify(text: string) {
 
 const today = () => new Date().toISOString().split("T")[0];
 
+const STEP_LABELS: Partial<Record<BookingStep, string>> = {
+  mobile: "📱", name: "👤", symptoms: "🤒", doctors: "🩺", datetime: "📅", confirm: "✓",
+};
+
 function StepBar({ step }: { step: BookingStep }) {
   const steps: BookingStep[] = ["mobile","name","symptoms","doctors","datetime","confirm"];
-  const idx = steps.indexOf(step);
+  const idx = steps.indexOf(step === "loading_doctors" ? "doctors" : step);
   if (idx < 0) return null;
   return (
-    <div className="flex items-center gap-1 px-4 py-2 bg-teal-50 border-b border-teal-100">
+    <div className="flex items-center gap-1 px-3 py-2 bg-teal-50 border-b border-teal-100">
       {steps.map((s, i) => (
         <div key={s} className="flex items-center gap-1 flex-1">
-          <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 ${
+          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 ${
             i < idx ? "bg-teal-500 text-white"
             : i === idx ? "bg-teal-600 text-white ring-2 ring-teal-200"
-            : "bg-gray-200 text-gray-400"
-          }`}>{i < idx ? "✓" : i + 1}</div>
+            : "bg-gray-100 text-gray-300"
+          }`}>
+            {i < idx ? "✓" : STEP_LABELS[s] || String(i + 1)}
+          </div>
           {i < steps.length - 1 && <div className={`flex-1 h-0.5 ${i < idx ? "bg-teal-400" : "bg-gray-200"}`} />}
         </div>
       ))}
@@ -232,7 +249,10 @@ export default function ChatBot() {
     }
 
     else if (b.step === "name") {
-      if (!b.name.trim()) { setBooking(p => ({ ...p, error: "Apna naam likhein" })); return; }
+      if (!b.name.trim())   { setBooking(p => ({ ...p, error: "Apna naam likhein" })); return; }
+      if (!b.age || isNaN(Number(b.age)) || Number(b.age) < 1) { setBooking(p => ({ ...p, error: "Sahi age likhein" })); return; }
+      if (!b.gender)        { setBooking(p => ({ ...p, error: "Gender select karein" })); return; }
+      if (!b.district)      { setBooking(p => ({ ...p, error: "Apna district select karein" })); return; }
       setBooking(p => ({ ...p, step: "symptoms", error: "" }));
     }
 
@@ -241,7 +261,7 @@ export default function ChatBot() {
       setBooking(p => ({ ...p, step: "loading_doctors", error: "" }));
       setBLoading(true);
       try {
-        const res  = await fetch("/api/chat/book", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "suggest_doctors", symptoms: b.symptoms }) });
+        const res  = await fetch("/api/chat/book", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "suggest_doctors", symptoms: b.symptoms, district: b.district }) });
         const data = await res.json();
         if (data.success) {
           setBooking(p => ({ ...p, step: "doctors", department: data.department, doctors: data.doctors, error: "" }));
@@ -270,7 +290,8 @@ export default function ChatBot() {
         const res  = await fetch("/api/chat/book", { method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action: "create_booking",
-            mobile: b.mobile, name: b.name, symptoms: b.symptoms,
+            mobile: b.mobile, name: b.name, age: Number(b.age),
+            gender: b.gender, district: b.district, symptoms: b.symptoms,
             doctorId: b.selectedDoctor?._id, doctorName: b.selectedDoctor?.name,
             date: b.date, slot: b.slot,
             amount: b.selectedDoctor?.offerFee || b.selectedDoctor?.opdFee || 0,
@@ -373,35 +394,71 @@ export default function ChatBot() {
                   </div>
                 )}
 
-                {/* ── Step: Name ── */}
+                {/* ── Step: Name + Age + Gender + District ── */}
                 {b.step === "name" && (
-                  <div className="p-4 space-y-4">
+                  <div className="p-4 space-y-3">
                     <div className="flex items-center gap-2 bg-teal-50 rounded-xl p-3">
-                      <span className="text-teal-500 text-lg">📱</span>
-                      <div>
-                        <p className="text-[10px] text-teal-400 font-semibold uppercase">Mobile</p>
-                        <p className="font-bold text-teal-700">{b.mobile}</p>
-                      </div>
-                      <span className="ml-auto text-green-500 font-bold">✓</span>
+                      <span className="text-teal-500">📱</span>
+                      <p className="font-bold text-teal-700 text-sm">{b.mobile}</p>
+                      <span className="ml-auto text-green-500 font-bold text-sm">✓ Verified</span>
                     </div>
+
+                    {/* Name */}
                     <div>
-                      <label className="block text-sm font-bold text-gray-700 mb-1.5">Aapka Poora Naam</label>
-                      <input type="text"
-                        value={b.name}
+                      <label className="block text-xs font-bold text-gray-600 mb-1">Poora Naam <span className="text-red-500">*</span></label>
+                      <input type="text" value={b.name} autoFocus
                         onChange={e => setBooking(p => ({ ...p, name: e.target.value, error: "" }))}
-                        onKeyDown={e => e.key === "Enter" && nextStep()}
                         placeholder="Jaise: Ramesh Kumar"
-                        autoFocus
-                        className={`w-full border-2 rounded-xl px-3 py-3 text-base focus:outline-none focus:ring-2 transition ${b.error ? "border-red-300 focus:ring-red-200" : "border-gray-200 focus:ring-teal-300 focus:border-teal-400"}`}
+                        className="w-full border-2 border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300 focus:border-teal-400"
                       />
-                      {b.error && <p className="text-xs text-red-500 mt-1">⚠️ {b.error}</p>}
                     </div>
+
+                    {/* Age + Gender side by side */}
+                    <div className="flex gap-2">
+                      <div className="flex-1">
+                        <label className="block text-xs font-bold text-gray-600 mb-1">Age (Umar) <span className="text-red-500">*</span></label>
+                        <input type="number" min="1" max="120" value={b.age}
+                          onChange={e => setBooking(p => ({ ...p, age: e.target.value, error: "" }))}
+                          placeholder="e.g. 35"
+                          className="w-full border-2 border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300 focus:border-teal-400"
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <label className="block text-xs font-bold text-gray-600 mb-1">Gender <span className="text-red-500">*</span></label>
+                        <div className="flex gap-1.5 mt-1">
+                          {["male","female"].map(g => (
+                            <button key={g} onClick={() => setBooking(p => ({ ...p, gender: g, error: "" }))}
+                              className={`flex-1 py-2 rounded-xl text-xs font-bold border-2 transition capitalize ${
+                                b.gender === g
+                                  ? g === "male" ? "border-blue-500 bg-blue-500 text-white" : "border-pink-500 bg-pink-500 text-white"
+                                  : "border-gray-200 text-gray-500 hover:border-gray-300"
+                              }`}>
+                              {g === "male" ? "♂ Male" : "♀ Female"}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* District */}
+                    <div>
+                      <label className="block text-xs font-bold text-gray-600 mb-1">📍 District (Bihar) <span className="text-red-500">*</span></label>
+                      <select value={b.district}
+                        onChange={e => setBooking(p => ({ ...p, district: e.target.value, error: "" }))}
+                        className="w-full border-2 border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300 focus:border-teal-400 bg-white">
+                        <option value="">-- District Select Karein --</option>
+                        {BIHAR_DISTRICTS.map(d => <option key={d} value={d}>{d}</option>)}
+                      </select>
+                    </div>
+
+                    {b.error && <p className="text-xs text-red-500 bg-red-50 border border-red-200 rounded-xl px-3 py-2">⚠️ {b.error}</p>}
+
                     <button onClick={nextStep}
                       className="w-full bg-teal-600 hover:bg-teal-700 text-white py-3 rounded-xl font-bold transition">
                       Aage Badhein →
                     </button>
                     <button onClick={() => setBooking(p => ({ ...p, step: "mobile", error: "" }))}
-                      className="w-full border border-gray-200 text-gray-500 py-2.5 rounded-xl text-sm font-medium hover:bg-gray-50 transition">
+                      className="w-full border border-gray-200 text-gray-500 py-2 rounded-xl text-xs font-medium hover:bg-gray-50 transition">
                       ← Wapas
                     </button>
                   </div>
@@ -411,10 +468,12 @@ export default function ChatBot() {
                 {b.step === "symptoms" && (
                   <div className="flex flex-col h-full">
                     {/* Patient info bar */}
-                    <div className="flex items-center gap-3 bg-gray-50 px-4 py-2.5 border-b border-gray-100 flex-shrink-0">
-                      <span className="text-gray-400 text-xs">📱 {b.mobile}</span>
-                      <span className="w-px h-4 bg-gray-200" />
-                      <span className="text-gray-600 text-xs font-semibold">{b.name}</span>
+                    <div className="flex items-center gap-2 bg-gray-50 px-4 py-2 border-b border-gray-100 flex-shrink-0 flex-wrap">
+                      <span className="text-gray-500 text-xs font-semibold">{b.name}</span>
+                      <span className="text-gray-300">·</span>
+                      <span className="text-gray-400 text-xs">{b.age}y {b.gender === "male" ? "♂" : "♀"}</span>
+                      <span className="text-gray-300">·</span>
+                      <span className="text-gray-400 text-xs">📍 {b.district}</span>
                     </div>
 
                     {/* Symptoms textarea */}
@@ -632,14 +691,15 @@ export default function ChatBot() {
                     </div>
                     <div className="bg-gray-50 rounded-2xl divide-y divide-gray-100 border border-gray-200 overflow-hidden">
                       {[
-                        ["👤 Patient", b.name],
-                        ["📱 Mobile",  b.mobile],
+                        ["👤 Patient",  `${b.name} (${b.age}yr, ${b.gender === "male" ? "Male" : "Female"})`],
+                        ["📱 Mobile",   b.mobile],
+                        ["📍 District", b.district],
                         ["🤒 Symptoms", b.symptoms.substring(0, 60) + (b.symptoms.length > 60 ? "..." : "")],
-                        ["👨‍⚕️ Doctor", `Dr. ${b.selectedDoctor?.name} (${b.selectedDoctor?.department})`],
+                        ["👨‍⚕️ Doctor",  `Dr. ${b.selectedDoctor?.name} (${b.selectedDoctor?.department})`],
                         ["🏥 Hospital", b.selectedDoctor?.hospitalName || "Brims Hospitals"],
-                        ["📅 Date",    new Date(b.date).toLocaleDateString("en-IN", { weekday:"short", day:"2-digit", month:"short", year:"numeric" })],
-                        ["🕐 Slot",    b.slot],
-                        ["💰 Fee",     `₹${b.selectedDoctor?.offerFee || b.selectedDoctor?.opdFee || 0} (Counter pe pay karein)`],
+                        ["📅 Date",     new Date(b.date).toLocaleDateString("en-IN", { weekday:"short", day:"2-digit", month:"short", year:"numeric" })],
+                        ["🕐 Slot",     b.slot],
+                        ["💰 Fee",      `₹${b.selectedDoctor?.offerFee || b.selectedDoctor?.opdFee || 0} (Counter pe pay karein)`],
                       ].map(([label, val]) => (
                         <div key={label as string} className="flex items-start gap-2 px-3 py-2.5">
                           <span className="text-xs font-semibold text-gray-500 w-28 flex-shrink-0">{label}</span>

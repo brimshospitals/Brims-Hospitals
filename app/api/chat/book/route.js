@@ -156,22 +156,46 @@ export async function POST(request) {
 
     await connectDB();
 
-    // ── Suggest doctors based on symptoms ──────────────────────────────────────
+    // ── Suggest doctors based on symptoms + district ───────────────────────────
     if (action === "suggest_doctors") {
-      const dept = detectDept(body.symptoms);
+      const dept     = detectDept(body.symptoms);
+      const district = body.district || "";
 
-      // Try matching department first, fallback to General Medicine
-      let doctors = await Doctor.find({ isActive: true, isAvailable: true,
+      // Build query: match department + optional district
+      const deptQuery = { isActive: true, isAvailable: true,
         $or: [
           { department: { $regex: dept, $options: "i" } },
           { speciality:  { $regex: dept, $options: "i" } },
         ],
-      }).select("name department speciality opdFee offerFee photo hospitalName availableSlots experience degrees").limit(5).lean();
+      };
+      if (district) deptQuery["address.district"] = { $regex: district, $options: "i" };
 
+      let doctors = await Doctor.find(deptQuery)
+        .select("name department speciality opdFee offerFee photo hospitalName availableSlots experience degrees address")
+        .limit(6).lean();
+
+      // Fallback 1: same dept, any district
+      if (doctors.length === 0 && district) {
+        doctors = await Doctor.find({
+          isActive: true, isAvailable: true,
+          $or: [{ department: { $regex: dept, $options: "i" } }, { speciality: { $regex: dept, $options: "i" } }],
+        }).select("name department speciality opdFee offerFee photo hospitalName availableSlots experience degrees address").limit(6).lean();
+      }
+
+      // Fallback 2: any active doctor (district first)
+      if (doctors.length === 0) {
+        const q2 = { isActive: true, isAvailable: true };
+        if (district) q2["address.district"] = { $regex: district, $options: "i" };
+        doctors = await Doctor.find(q2)
+          .select("name department speciality opdFee offerFee photo hospitalName availableSlots experience degrees address")
+          .limit(6).lean();
+      }
+
+      // Fallback 3: absolutely any active doctor
       if (doctors.length === 0) {
         doctors = await Doctor.find({ isActive: true, isAvailable: true })
-          .select("name department speciality opdFee offerFee photo hospitalName availableSlots experience degrees")
-          .limit(5).lean();
+          .select("name department speciality opdFee offerFee photo hospitalName availableSlots experience degrees address")
+          .limit(6).lean();
       }
 
       return NextResponse.json({ success: true, department: dept, doctors });
@@ -179,9 +203,9 @@ export async function POST(request) {
 
     // ── Create booking from chatbot ────────────────────────────────────────────
     if (action === "create_booking") {
-      const { mobile, name, symptoms, doctorId, doctorName, date, slot, amount } = body;
+      const { mobile, name, age, gender, district, symptoms, doctorId, doctorName, date, slot, amount } = body;
 
-      if (!mobile || mobile.length !== 10) {
+      if (!mobile || String(mobile).length !== 10) {
         return NextResponse.json({ success: false, message: "Valid 10-digit mobile number required" }, { status: 400 });
       }
       if (!name || !name.trim()) {
@@ -193,9 +217,21 @@ export async function POST(request) {
       if (!user) {
         const cnt = await User.countDocuments();
         user = await User.create({
-          mobile, name: name.trim(), role: "user",
+          mobile,
+          name:   name.trim(),
+          role:   "user",
+          age:    age    || 18,
+          gender: gender || "male",
+          address: { state: "Bihar", district: district || "" },
           memberId: `BRIMS-${String(cnt + 1).padStart(6, "0")}`,
         });
+      } else {
+        // Update age/gender/district if missing
+        const upd = {};
+        if (!user.age    && age)      upd.age    = age;
+        if (!user.gender && gender)   upd.gender = gender;
+        if (district && !user.address?.district) upd["address.district"] = district;
+        if (Object.keys(upd).length) await User.findByIdAndUpdate(user._id, { $set: upd });
       }
 
       // Generate booking ID
@@ -205,6 +241,9 @@ export async function POST(request) {
       const notes = JSON.stringify({
         patientName:   name.trim(),
         patientMobile: mobile,
+        patientAge:    age    || "",
+        patientGender: gender || "",
+        district:      district || "",
         symptoms:      symptoms || "",
         paymentMode:   "counter",
         isNewPatient:  true,
