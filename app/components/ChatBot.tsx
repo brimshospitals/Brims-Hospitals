@@ -34,11 +34,104 @@ const DEFAULT_BOOKING: BookingState = {
   date: "", slot: "", bookingId: "", error: "",
 };
 
-const SYMPTOM_CHIPS = [
-  "Fever / Bukhar","Cough / Khansi","Chest Pain","Back Pain / Kamar Dard",
-  "Stomach Pain / Pet Dard","Headache / Sir Dard","Joint Pain / Jodo Ka Dard",
-  "Weakness / Kamzori","Diabetes / Sugar","BP / Blood Pressure",
-];
+// Department-wise symptom library
+const DEPT_SYMPTOMS: Record<string, { icon: string; label: string; symptoms: string[] }> = {
+  general: {
+    icon: "🩺", label: "General",
+    symptoms: ["Fever / Bukhar","Cough / Khansi","Cold / Nazla","Headache / Sir Dard",
+      "Body Pain / Badan Dard","Weakness / Kamzori","Sore Throat / Gale Ka Dard",
+      "Loss of Appetite","Fatigue / Thakan","Typhoid","Dengue","Malaria",
+      "Viral Infection","Anemia / Khoon Ki Kami","Vitamin Deficiency"],
+  },
+  heart: {
+    icon: "❤️", label: "Heart",
+    symptoms: ["Chest Pain / Seene Ka Dard","Breathlessness / Saans Phoolna",
+      "Heart Palpitation / Dhadkan","High BP","Low BP","Swollen Legs / Pair Soojhna",
+      "Irregular Heartbeat","Dizziness / Chakkar","Cholesterol Problem","ECG Required"],
+  },
+  bones: {
+    icon: "🦴", label: "Bones",
+    symptoms: ["Back Pain / Kamar Dard","Knee Pain / Ghutna Dard","Joint Pain / Jodh Dard",
+      "Neck Pain / Gardan Dard","Shoulder Pain / Kandha Dard","Fracture / Haddi Tootna",
+      "Slip Disc","Arthritis / Gathiya","Spondylitis","Sports Injury","Hip Pain",
+      "Ankle / Wrist Pain","Muscle Pain / Sprain"],
+  },
+  stomach: {
+    icon: "🫃", label: "Stomach",
+    symptoms: ["Stomach Pain / Pet Dard","Acidity / Jalan","Vomiting / Ulti",
+      "Diarrhea / Dast / Loose Motion","Constipation / Kabz","Gas / Bloating / Afara",
+      "Jaundice / Peeliya","Piles / Bawasir","Liver Problem","Ulcer","Gallstone / Pathri",
+      "Indigestion / Burping","Blood in Stool"],
+  },
+  women: {
+    icon: "🌸", label: "Women",
+    symptoms: ["Irregular Periods","Heavy Bleeding / Zyada Bleeding","Menstrual Pain",
+      "White Discharge / Safed Pani","Pregnancy Check","PCOD / PCOS","Uterus Problem",
+      "Ovary Cyst / Fibroid","Infertility / Baccha Nahi Hona","Menopause",
+      "Family Planning","Cervical Problem"],
+  },
+  children: {
+    icon: "👶", label: "Children",
+    symptoms: ["Child Fever / Baby Bukhar","Child Cough","Child Vomiting",
+      "Child Diarrhea / Loose Motion","Poor Growth / Height Weight","Vaccination",
+      "Child Weakness","Newborn Care","Child Rash / Skin","Malnutrition",
+      "Child Allergy","Child Breathing Problem"],
+  },
+  brain: {
+    icon: "🧠", label: "Brain",
+    symptoms: ["Migraine / Severe Headache","Seizures / Fits / Mirgi",
+      "Vertigo / Chakkar Aana","Memory Loss / Yaadash","Numbness / Sunapan",
+      "Paralysis / Lakwa","Stroke","Parkinson / Tremor","Nerve Pain / Neuropathy",
+      "Unconscious / Behoshi","Spinal Problem","Brain Tumor"],
+  },
+  ent: {
+    icon: "👂", label: "ENT",
+    symptoms: ["Ear Pain / Kaan Dard","Hearing Loss / Sunai Nahi Deta","Nose Blockage / Naak Band",
+      "Sinus / Sinusitis","Tonsils / Gale Mein Ganth","Sore Throat / Gala Dard",
+      "Voice Change / Awaaz Baiṭhna","Snoring / Kharrate","Ear Infection / Ear Wax",
+      "Nasal Polyp","Ear Ringing / Tinnitus"],
+  },
+  skin: {
+    icon: "🧴", label: "Skin",
+    symptoms: ["Skin Rash / Daane","Itching / Khujli","Acne / Pimples",
+      "Eczema","Psoriasis / Safed Daag / Vitiligo","Hair Fall / Baal Jhadna",
+      "Fungal Infection / Daad","Allergy / Hives","Wart / Mole","Dandruff",
+      "Dry / Oily Skin","Dark Spots / Pigmentation","Nail Problem / Nakhun","Scabies / Khaj"],
+  },
+  eyes: {
+    icon: "👁️", label: "Eyes",
+    symptoms: ["Eye Pain / Aankh Dard","Blurred Vision / Dhundla Dikhna",
+      "Red Eyes / Lal Aankh","Cataract / Motia","Watery Eyes",
+      "Eye Infection / Conjunctivitis","Specs / Chashma Check","Night Blindness",
+      "Glaucoma","Eye Allergy","Burning Eyes / Aankh Mein Jalan","Double Vision / Squint"],
+  },
+  kidney: {
+    icon: "🫘", label: "Kidney",
+    symptoms: ["Burning Urination / Peshab Mein Jalan","Kidney Stone / Pathri",
+      "Frequent Urination / Baar Baar Peshab","Blood in Urine","Prostate Problem",
+      "UTI / Urinary Infection","Kidney Pain","Kidney Failure","Bladder Problem",
+      "Male Infertility","Erectile Dysfunction"],
+  },
+  lungs: {
+    icon: "🫁", label: "Lungs",
+    symptoms: ["Breathing Difficulty / Saans Lena Mushkil","Asthma / Dama",
+      "TB / Tuberculosis","Chronic Cough / Purani Khansi","Wheezing",
+      "Chest Tightness","Pneumonia / Lung Infection","Bronchitis","COPD",
+      "Low Oxygen / SpO2 Kam","Sleep Apnea"],
+  },
+  diabetes: {
+    icon: "🩸", label: "Diabetes",
+    symptoms: ["High Blood Sugar / Sugar Zyada","Low Blood Sugar","Diabetes Check / HbA1c",
+      "Excessive Thirst / Zyada Pyaas","Frequent Urination","Wound Not Healing / Ghao",
+      "Weight Loss Sudden","Diabetic Foot","Numbness in Feet","Eye Problem Due to Diabetes"],
+  },
+  mental: {
+    icon: "🧘", label: "Mental",
+    symptoms: ["Anxiety / Ghabrahaat","Depression / Udaasi","Sleep Problem / Insomnia",
+      "Stress / Tanav","Mood Swings","Panic Attack","Phobia","OCD",
+      "Anger Issues","Addiction / Nasha","Memory Problem","ADHD / Autism"],
+  },
+};
 
 const SLOTS = [
   "8:00 AM","9:00 AM","10:00 AM","11:00 AM",
@@ -82,14 +175,16 @@ function StepBar({ step }: { step: BookingStep }) {
 }
 
 export default function ChatBot() {
-  const [open,     setOpen]     = useState(false);
-  const [view,     setView]     = useState<"chat" | "booking">("chat");
-  const [messages, setMessages] = useState<ChatMsg[]>([]);
-  const [input,    setInput]    = useState("");
-  const [loading,  setLoading]  = useState(false);
-  const [unread,   setUnread]   = useState(0);
-  const [booking,  setBooking]  = useState<BookingState>({ ...DEFAULT_BOOKING });
-  const [bLoading, setBLoading] = useState(false);
+  const [open,      setOpen]      = useState(false);
+  const [view,      setView]      = useState<"chat" | "booking">("chat");
+  const [messages,  setMessages]  = useState<ChatMsg[]>([]);
+  const [input,     setInput]     = useState("");
+  const [loading,   setLoading]   = useState(false);
+  const [unread,    setUnread]    = useState(0);
+  const [booking,   setBooking]   = useState<BookingState>({ ...DEFAULT_BOOKING });
+  const [bLoading,  setBLoading]  = useState(false);
+  const [deptTab,   setDeptTab]   = useState("general"); // active dept tab in symptoms step
+  const deptTabRef = useRef<HTMLDivElement>(null);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef  = useRef<HTMLInputElement>(null);
@@ -314,47 +409,91 @@ export default function ChatBot() {
 
                 {/* ── Step: Symptoms ── */}
                 {b.step === "symptoms" && (
-                  <div className="p-4 space-y-4">
-                    <div className="flex items-center gap-3 bg-gray-50 rounded-xl p-3">
-                      <div className="text-center">
-                        <p className="text-[10px] text-gray-400">Mobile</p>
-                        <p className="font-bold text-gray-700 text-sm">{b.mobile}</p>
-                      </div>
-                      <div className="w-px h-8 bg-gray-200" />
-                      <div>
-                        <p className="text-[10px] text-gray-400">Naam</p>
-                        <p className="font-bold text-gray-700 text-sm">{b.name}</p>
-                      </div>
+                  <div className="flex flex-col h-full">
+                    {/* Patient info bar */}
+                    <div className="flex items-center gap-3 bg-gray-50 px-4 py-2.5 border-b border-gray-100 flex-shrink-0">
+                      <span className="text-gray-400 text-xs">📱 {b.mobile}</span>
+                      <span className="w-px h-4 bg-gray-200" />
+                      <span className="text-gray-600 text-xs font-semibold">{b.name}</span>
                     </div>
-                    <div>
-                      <label className="block text-sm font-bold text-gray-700 mb-1.5">Kya Takleef Hai? <span className="text-red-500">*</span></label>
-                      <textarea value={b.symptoms}
-                        onChange={e => setBooking(p => ({ ...p, symptoms: e.target.value, error: "" }))}
-                        placeholder="Apne symptoms likhein ya neeche se choose karein..."
-                        rows={3}
-                        className={`w-full border-2 rounded-xl px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 transition ${b.error ? "border-red-300 focus:ring-red-200" : "border-gray-200 focus:ring-teal-300 focus:border-teal-400"}`}
-                      />
+
+                    {/* Symptoms textarea */}
+                    <div className="px-4 pt-3 flex-shrink-0">
+                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">
+                        Kya Takleef Hai? <span className="text-red-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <textarea value={b.symptoms}
+                          onChange={e => setBooking(p => ({ ...p, symptoms: e.target.value, error: "" }))}
+                          placeholder="Apne symptoms likhein ya neeche se choose karein..."
+                          rows={2}
+                          className={`w-full border-2 rounded-xl px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 transition ${b.error ? "border-red-300 focus:ring-red-200" : "border-gray-200 focus:ring-teal-300 focus:border-teal-400"}`}
+                        />
+                        {b.symptoms && (
+                          <button onClick={() => setBooking(p => ({ ...p, symptoms: "", error: "" }))}
+                            className="absolute top-2 right-2 text-gray-300 hover:text-gray-500 text-xs">✕</button>
+                        )}
+                      </div>
                       {b.error && <p className="text-xs text-red-500 mt-1">⚠️ {b.error}</p>}
                     </div>
-                    <div>
-                      <p className="text-xs text-gray-400 font-semibold mb-2">Common Symptoms (tap to add):</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {SYMPTOM_CHIPS.map(chip => (
-                          <button key={chip} onClick={() => setBooking(p => ({ ...p, symptoms: p.symptoms ? p.symptoms + ", " + chip : chip, error: "" }))}
-                            className="text-xs bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-200 px-2.5 py-1.5 rounded-xl transition font-medium">
-                            {chip}
+
+                    {/* Department tabs */}
+                    <div className="px-4 pt-2 flex-shrink-0">
+                      <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-1.5">Department Choose Karein:</p>
+                      <div ref={deptTabRef} className="flex gap-1.5 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
+                        {Object.entries(DEPT_SYMPTOMS).map(([key, d]) => (
+                          <button key={key} onClick={() => setDeptTab(key)}
+                            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap transition flex-shrink-0 border ${
+                              deptTab === key
+                                ? "bg-teal-600 text-white border-teal-600 shadow-sm"
+                                : "bg-white text-gray-500 border-gray-200 hover:border-teal-300 hover:text-teal-600"
+                            }`}>
+                            <span>{d.icon}</span>{d.label}
                           </button>
                         ))}
                       </div>
                     </div>
-                    <button onClick={nextStep}
-                      className="w-full bg-teal-600 hover:bg-teal-700 text-white py-3 rounded-xl font-bold transition">
-                      Doctor Dhundein →
-                    </button>
-                    <button onClick={() => setBooking(p => ({ ...p, step: "name", error: "" }))}
-                      className="w-full border border-gray-200 text-gray-500 py-2.5 rounded-xl text-sm font-medium hover:bg-gray-50 transition">
-                      ← Wapas
-                    </button>
+
+                    {/* Symptom chips for selected dept */}
+                    <div className="flex-1 overflow-y-auto px-4 pt-2 pb-3">
+                      <p className="text-[10px] text-teal-500 font-semibold mb-2">
+                        {DEPT_SYMPTOMS[deptTab].icon} {DEPT_SYMPTOMS[deptTab].label} — tap to add:
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {DEPT_SYMPTOMS[deptTab].symptoms.map(chip => {
+                          const added = b.symptoms.includes(chip);
+                          return (
+                            <button key={chip}
+                              onClick={() => {
+                                if (added) {
+                                  setBooking(p => ({ ...p, symptoms: p.symptoms.replace(", " + chip, "").replace(chip + ", ", "").replace(chip, "").trim().replace(/^,|,$/g,"").trim(), error: "" }));
+                                } else {
+                                  setBooking(p => ({ ...p, symptoms: p.symptoms ? p.symptoms + ", " + chip : chip, error: "" }));
+                                }
+                              }}
+                              className={`text-xs px-2.5 py-1.5 rounded-xl transition font-medium border ${
+                                added
+                                  ? "bg-teal-600 text-white border-teal-600"
+                                  : "bg-gray-50 text-gray-700 border-gray-200 hover:bg-teal-50 hover:border-teal-300 hover:text-teal-700"
+                              }`}>
+                              {added ? "✓ " : ""}{chip}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Bottom buttons */}
+                    <div className="px-4 pb-4 pt-2 space-y-2 flex-shrink-0 border-t border-gray-100 bg-white">
+                      <button onClick={nextStep}
+                        className="w-full bg-teal-600 hover:bg-teal-700 text-white py-3 rounded-xl font-bold transition">
+                        Doctor Dhundein →
+                      </button>
+                      <button onClick={() => setBooking(p => ({ ...p, step: "name", error: "" }))}
+                        className="w-full border border-gray-200 text-gray-500 py-2 rounded-xl text-sm font-medium hover:bg-gray-50 transition">
+                        ← Wapas
+                      </button>
+                    </div>
                   </div>
                 )}
 
