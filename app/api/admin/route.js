@@ -124,7 +124,9 @@ export async function PATCH(request) {
   if (error) return error;
 
   try {
-    const { bookingId, status, paymentStatus, statusStage, stageLabel, stageNotes, updatedByName } = await request.json();
+    const body = await request.json();
+    const { bookingId, status, paymentStatus, statusStage, stageLabel, stageNotes, updatedByName,
+            reschedule, newDate, newSlot } = body;
 
     if (!bookingId) {
       return NextResponse.json(
@@ -140,18 +142,27 @@ export async function PATCH(request) {
     if (paymentStatus) update.paymentStatus = paymentStatus;
     if (statusStage)   update.statusStage   = statusStage;
 
+    // Reschedule: update date + slot + log history
+    if (reschedule) {
+      if (newDate) update.appointmentDate = new Date(newDate);
+      if (newSlot) update.slot = newSlot;
+    }
+
     // Auto-sync broad status from stage
     if (statusStage === "confirmed")  update.status = "confirmed";
     if (statusStage === "completed")  update.status = "completed";
     if (statusStage === "cancelled")  update.status = "cancelled";
 
-    const historyPush = statusStage ? {
-      $push: { statusHistory: {
-        stage: statusStage, label: stageLabel || statusStage,
-        timestamp: new Date(), updatedBy: updatedByName || "Admin",
-        updatedByRole: "admin", notes: stageNotes || "",
-      }},
-    } : {};
+    const historyEntry = reschedule
+      ? { stage: "rescheduled", label: "Rescheduled", timestamp: new Date(),
+          updatedBy: updatedByName || "Admin", updatedByRole: "admin",
+          notes: `New Date: ${newDate}${newSlot ? " | Slot: " + newSlot : ""} | ${stageNotes || ""}` }
+      : statusStage
+      ? { stage: statusStage, label: stageLabel || statusStage, timestamp: new Date(),
+          updatedBy: updatedByName || "Admin", updatedByRole: "admin", notes: stageNotes || "" }
+      : null;
+
+    const historyPush = historyEntry ? { $push: { statusHistory: historyEntry } } : {};
 
     const booking = await Booking.findOneAndUpdate(
       { bookingId },

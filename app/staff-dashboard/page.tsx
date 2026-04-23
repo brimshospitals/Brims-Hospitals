@@ -1497,6 +1497,15 @@ export default function StaffDashboard() {
     } else { showToast(data.message || "Error", false); }
   }
 
+  async function rescheduleBooking(bookingId: string, newDate: string, newSlot: string, reason: string) {
+    const res  = await fetch("/api/staff/bookings", { method:"PATCH", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ bookingId, reschedule: true, newDate, newSlot, stageNotes: reason }) });
+    const data = await res.json();
+    if (data.success) {
+      setBookings((prev) => prev.map((b) => b.bookingId === bookingId ? { ...b, appointmentDate: newDate, slot: newSlot, statusHistory: data.booking?.statusHistory || b.statusHistory } : b));
+      showToast("📅 Booking rescheduled", true);
+    } else { showToast(data.message || "Error", false); }
+  }
+
   function handlePaySuccess(updatedBooking: any) {
     setBookings((prev) => prev.map((b) => b.bookingId === updatedBooking.bookingId ? { ...b, paymentStatus:"paid", amount: updatedBooking.amount, status:"completed" } : b));
     showToast(`₹${updatedBooking.amount} payment received ✓`, true);
@@ -1694,6 +1703,7 @@ export default function StaffDashboard() {
                           currentStage={b.statusStage || "pending"}
                           history={b.statusHistory || []}
                           onUpdate={(stage, label, notes) => updateStage(b.bookingId, stage, label, notes)}
+                          onReschedule={(newDate, newSlot, reason) => rescheduleBooking(b.bookingId, newDate, newSlot, reason)}
                         />
                       </div>
                     )}

@@ -114,7 +114,8 @@ export async function PATCH(request) {
 
   try {
     const body = await request.json();
-    const { bookingId, status, paymentStatus, paymentMode, amount, statusStage, stageLabel, stageNotes } = body;
+    const { bookingId, status, paymentStatus, paymentMode, amount, statusStage, stageLabel, stageNotes,
+            reschedule, newDate, newSlot } = body;
 
     if (!bookingId) {
       return NextResponse.json({ success: false, message: "bookingId zaruri hai" }, { status: 400 });
@@ -129,6 +130,12 @@ export async function PATCH(request) {
     if (amount != null) update.amount       = amount;
     if (statusStage)   update.statusStage   = statusStage;
 
+    // Reschedule: update date + slot + log history
+    if (reschedule) {
+      if (newDate) update.appointmentDate = new Date(newDate);
+      if (newSlot) update.slot = newSlot;
+    }
+
     // Auto-sync broad status from stage
     if (statusStage === "confirmed")  update.status = "confirmed";
     if (statusStage === "completed")  update.status = "completed";
@@ -142,13 +149,16 @@ export async function PATCH(request) {
       if (!status && !statusStage) update.status = "completed";
     }
 
-    const historyPush = statusStage ? {
-      $push: { statusHistory: {
-        stage: statusStage, label: stageLabel || statusStage,
-        timestamp: new Date(), updatedBy: session.name || "Staff",
-        updatedByRole: session.role || "staff", notes: stageNotes || "",
-      }},
-    } : {};
+    const historyEntry = reschedule
+      ? { stage: "rescheduled", label: "Rescheduled", timestamp: new Date(),
+          updatedBy: session.name || "Staff", updatedByRole: session.role || "staff",
+          notes: `New Date: ${newDate}${newSlot ? " | Slot: " + newSlot : ""} | ${stageNotes || ""}` }
+      : statusStage
+      ? { stage: statusStage, label: stageLabel || statusStage, timestamp: new Date(),
+          updatedBy: session.name || "Staff", updatedByRole: session.role || "staff", notes: stageNotes || "" }
+      : null;
+
+    const historyPush = historyEntry ? { $push: { statusHistory: historyEntry } } : {};
 
     const booking = await Booking.findOneAndUpdate({ bookingId }, { $set: update, ...historyPush }, { new: true });
     if (!booking) {

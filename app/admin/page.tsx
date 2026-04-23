@@ -2706,6 +2706,15 @@ function BookingsTab({ onOpenPatient }: { onOpenPatient: (id: string) => void })
     setTimeout(() => setToast(""), 3000);
   }
 
+  async function rescheduleBooking(bookingId: string, newDate: string, newSlot: string, reason: string) {
+    const name = localStorage.getItem("adminName") || "Admin";
+    const res  = await fetch("/api/admin", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bookingId, reschedule: true, newDate, newSlot, stageNotes: reason, updatedByName: name }) });
+    const data = await res.json();
+    setToast(data.success ? "📅 Booking rescheduled" : "❌ " + data.message);
+    if (data.success) fetch_(page);
+    setTimeout(() => setToast(""), 3000);
+  }
+
   const parseNotes = (notes: string) => { try { return notes ? JSON.parse(notes) : {}; } catch { return {}; } };
   const pmLabel: Record<string, string> = { counter: "Counter", online: "Online", wallet: "Wallet", insurance: "Insurance" };
   const fmtDate = (d: string) => d ? new Date(d).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
@@ -2832,6 +2841,7 @@ function BookingsTab({ onOpenPatient }: { onOpenPatient: (id: string) => void })
                           currentStage={b.statusStage || "pending"}
                           history={b.statusHistory || []}
                           onUpdate={(stage, label, notes) => updateStage(b.bookingId, stage, label, notes)}
+                          onReschedule={(newDate, newSlot, reason) => rescheduleBooking(b.bookingId, newDate, newSlot, reason)}
                         />
                       </div>
                     )}
