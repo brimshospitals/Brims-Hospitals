@@ -124,7 +124,7 @@ export async function PATCH(request) {
   if (error) return error;
 
   try {
-    const { bookingId, status, paymentStatus } = await request.json();
+    const { bookingId, status, paymentStatus, statusStage, stageLabel, stageNotes, updatedByName } = await request.json();
 
     if (!bookingId) {
       return NextResponse.json(
@@ -138,10 +138,24 @@ export async function PATCH(request) {
     const update = {};
     if (status)        update.status        = status;
     if (paymentStatus) update.paymentStatus = paymentStatus;
+    if (statusStage)   update.statusStage   = statusStage;
+
+    // Auto-sync broad status from stage
+    if (statusStage === "confirmed")  update.status = "confirmed";
+    if (statusStage === "completed")  update.status = "completed";
+    if (statusStage === "cancelled")  update.status = "cancelled";
+
+    const historyPush = statusStage ? {
+      $push: { statusHistory: {
+        stage: statusStage, label: stageLabel || statusStage,
+        timestamp: new Date(), updatedBy: updatedByName || "Admin",
+        updatedByRole: "admin", notes: stageNotes || "",
+      }},
+    } : {};
 
     const booking = await Booking.findOneAndUpdate(
       { bookingId },
-      { $set: update },
+      { $set: update, ...historyPush },
       { new: true }
     );
 

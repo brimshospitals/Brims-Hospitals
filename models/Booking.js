@@ -22,6 +22,17 @@ const bookingSchema = new mongoose.Schema(
       enum: ["pending", "confirmed", "completed", "cancelled"],
       default: "pending",
     },
+
+    // Detailed workflow stage (per booking type)
+    statusStage: { type: String, default: "pending" },
+    statusHistory: [{
+      stage:          { type: String },
+      label:          { type: String },
+      timestamp:      { type: Date, default: Date.now },
+      updatedBy:      { type: String }, // name
+      updatedByRole:  { type: String },
+      notes:          { type: String },
+    }],
     paymentStatus: {
       type: String,
       enum: ["pending", "paid", "refunded"],

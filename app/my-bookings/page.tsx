@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import Header from "../components/header";
+import BookingStageTimeline, { BOOKING_STAGES } from "../components/BookingStageTimeline";
 import LangToggle from "../components/LangToggle";
 import { useLang } from "@/app/providers/LangProvider";
 import { t } from "@/lib/i18n";
@@ -306,6 +307,21 @@ function BookingCard({ b, onCancel, onReview }: { b: any; onCancel: (b: any) => 
             {b.type === "Surgery" && b.status === "pending" && (
               <div className="bg-purple-50 rounded-xl px-3 py-2.5 border border-purple-100 text-xs text-purple-700">
                 ⏳ Hamari team 24 ghante mein aapse contact karegi appointment confirm karne ke liye.
+              </div>
+            )}
+
+            {/* Stage Progress (read-only for patient) */}
+            {(b.statusStage || b.statusHistory?.length > 0) && (
+              <div className="bg-teal-50 rounded-xl p-3 border border-teal-100">
+                <p className="text-[10px] font-bold text-teal-600 uppercase tracking-wide mb-2">Booking Progress</p>
+                <BookingStageTimeline
+                  bookingId={b.bookingId}
+                  type={b.type}
+                  currentStage={b.statusStage || "pending"}
+                  history={b.statusHistory || []}
+                  onUpdate={async () => {}}
+                  readOnly={true}
+                />
               </div>
             )}
           </div>

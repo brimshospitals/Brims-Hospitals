@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import BookingStageTimeline from "@/app/components/BookingStageTimeline";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type Tab = "bookings" | "walkin" | "collections" | "profile" | "hospitals";
@@ -1430,6 +1431,7 @@ export default function StaffDashboard() {
   const [payModal, setPayModal]     = useState<any>(null);
   const [billModal, setBillModal]   = useState<any>(null);
   const [toast, setToast]           = useState<{ msg: string; ok: boolean } | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   // Filters
   const [search, setSearch]         = useState("");
@@ -1484,6 +1486,15 @@ export default function StaffDashboard() {
         showToast(`Booking ${status} ✓`, true);
       }
     } finally { setUpdating(null); }
+  }
+
+  async function updateStage(bookingId: string, stage: string, label: string, notes: string) {
+    const res  = await fetch("/api/staff/bookings", { method:"PATCH", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ bookingId, statusStage: stage, stageLabel: label, stageNotes: notes }) });
+    const data = await res.json();
+    if (data.success) {
+      setBookings((prev) => prev.map((b) => b.bookingId === bookingId ? { ...b, statusStage: stage, statusHistory: data.booking?.statusHistory || b.statusHistory, status: data.booking?.status || b.status } : b));
+      showToast(`Stage: ${label} ✓`, true);
+    } else { showToast(data.message || "Error", false); }
   }
 
   function handlePaySuccess(updatedBooking: any) {
@@ -1661,6 +1672,10 @@ export default function StaffDashboard() {
                           className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition whitespace-nowrap">
                           🧾 Bill
                         </button>
+                        <button onClick={() => setExpandedId(expandedId === b._id ? null : b._id)}
+                          className="text-xs bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 px-3 py-1.5 rounded-lg transition whitespace-nowrap">
+                          {expandedId === b._id ? "▲ Stages" : "▼ Stages"}
+                        </button>
                         {b.status !== "cancelled" && b.status !== "completed" && (
                           <button onClick={() => updateStatus(b.bookingId, "cancelled")} disabled={updating === b.bookingId}
                             className="text-xs bg-red-50 text-red-500 border border-red-200 px-3 py-1.5 rounded-lg hover:bg-red-100 transition disabled:opacity-50 whitespace-nowrap">
@@ -1669,6 +1684,19 @@ export default function StaffDashboard() {
                         )}
                       </div>
                     </div>
+
+                    {/* Stage Timeline */}
+                    {expandedId === b._id && (
+                      <div className="mt-3 pt-3 border-t border-purple-100 bg-purple-50 rounded-xl p-4">
+                        <BookingStageTimeline
+                          bookingId={b.bookingId}
+                          type={b.type}
+                          currentStage={b.statusStage || "pending"}
+                          history={b.statusHistory || []}
+                          onUpdate={(stage, label, notes) => updateStage(b.bookingId, stage, label, notes)}
+                        />
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

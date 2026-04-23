@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import DoctorFullForm from "@/app/components/DoctorFullForm";
 import LabTestFullForm from "@/app/components/LabTestFullForm";
+import BookingStageTimeline from "@/app/components/BookingStageTimeline";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Tab = "overview" | "members" | "hospitals" | "doctors" | "packages" | "labtests" | "bookings" | "staff" | "promo" | "reports" | "accounting" | "ambulance" | "articles" | "notifications" | "coordinators";
@@ -2671,6 +2672,7 @@ function BookingsTab({ onOpenPatient }: { onOpenPatient: (id: string) => void })
   const [meta, setMeta]             = useState<any>({});
   const [updating, setUpdating]     = useState<string | null>(null);
   const [toast, setToast]           = useState("");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const fetch_ = useCallback(async (pg = 1) => {
     setLoading(true);
@@ -2693,6 +2695,15 @@ function BookingsTab({ onOpenPatient }: { onOpenPatient: (id: string) => void })
     if (data.success) fetch_(page);
     setTimeout(() => setToast(""), 3000);
     setUpdating(null);
+  }
+
+  async function updateStage(bookingId: string, stage: string, label: string, notes: string) {
+    const name = localStorage.getItem("adminName") || "Admin";
+    const res  = await fetch("/api/admin", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bookingId, statusStage: stage, stageLabel: label, stageNotes: notes, updatedByName: name }) });
+    const data = await res.json();
+    setToast(data.success ? `✅ Stage: ${label}` : "❌ " + data.message);
+    if (data.success) fetch_(page);
+    setTimeout(() => setToast(""), 3000);
   }
 
   const parseNotes = (notes: string) => { try { return notes ? JSON.parse(notes) : {}; } catch { return {}; } };
@@ -2793,12 +2804,16 @@ function BookingsTab({ onOpenPatient }: { onOpenPatient: (id: string) => void })
 
                     {/* Footer */}
                     <div className="flex items-center justify-between pt-3 border-t border-gray-50">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-[10px] font-mono text-gray-400 bg-gray-100 px-2 py-0.5 rounded-md">{b.bookingId}</span>
                         <span className="text-[10px] text-gray-400">{fmtDate(b.createdAt)}</span>
                         {b.userId?._id && (
                           <button onClick={() => onOpenPatient(b.userId._id)} className="text-[10px] bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-200 px-2 py-0.5 rounded-md font-semibold transition">👁 Patient</button>
                         )}
+                        <button onClick={() => setExpandedId(expandedId === b._id ? null : b._id)}
+                          className="text-[10px] bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-md font-semibold transition">
+                          {expandedId === b._id ? "▲ Hide Stages" : "▼ Manage Stages"}
+                        </button>
                       </div>
                       <div className="flex flex-wrap gap-1.5">
                         {b.status === "pending" && <button onClick={() => updateBooking(b.bookingId, "confirmed")} disabled={updating === b.bookingId} className="text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg font-semibold disabled:opacity-50 transition">✓ Confirm</button>}
@@ -2807,6 +2822,19 @@ function BookingsTab({ onOpenPatient }: { onOpenPatient: (id: string) => void })
                         {b.paymentStatus !== "paid" && b.status !== "cancelled" && <button onClick={() => updateBooking(b.bookingId, undefined, "paid")} disabled={updating === b.bookingId} className="text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-3 py-1.5 rounded-lg font-semibold disabled:opacity-50 transition">💰 Mark Paid</button>}
                       </div>
                     </div>
+
+                    {/* Stage Timeline (expanded) */}
+                    {expandedId === b._id && (
+                      <div className="mt-4 pt-4 border-t border-purple-100 bg-purple-50 rounded-xl p-4">
+                        <BookingStageTimeline
+                          bookingId={b.bookingId}
+                          type={b.type}
+                          currentStage={b.statusStage || "pending"}
+                          history={b.statusHistory || []}
+                          onUpdate={(stage, label, notes) => updateStage(b.bookingId, stage, label, notes)}
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -3918,7 +3946,7 @@ function CoordinatorsTab() {
     try {
       const res  = await fetch(`/api/admin/coordinators?id=${id}`);
       const data = await res.json();
-      if (data.success) setSelected(data.coordinator);
+      if (data.success) setSelected({ ...data.coordinator, bookings: data.bookings || [] });
     } catch {}
   }
 
@@ -3944,7 +3972,9 @@ function CoordinatorsTab() {
         setShowAdd(false);
         setForm({ name: "", mobile: "", email: "", district: "", area: "", type: "health_worker", commOPD: "0", commLab: "30", commSurgery: "20", commConsultation: "0", commIPD: "10" });
         fetchCoordinators();
-      } else { showToast(data.message || "Error"); }
+      } else { showToast(data.message || "Server error — dobara try karein"); }
+    } catch (e: any) {
+      showToast("Network error: " + (e?.message || "Unknown"));
     } finally { setSaving(false); }
   }
 
@@ -4083,7 +4113,7 @@ function CoordinatorsTab() {
                   </div>
                   <div>
                     <label className="text-xs font-medium text-gray-500">Mobile *</label>
-                    <input value={form.mobile} onChange={e => setF("mobile", e.target.value)} placeholder="10-digit" maxLength={10} className={`mt-1 ${INP}`} />
+                    <input value={form.mobile} onChange={e => setF("mobile", e.target.value.replace(/\D/g,""))} placeholder="10-digit" maxLength={10} inputMode="numeric" className={`mt-1 ${INP}`} />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">

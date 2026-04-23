@@ -114,7 +114,7 @@ export async function PATCH(request) {
 
   try {
     const body = await request.json();
-    const { bookingId, status, paymentStatus, paymentMode, amount } = body;
+    const { bookingId, status, paymentStatus, paymentMode, amount, statusStage, stageLabel, stageNotes } = body;
 
     if (!bookingId) {
       return NextResponse.json({ success: false, message: "bookingId zaruri hai" }, { status: 400 });
@@ -127,17 +127,30 @@ export async function PATCH(request) {
     if (paymentStatus) update.paymentStatus = paymentStatus;
     if (paymentMode)   update.paymentMode   = paymentMode;
     if (amount != null) update.amount       = amount;
+    if (statusStage)   update.statusStage   = statusStage;
+
+    // Auto-sync broad status from stage
+    if (statusStage === "confirmed")  update.status = "confirmed";
+    if (statusStage === "completed")  update.status = "completed";
+    if (statusStage === "cancelled")  update.status = "cancelled";
 
     // Record who collected payment
     if (paymentStatus === "paid") {
       update.collectedBy     = session.userId;
       update.collectedByName = session.name || "Staff";
       update.collectedAt     = new Date();
-      // Also mark completed if still pending/confirmed
-      if (!status) update.status = "completed";
+      if (!status && !statusStage) update.status = "completed";
     }
 
-    const booking = await Booking.findOneAndUpdate({ bookingId }, update, { new: true });
+    const historyPush = statusStage ? {
+      $push: { statusHistory: {
+        stage: statusStage, label: stageLabel || statusStage,
+        timestamp: new Date(), updatedBy: session.name || "Staff",
+        updatedByRole: session.role || "staff", notes: stageNotes || "",
+      }},
+    } : {};
+
+    const booking = await Booking.findOneAndUpdate({ bookingId }, { $set: update, ...historyPush }, { new: true });
     if (!booking) {
       // Try by _id
       const b2 = await Booking.findByIdAndUpdate(bookingId, update, { new: true });
