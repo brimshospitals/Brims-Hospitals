@@ -3,11 +3,7 @@ import { v2 as cloudinary } from "cloudinary";
 
 export const dynamic = "force-dynamic";
 
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key:    process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
+// Config is set inside POST handler for serverless compatibility
 
 // Supported: PDF, PNG, JPG, JPEG, WEBP
 const ALLOWED_TYPES = [
@@ -19,6 +15,12 @@ const ALLOWED_TYPES = [
 ];
 
 export async function POST(request) {
+  cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME || "de1yqlwub",
+    api_key:    process.env.CLOUDINARY_API_KEY    || "938744481517128",
+    api_secret: process.env.CLOUDINARY_API_SECRET || "igAsZ8Rh9-Q9MsL4CPrJeHcjXPE",
+  });
+
   try {
     const formData = await request.formData();
     const file     = formData.get("file");

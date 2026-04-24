@@ -4,11 +4,10 @@ import { v2 as cloudinary } from "cloudinary";
 export const dynamic = "force-dynamic";
 
 export async function POST(request) {
-  // Config inside handler so env vars are always available in serverless
   cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME || process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || "de1yqlwub",
-    api_key:    process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET,
+    api_key:    process.env.CLOUDINARY_API_KEY    || "938744481517128",
+    api_secret: process.env.CLOUDINARY_API_SECRET || "igAsZ8Rh9-Q9MsL4CPrJeHcjXPE",
   });
 
   try {
