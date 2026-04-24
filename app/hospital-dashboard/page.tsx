@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import DoctorFullForm from "@/app/components/DoctorFullForm";
 import LabTestFullForm from "@/app/components/LabTestFullForm";
 import { BIHAR_DISTRICTS } from "@/lib/biharDistricts";
+import { MEDICAL_DEPARTMENTS, SURGERY_DEPARTMENTS, SURGERIES_BY_DEPARTMENT } from "@/lib/medicalDepartments";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Tab = "overview" | "bookings" | "doctors" | "lab" | "surgery" | "reports" | "labManage";
@@ -24,23 +25,10 @@ type Booking = { _id: string; bookingId: string; type: string; status: string; p
 type Report  = { _id: string; reportId: string; title: string; category: string; fileUrl: string; fileType: string; notes?: string; reportDate: string; patientName: string; hospitalName: string; };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const DEPT_LIST = ["General Medicine","General Surgery","Pediatrics","Gynecology & Obstetrics","Orthopedics","Cardiology","Dermatology","ENT","Ophthalmology","Neurology","Psychiatry","Radiology","Pathology","Anesthesiology","Dentistry","Physiotherapy","Urology","Nephrology","Oncology","Gastroenterology","Other"];
+const DEPT_LIST = MEDICAL_DEPARTMENTS;
 const LAB_CATEGORIES = ["Blood Test","Urine Test","Stool Test","Imaging","ECG","X-Ray","Ultrasound","MRI","CT Scan","Pathology","Other"];
-const SUR_DEPTS = ["General Surgery","Orthopedic","Cardiac","Neuro Surgery","Gynecology","Urology","Oncology","Ophthalmology","ENT","Dental","Plastic Surgery","Other"];
-const SURGERY_BY_DEPT: Record<string, string[]> = {
-  "General Surgery":  ["Appendectomy (Appendix Removal)","Laparoscopic Hernia Repair","Inguinal Hernia Repair","Cholecystectomy (Gallbladder Removal)","Hemorrhoidectomy (Piles)","Fistula-in-Ano Surgery","Thyroidectomy","Varicose Vein Surgery","Pilonidal Sinus Surgery","Adult Circumcision","Lipoma Removal","Umbilical Hernia Repair","Abscess Drainage"],
-  "Orthopedic":       ["Total Knee Replacement (TKR)","Total Hip Replacement (THR)","Lumbar Disc Surgery","ACL Reconstruction","Fracture Fixation (ORIF)","Shoulder Arthroscopy","Spine Decompression","Bunion Surgery","Carpal Tunnel Release","Meniscus Repair"],
-  "Cardiac":          ["Coronary Artery Bypass (CABG)","Heart Valve Replacement","Aortic Valve Repair","Pacemaker Implant","ASD/VSD Closure","Coronary Angioplasty (PTCA)"],
-  "Neuro Surgery":    ["Brain Tumor Surgery","Lumbar Disc Surgery","Hydrocephalus Shunt","Cervical Disc Surgery","Spine Decompression"],
-  "Gynecology":       ["Hysterectomy (Uterus Removal)","Laparoscopic Myomectomy","Ovarian Cystectomy","D&C (Dilation & Curettage)","Caesarean Section (C-Section)","Tubal Ligation","Endometriosis Surgery"],
-  "Urology":          ["Kidney Stone (PCNL)","Kidney Stone (URSL)","Prostate Surgery (TURP)","Cystoscopy","Vasectomy","Ureteroscopy (URS)","Nephrectomy"],
-  "Oncology":         ["Breast Cancer Surgery","Colorectal Cancer Surgery","Lung Cancer Surgery","Thyroid Cancer Surgery","Oral Cancer Surgery"],
-  "Ophthalmology":    ["Cataract Surgery (Phaco)","LASIK Eye Surgery","Pterygium Surgery","Glaucoma Surgery","Retinal Detachment Repair","DCR Surgery"],
-  "ENT":              ["Tonsillectomy","Adenoidectomy","Septoplasty","FESS (Sinus Surgery)","Tympanoplasty (Ear Drum Repair)","Nasal Polyp Removal"],
-  "Dental":           ["Wisdom Tooth Removal","Dental Implant","Jaw Surgery","Root Canal Treatment (RCT)"],
-  "Plastic Surgery":  ["Rhinoplasty","Liposuction","Breast Augmentation","Breast Reduction","Tummy Tuck","Scar Revision","Burn Grafting"],
-  "Other":            [],
-};
+const SUR_DEPTS = SURGERY_DEPARTMENTS;
+const SURGERY_BY_DEPT = SURGERIES_BY_DEPARTMENT;
 const STD_INCLUSIONS = ["Pre-op Tests","Surgery","Anaesthesia","ICU/HDU (if needed)","Hospital Stay","Medicines","Post-op Dressing","Light Diet Meals","Ghar se Pickup","Ghar Drop","Post-surgery Care","Follow-up Consultation(s)","Nursing Care","Blood Transfusion (if needed)"];
 const PRE_SURGERY_TESTS = ["Blood Test (CBC)","LFT (Liver Function)","KFT (Kidney Function)","ECG","X-Ray Chest","CT Scan","MRI","Echo (Echocardiography)","Urine Routine","Blood Sugar (Fasting)","HIV Test","HBsAg (Hepatitis B)","Coagulation Profile (PT/INR)","Thyroid Profile (TFT)"];
 const ROOM_TYPES = ["General Room","Semi-Private Room","Private Room","Deluxe Room","Suite"];

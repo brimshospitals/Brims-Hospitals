@@ -2,12 +2,9 @@
 import { useState, useEffect } from "react";
 import Header from "../components/header";
 import { BIHAR_DISTRICTS } from "../../lib/biharDistricts";
+import { MEDICAL_DEPARTMENTS } from "../../lib/medicalDepartments";
 
-const departments = [
-  "General Medicine", "Cardiology", "Orthopedics", "Gynecology",
-  "Pediatrics", "Dermatology", "Neurology", "ENT", "Ophthalmology",
-  "Dentistry", "Psychiatry", "Urology", "Nephrology", "Oncology",
-];
+const departments = MEDICAL_DEPARTMENTS;
 
 const biharDistricts = BIHAR_DISTRICTS;
 

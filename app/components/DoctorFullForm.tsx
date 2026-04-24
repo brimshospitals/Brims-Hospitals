@@ -1,16 +1,11 @@
 "use client";
 import { useState, useRef } from "react";
 import { BIHAR_DISTRICTS } from "../../lib/biharDistricts";
+import { MEDICAL_DEPARTMENTS } from "../../lib/medicalDepartments";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
-const DEPARTMENTS = [
-  "General Medicine","General Surgery","Pediatrics","Gynecology & Obstetrics",
-  "Orthopedics","Cardiology","Dermatology","ENT","Ophthalmology","Neurology",
-  "Psychiatry","Radiology","Pathology","Anesthesiology","Dentistry","Physiotherapy",
-  "Nephrology","Urology","Gastroenterology","Oncology","Pulmonology","Rheumatology",
-  "Endocrinology","Hematology","Plastic Surgery","Neurosurgery","Other",
-];
+const DEPARTMENTS = MEDICAL_DEPARTMENTS;
 
 // BIHAR_DISTRICTS imported from lib/biharDistricts
 

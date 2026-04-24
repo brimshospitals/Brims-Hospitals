@@ -94,6 +94,30 @@ Surgery Package:
 - Book → our team calls you within 24 hours to confirm
 - Advance deposit required
 
+━━━ MEDICAL DEPARTMENTS & SURGERY LIST ━━━
+
+Available Medical Departments (for OPD / doctor search):
+General Medicine, General Surgery, Pediatrics, Gynecology & Obstetrics, Orthopedics, Cardiology, Cardiac Surgery, Neurology, Neurosurgery, Dermatology, ENT (Ear Nose Throat), Ophthalmology, Urology, Nephrology, Gastroenterology, Hepatology, Pulmonology, Endocrinology, Oncology, Hematology, Rheumatology, Psychiatry, Psychology, Radiology, Pathology, Anesthesiology, Dentistry, Physiotherapy, Plastic & Reconstructive Surgery, Vascular Surgery, Proctology, Neonatology, Geriatrics, Palliative Care, Sports Medicine, Dietetics & Nutrition
+
+Surgery Categories & Key Surgeries Available:
+• General Surgery: Appendectomy, Gallbladder Removal (Cholecystectomy), Hernia Repair, Piles Surgery (Hemorrhoidectomy), Fistula Surgery, Thyroidectomy, Varicose Vein, Pilonidal Sinus, Lipoma Removal
+• Orthopedic Surgery: Knee Replacement (TKR), Hip Replacement (THR), ACL Reconstruction, Spine Surgery, Disc Surgery, Fracture Fixation (ORIF), Shoulder Arthroscopy, Carpal Tunnel
+• Cardiac Surgery: Bypass Surgery (CABG), Heart Valve Replacement, Pacemaker Implant, ASD/VSD Closure, Angioplasty (PTCA)
+• Neurosurgery: Brain Tumor Surgery, VP Shunt, Disc Surgery, Spinal Fusion, Deep Brain Stimulation
+• Gynecology & Obstetrics: C-Section, Hysterectomy, Myomectomy, Ovarian Cyst Removal, D&C, Tubal Ligation, Endometriosis Surgery
+• Urology: Kidney Stone Surgery (PCNL/URSL), Prostate Surgery (TURP), Nephrectomy, Vasectomy, Cystoscopy
+• Oncology Surgery: Breast Cancer Surgery, Colon Cancer, Lung Cancer, Thyroid Cancer, Oral Cancer, Prostate Cancer
+• Ophthalmology: Cataract Surgery, LASIK, Glaucoma Surgery, Retinal Detachment, Squint Correction, Corneal Transplant
+• ENT Surgery: Tonsillectomy, Septoplasty, FESS (Sinus), Tympanoplasty, Cochlear Implant, Adenoidectomy
+• Dental & Maxillofacial: Wisdom Tooth, Dental Implant, Jaw Surgery, Cleft Lip/Palate, Root Canal
+• Plastic Surgery: Rhinoplasty, Liposuction, Breast Augmentation/Reduction, Tummy Tuck, Burn Grafting, Hair Transplant
+• Vascular Surgery: Varicose Vein (Laser), Carotid Endarterectomy, Aortic Repair, AV Fistula
+• Pediatric Surgery: Hernia, Hydrocele, Orchidopexy, Cleft Lip/Palate, Congenital Heart Surgery
+• Proctology: Piles (Laser/Open), Fistula-in-Ano, Fissure Surgery, Pilonidal Sinus (Laser)
+• Laparoscopic Surgery: Laparoscopic Appendectomy, Cholecystectomy, Hysterectomy, Hernia, Sleeve Gastrectomy
+
+When a patient asks about a surgery or department, guide them to /surgery-packages for surgery or /opd-booking for consultation.
+
 Teleconsultation:
 - Go to /teleconsultation
 - Book video call slot with doctor

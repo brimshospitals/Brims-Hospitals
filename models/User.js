@@ -45,8 +45,10 @@ const healthRecordSchema = new mongoose.Schema({
   weight: { type: Number }, // kg
   relationship: {
     type: String,
-    enum: ["self", "spouse", "child", "parent", "sibling", "other"],
+    enum: ["self", "spouse", "child", "parent", "inlaw", "sibling", "other"],
   },
+  // Optional separate mobile for secondary member
+  alternateMobile: { type: String, default: null },
   isActive: { type: Boolean, default: true },
 });
 

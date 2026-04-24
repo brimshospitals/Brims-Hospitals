@@ -536,6 +536,9 @@ export default function HealthCardPage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState("");
+  const [paidMembers, setPaidMembers] = useState<Set<string>>(new Set());
+  const [payingFor, setPayingFor]     = useState<string | null>(null);
+  const [payMsg, setPayMsg]           = useState("");
 
   useEffect(() => {
     (async () => {
@@ -565,18 +568,51 @@ export default function HealthCardPage() {
     })();
   }, []);
 
-  function downloadCard(singleMember?: Member) {
+  function downloadCard(singleMember?: Member | Member[]) {
     if (!profile) return;
     const logoUrl = window.location.origin + "/logo.png";
-    const members = singleMember
-      ? [singleMember]
-      : allMembers;
+    const members = Array.isArray(singleMember)
+      ? singleMember
+      : singleMember
+        ? [singleMember]
+        : allMembers.filter(m => m.isPrimary || paidMembers.has(m.memberId));
     const html = buildPrintHtml(members, profile.mobile, logoUrl);
     const w = window.open("", "_blank", "width=1100,height=700");
     if (!w) return;
     w.document.write(html);
     w.document.close();
     w.focus();
+  }
+
+  async function payForSecondaryCard(m: Member) {
+    if (!profile) return;
+    setPayingFor(m.memberId);
+    setPayMsg("");
+    try {
+      const userId = localStorage.getItem("userId");
+      const res = await fetch("/api/wallet/deduct", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          amount: 50,
+          description: `Card print fee — ${m.name}`,
+          referenceId: `CARD-${m.memberId}`,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setPaidMembers(prev => new Set(prev).add(m.memberId));
+        setProfile(prev => prev ? { ...prev, walletBalance: data.newBalance } : prev);
+        setPayMsg(`✅ ₹50 deducted! ${m.name} ka card unlock ho gaya.`);
+        setTimeout(() => { downloadCard(m); setPayMsg(""); }, 800);
+      } else {
+        setPayMsg("❌ " + (data.message || "Payment fail"));
+      }
+    } catch {
+      setPayMsg("❌ Network error");
+    }
+    setPayingFor(null);
   }
 
   if (loading) return (
@@ -633,39 +669,81 @@ export default function HealthCardPage() {
       </div>
 
       {/* ── Cards list (FRONT only on page) ── */}
-      <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
-        {allMembers.map((m, i) => (
-          <div key={i} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-            {/* Member header */}
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${m.isPrimary ? "bg-teal-500" : "bg-amber-400"}`} />
-                <p className="font-bold text-gray-800 text-sm">
-                  {m.name}
-                  <span className="ml-2 text-xs font-normal text-gray-400">
-                    {m.isPrimary ? "Primary Member" : m.relationship}
-                  </span>
-                </p>
-              </div>
-              <button
-                onClick={() => downloadCard(m)}
-                className="flex items-center gap-1.5 bg-teal-50 hover:bg-teal-100 text-teal-700 px-3 py-1.5 rounded-lg text-xs font-semibold transition"
-              >
-                ⬇ Download PDF
-              </button>
-            </div>
-
-            {/* Front card preview */}
-            <div className="overflow-x-auto">
-              <div className="flex justify-center py-1">
-                <CardFront m={m} mobile={profile.mobile} logoSrc={logoSrc} />
-              </div>
-            </div>
-            <p className="text-center text-xs text-gray-400 mt-2">
-              Card Front Preview · Click "Download PDF" for print-ready front + back
-            </p>
+      {payMsg && (
+        <div className="max-w-4xl mx-auto px-4 pt-4">
+          <div className={`p-3 rounded-xl text-sm font-medium ${payMsg.startsWith("✅") ? "bg-green-50 text-green-700 border border-green-200" : "bg-red-50 text-red-700 border border-red-200"}`}>
+            {payMsg}
           </div>
-        ))}
+        </div>
+      )}
+      <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
+        {allMembers.map((m, i) => {
+          const isUnlocked = m.isPrimary || paidMembers.has(m.memberId);
+          const isPaying = payingFor === m.memberId;
+          return (
+            <div key={i} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+              {/* Member header */}
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <div className={`w-2 h-2 rounded-full ${m.isPrimary ? "bg-teal-500" : "bg-amber-400"}`} />
+                  <p className="font-bold text-gray-800 text-sm">
+                    {m.name}
+                    <span className="ml-2 text-xs font-normal text-gray-400">
+                      {m.isPrimary ? "Primary Member" : m.relationship}
+                    </span>
+                  </p>
+                  {m.isPrimary && (
+                    <span className="bg-teal-100 text-teal-700 text-xs px-2 py-0.5 rounded-full font-semibold">FREE</span>
+                  )}
+                  {!m.isPrimary && !isUnlocked && (
+                    <span className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full font-semibold">₹50</span>
+                  )}
+                  {!m.isPrimary && isUnlocked && (
+                    <span className="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full font-semibold">Unlocked</span>
+                  )}
+                </div>
+                {isUnlocked ? (
+                  <button
+                    onClick={() => downloadCard(m)}
+                    className="flex items-center gap-1.5 bg-teal-50 hover:bg-teal-100 text-teal-700 px-3 py-1.5 rounded-lg text-xs font-semibold transition"
+                  >
+                    ⬇ Download PDF
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => payForSecondaryCard(m)}
+                    disabled={isPaying}
+                    className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition disabled:opacity-50"
+                  >
+                    {isPaying ? "Processing..." : "🔓 Pay ₹50 & Print"}
+                  </button>
+                )}
+              </div>
+
+              {/* Front card preview */}
+              <div className="overflow-x-auto">
+                <div className="flex justify-center py-1">
+                  <CardFront m={m} mobile={profile.mobile} logoSrc={logoSrc} />
+                </div>
+              </div>
+              {!m.isPrimary && !isUnlocked && (
+                <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-center">
+                  <p className="text-xs text-amber-700 font-medium">
+                    🔒 Secondary member card print karne ke liye ₹50 wallet se deduct hoga
+                  </p>
+                  <p className="text-xs text-amber-600 mt-0.5">
+                    Wallet Balance: ₹{(profile.walletBalance || 0).toFixed(0)}
+                  </p>
+                </div>
+              )}
+              {isUnlocked && (
+                <p className="text-center text-xs text-gray-400 mt-2">
+                  Card Front Preview · Click "Download PDF" for print-ready front + back
+                </p>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

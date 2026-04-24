@@ -2,13 +2,9 @@
 import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { BIHAR_DISTRICTS } from "../../lib/biharDistricts";
+import { MEDICAL_DEPARTMENTS } from "../../lib/medicalDepartments";
 
-const DEPARTMENTS = [
-  "General Medicine","General Surgery","Pediatrics","Gynecology & Obstetrics",
-  "Orthopedics","Cardiology","Dermatology","ENT","Ophthalmology","Neurology",
-  "Psychiatry","Radiology","Pathology","Anesthesiology","Dentistry",
-  "Physiotherapy","Urology","Nephrology","Oncology","Gastroenterology","Other",
-];
+const DEPARTMENTS = MEDICAL_DEPARTMENTS;
 
 const SPECIALTIES = [
   "Laparoscopic Surgery","Joint Replacement","Cardiac Surgery","Neuro Surgery",

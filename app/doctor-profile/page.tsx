@@ -2,12 +2,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { BIHAR_DISTRICTS } from "../../lib/biharDistricts";
+import { MEDICAL_DEPARTMENTS } from "../../lib/medicalDepartments";
 
-const DEPARTMENTS = [
-  "General Medicine","General Surgery","Pediatrics","Gynecology & Obstetrics",
-  "Orthopedics","Cardiology","Dermatology","ENT","Ophthalmology","Neurology",
-  "Psychiatry","Radiology","Pathology","Anesthesiology","Dentistry","Physiotherapy","Other",
-];
+const DEPARTMENTS = MEDICAL_DEPARTMENTS;
 
 // BIHAR_DISTRICTS imported from lib/biharDistricts
 

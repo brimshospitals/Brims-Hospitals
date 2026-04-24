@@ -16,6 +16,7 @@ export default function AddMemberPage() {
     preExistingDiseases: [] as string[],
     height: "", weight: "",
     photo: "",
+    alternateMobile: "",
   });
 
   const [showCropper, setShowCropper] = useState(false);
@@ -183,6 +184,16 @@ export default function AddMemberPage() {
             <label className="block text-sm font-medium text-gray-700 mb-1">Poora Naam *</label>
             <input name="name" value={form.name} onChange={handleChange} placeholder="Member ka naam"
               className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-teal-500" />
+          </div>
+
+          {/* Alternate Mobile */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Alternate Mobile (Optional)</label>
+            <input name="alternateMobile" value={form.alternateMobile} onChange={handleChange}
+              placeholder="Is member ka alag mobile number (optional)"
+              maxLength={10} type="tel"
+              className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-teal-500" />
+            <p className="text-xs text-gray-400 mt-1">Agar is member ka khud ka mobile number hai to bharein</p>
           </div>
 
           {/* Relationship */}

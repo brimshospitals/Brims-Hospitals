@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import BookingStageTimeline from "@/app/components/BookingStageTimeline";
+import { MEDICAL_DEPARTMENTS, SURGERY_DEPARTMENTS, SURGERIES_BY_DEPARTMENT } from "@/lib/medicalDepartments";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type Tab = "bookings" | "walkin" | "collections" | "profile" | "hospitals";
@@ -1063,21 +1064,8 @@ function StaffHospitalsTab({ assignedHospitalIds, canOnboard }: { assignedHospit
 }
 
 // ── Surgery Package constants (shared with admin modal) ───────────────────────
-const S_SUR_CAT = ["General Surgery","Orthopedic","Cardiac","Neuro Surgery","Gynecology","Urology","Oncology","Ophthalmology","ENT","Dental","Plastic Surgery","Other"];
-const S_SURGERY_BY_DEPT: Record<string, string[]> = {
-  "General Surgery":  ["Appendectomy (Appendix Removal)","Laparoscopic Hernia Repair","Inguinal Hernia Repair","Cholecystectomy (Gallbladder Removal)","Hemorrhoidectomy (Piles)","Fistula-in-Ano Surgery","Thyroidectomy","Varicose Vein Surgery","Pilonidal Sinus Surgery","Adult Circumcision","Lipoma Removal","Umbilical Hernia Repair"],
-  "Orthopedic":       ["Total Knee Replacement (TKR)","Total Hip Replacement (THR)","Lumbar Disc Surgery","ACL Reconstruction","Fracture Fixation (ORIF)","Shoulder Arthroscopy","Spine Decompression","Bunion Surgery","Carpal Tunnel Release"],
-  "Cardiac":          ["Coronary Artery Bypass (CABG)","Heart Valve Replacement","Pacemaker Implant","ASD/VSD Closure","Coronary Angioplasty (PTCA)"],
-  "Neuro Surgery":    ["Brain Tumor Surgery","Lumbar Disc Surgery","Hydrocephalus Shunt","Cervical Disc Surgery","Spine Decompression"],
-  "Gynecology":       ["Hysterectomy (Uterus Removal)","Laparoscopic Myomectomy","Ovarian Cystectomy","D&C (Dilation & Curettage)","Caesarean Section (C-Section)","Tubal Ligation","Endometriosis Surgery"],
-  "Urology":          ["Kidney Stone (PCNL)","Kidney Stone (URSL)","Prostate Surgery (TURP)","Cystoscopy","Vasectomy","Ureteroscopy (URS)","Nephrectomy"],
-  "Oncology":         ["Breast Cancer Surgery","Colorectal Cancer Surgery","Lung Cancer Surgery","Thyroid Cancer Surgery","Oral Cancer Surgery"],
-  "Ophthalmology":    ["Cataract Surgery (Phaco)","LASIK Eye Surgery","Pterygium Surgery","Glaucoma Surgery","Retinal Detachment Repair","DCR Surgery"],
-  "ENT":              ["Tonsillectomy","Adenoidectomy","Septoplasty","FESS (Sinus Surgery)","Tympanoplasty (Ear Drum Repair)","Nasal Polyp Removal"],
-  "Dental":           ["Wisdom Tooth Removal","Dental Implant","Jaw Surgery","Cleft Lip/Palate Surgery","Root Canal Treatment (RCT)"],
-  "Plastic Surgery":  ["Rhinoplasty (Nose Job)","Liposuction","Breast Augmentation","Breast Reduction","Tummy Tuck","Scar Revision","Burn Grafting"],
-  "Other":            [],
-};
+const S_SUR_CAT = SURGERY_DEPARTMENTS;
+const S_SURGERY_BY_DEPT = SURGERIES_BY_DEPARTMENT;
 const S_STD_INCLUSIONS = ["Pre-op Tests","Surgery","Anaesthesia","ICU/HDU (if needed)","Hospital Stay","Medicines","Post-op Dressing","Light Diet Meals","Ghar se Pickup","Ghar Drop","Post-surgery Care","Follow-up Consultation(s)","Nursing Care","Blood Transfusion (if needed)"];
 const S_PRE_TESTS = ["Blood Test (CBC)","LFT (Liver Function)","KFT (Kidney Function)","ECG","X-Ray Chest","CT Scan","MRI","Echo (Echocardiography)","Urine Routine","Blood Sugar (Fasting)","HIV Test","HBsAg (Hepatitis B)","Coagulation Profile (PT/INR)","Thyroid Profile (TFT)"];
 const S_ROOM_TYPES = ["General Room","Semi-Private Room","Private Room","Deluxe Room","Suite"];

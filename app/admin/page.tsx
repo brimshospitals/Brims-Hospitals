@@ -4,6 +4,7 @@ import DoctorFullForm from "@/app/components/DoctorFullForm";
 import LabTestFullForm from "@/app/components/LabTestFullForm";
 import BookingStageTimeline from "@/app/components/BookingStageTimeline";
 import { BIHAR_DISTRICTS } from "@/lib/biharDistricts";
+import { MEDICAL_DEPARTMENTS, SURGERY_DEPARTMENTS, SURGERIES_BY_DEPARTMENT } from "@/lib/medicalDepartments";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Tab = "overview" | "members" | "hospitals" | "doctors" | "packages" | "labtests" | "bookings" | "staff" | "promo" | "reports" | "accounting" | "ambulance" | "articles" | "notifications" | "coordinators";
@@ -841,25 +842,12 @@ function MembersTab({ onOpenPatient }: { onOpenPatient: (id: string) => void }) 
 }
 
 // ── Hospital Manage Panel Modals ──────────────────────────────────────────────
-const DEPT_LIST = ["General Medicine","General Surgery","Pediatrics","Gynecology & Obstetrics","Orthopedics","Cardiology","Dermatology","ENT","Ophthalmology","Neurology","Psychiatry","Radiology","Pathology","Anesthesiology","Dentistry","Physiotherapy","Urology","Nephrology","Oncology","Gastroenterology","Other"];
+const DEPT_LIST = MEDICAL_DEPARTMENTS;
 const LAB_CAT   = ["Blood Test","Urine Test","Stool Test","Imaging","ECG","X-Ray","Ultrasound","MRI","CT Scan","Pathology","Other"];
-const SUR_CAT   = ["General Surgery","Orthopedic","Cardiac","Neuro Surgery","Gynecology","Urology","Oncology","Ophthalmology","ENT","Dental","Plastic Surgery","Other"];
+const SUR_CAT   = SURGERY_DEPARTMENTS;
 
-// Surgery names grouped by department
-const SURGERY_BY_DEPT: Record<string, string[]> = {
-  "General Surgery":  ["Appendectomy (Appendix Removal)","Laparoscopic Hernia Repair","Inguinal Hernia Repair","Cholecystectomy (Gallbladder Removal)","Hemorrhoidectomy (Piles)","Fistula-in-Ano Surgery","Thyroidectomy","Varicose Vein Surgery","Pilonidal Sinus Surgery","Adult Circumcision","Lipoma Removal","Umbilical Hernia Repair","Abscess Drainage"],
-  "Orthopedic":       ["Total Knee Replacement (TKR)","Total Hip Replacement (THR)","Lumbar Disc Surgery","ACL Reconstruction","Fracture Fixation (ORIF)","Shoulder Arthroscopy","Spine Decompression","Bunion (Hallux Valgus) Surgery","Carpal Tunnel Release","Meniscus Repair"],
-  "Cardiac":          ["Coronary Artery Bypass (CABG)","Heart Valve Replacement","Aortic Valve Repair","Pacemaker Implant","ASD/VSD Closure","Coronary Angioplasty (PTCA)","Atrial Fibrillation Ablation"],
-  "Neuro Surgery":    ["Brain Tumor Surgery","Lumbar Disc Surgery","Hydrocephalus Shunt","Skull Fracture Repair","Cervical Disc Surgery","Spine Decompression","Deep Brain Stimulation"],
-  "Gynecology":       ["Hysterectomy (Uterus Removal)","Laparoscopic Myomectomy","Ovarian Cystectomy","D&C (Dilation & Curettage)","Caesarean Section (C-Section)","Tubal Ligation","Endometriosis Surgery","LEEP Procedure (Cervix)","Laparoscopic Sterilization"],
-  "Urology":          ["Kidney Stone (PCNL)","Kidney Stone (URSL)","Prostate Surgery (TURP)","Cystoscopy","Vasectomy","Ureteroscopy (URS)","Nephrectomy","Bladder Stone Removal"],
-  "Oncology":         ["Breast Cancer Surgery","Colorectal Cancer Surgery","Lung Cancer Surgery","Prostate Cancer Surgery","Cervical Cancer Surgery","Thyroid Cancer Surgery","Oral Cancer Surgery"],
-  "Ophthalmology":    ["Cataract Surgery (Phaco)","LASIK Eye Surgery","Pterygium Surgery","Glaucoma Surgery","Retinal Detachment Repair","DCR Surgery (Tear Duct)","Squint Surgery","Vitrectomy"],
-  "ENT":              ["Tonsillectomy","Adenoidectomy","Septoplasty (Deviated Septum)","FESS (Sinus Surgery)","Tympanoplasty (Ear Drum Repair)","Myringotomy","Cochlear Implant","Nasal Polyp Removal"],
-  "Dental":           ["Wisdom Tooth Removal","Dental Implant","Jaw Surgery (Orthognathic)","Cleft Lip/Palate Surgery","Gum Surgery (Gingivectomy)","Root Canal Treatment (RCT)"],
-  "Plastic Surgery":  ["Rhinoplasty (Nose Job)","Liposuction","Breast Augmentation","Breast Reduction","Tummy Tuck (Abdominoplasty)","Eyelid Surgery","Facelift","Scar Revision","Burn Grafting"],
-  "Other":            [],
-};
+// Surgery names grouped by department — from shared lib
+const SURGERY_BY_DEPT = SURGERIES_BY_DEPARTMENT;
 
 // Standard package inclusions
 const STD_INCLUSIONS = [
