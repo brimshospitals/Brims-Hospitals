@@ -440,7 +440,7 @@ function DashboardContent() {
             {[
               { label: t("common.bookings", lang), value: "—",    icon: "📋" },
               { label: t("dash.wallet", lang),    value: familyCard ? `₹${familyCard.walletBalance || 0}` : "₹0", icon: "💰" },
-              { label: t("dash.members", lang),   value: familyCard ? `${familyMembers.length}/6` : "—",          icon: "👨‍👩‍👧" },
+              { label: t("dash.members", lang),   value: familyCard ? `${familyMembers.length + 1}/6` : "—",     icon: "👨‍👩‍👧" },
             ].map((s) => (
               <div key={s.label} className="bg-white/10 rounded-2xl p-3 text-center">
                 <p className="text-lg mb-0.5">{s.icon}</p>
@@ -521,27 +521,30 @@ function DashboardContent() {
                   )}
                 </div>
 
-                {/* Member photos row */}
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="flex -space-x-2">
-                    {familyMembers.slice(0, 4).map((m, i) => (
-                      <div key={i} className="w-8 h-8 rounded-full border-2 border-teal-600 overflow-hidden bg-white/20">
-                        {m.photo
-                          ? <img src={m.photo} alt={m.name} className="w-full h-full object-cover" />
-                          : <div className="w-full h-full flex items-center justify-center text-xs text-white">
-                              {m.name?.[0] || "?"}
-                            </div>
-                        }
+                {/* Member photos row — primary + secondary */}
+                {(() => {
+                  const allM = user ? [user, ...familyMembers] : familyMembers;
+                  return (
+                    <div className="flex items-center gap-2 mb-4">
+                      <div className="flex -space-x-2">
+                        {allM.slice(0, 4).map((m, i) => (
+                          <div key={i} className="w-8 h-8 rounded-full border-2 border-teal-600 overflow-hidden bg-white/20">
+                            {m.photo
+                              ? <img src={m.photo} alt={m.name} className="w-full h-full object-cover" />
+                              : <div className="w-full h-full flex items-center justify-center text-xs text-white font-bold">{m.name?.[0] || "?"}</div>
+                            }
+                          </div>
+                        ))}
+                        {allM.length > 4 && (
+                          <div className="w-8 h-8 rounded-full border-2 border-teal-600 bg-white/20 flex items-center justify-center text-xs text-white font-bold">
+                            +{allM.length - 4}
+                          </div>
+                        )}
                       </div>
-                    ))}
-                    {familyMembers.length > 4 && (
-                      <div className="w-8 h-8 rounded-full border-2 border-teal-600 bg-white/20 flex items-center justify-center text-xs text-white font-bold">
-                        +{familyMembers.length - 4}
-                      </div>
-                    )}
-                  </div>
-                  <p className="text-teal-200 text-xs">{familyMembers.length} member{familyMembers.length !== 1 ? "s" : ""}</p>
-                </div>
+                      <p className="text-teal-200 text-xs">{allM.length} member{allM.length !== 1 ? "s" : ""}</p>
+                    </div>
+                  );
+                })()}
 
                 <div className="flex justify-between text-sm">
                   <div>
@@ -650,80 +653,85 @@ function DashboardContent() {
         )}
 
         {/* ── Family Members (only if card active) ── */}
-        {familyCard && (
-          <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-5">
-            <div className="flex justify-between items-center mb-4">
-              <div>
-                <h3 className="font-bold text-gray-800">{t("dash.members", lang)}</h3>
-                <p className="text-xs text-gray-400 mt-0.5">{familyMembers.length} of 6 slots used</p>
-              </div>
-              {familyMembers.length < 6 && (
-                <a href="/add-member"
-                  className="bg-teal-50 hover:bg-teal-100 text-teal-700 text-sm font-semibold px-4 py-2 rounded-xl transition flex items-center gap-1">
-                  <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4" stroke="currentColor" strokeWidth={2.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                  </svg>
-                  Add
-                </a>
-              )}
-            </div>
+        {familyCard && user && (() => {
+          // Primary user is slot 0; secondary members are familyMembers[]
+          const primarySlot = { ...user, isPrimary: true, relationship: "self" };
+          const allSlots = [primarySlot, ...familyMembers];
+          const totalUsed = allSlots.length; // 1 primary + secondary
+          const emptySlots = 6 - totalUsed;
 
-            <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
-              {familyMembers.map((member, i) => {
-                const isActive = activeMemberId === member.memberId || (!activeMemberId && i === 0);
-                return (
-                  <button
-                    key={i}
-                    onClick={() => setProfileModal(member)}
-                    className="flex flex-col items-center gap-1.5 group focus:outline-none"
-                  >
-                    <div className="relative">
-                      <div className={`w-14 h-14 rounded-2xl overflow-hidden bg-gradient-to-br from-teal-100 to-teal-200 transition ${isActive ? "ring-3 ring-teal-500 ring-offset-1" : "ring-2 ring-teal-100 group-hover:ring-teal-300"}`}>
-                        {member.photo
-                          ? <img src={member.photo} alt={member.name} className="w-full h-full object-cover" />
-                          : (
-                            <div className="w-full h-full flex items-center justify-center text-teal-500 font-bold text-xl">
-                              {member.name?.[0] || "?"}
-                            </div>
-                          )
-                        }
-                      </div>
-                      {i === 0 && (
-                        <span className="absolute -top-1 -right-1 w-4 h-4 bg-teal-500 rounded-full flex items-center justify-center">
-                          <svg viewBox="0 0 24 24" fill="white" className="w-2.5 h-2.5">
-                            <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z" />
-                          </svg>
-                        </span>
-                      )}
-                      {isActive && (
-                        <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 bg-teal-600 text-white text-[8px] px-1 py-0.5 rounded-full font-bold whitespace-nowrap">
-                          Active
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs font-semibold text-gray-700 text-center leading-tight truncate w-full">
-                      {member.name?.split(" ")[0] || "—"}
-                    </p>
-                    <p className="text-xs text-gray-400">{member.age} yr</p>
-                  </button>
-                );
-              })}
-
-              {/* Empty slots */}
-              {Array.from({ length: 6 - familyMembers.length }).map((_, i) => (
-                <a key={i} href="/add-member"
-                  className="flex flex-col items-center gap-1.5 group">
-                  <div className="w-14 h-14 rounded-2xl border-2 border-dashed border-gray-200 group-hover:border-teal-400 flex items-center justify-center transition bg-gray-50 group-hover:bg-teal-50">
-                    <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6 text-gray-300 group-hover:text-teal-400 transition" stroke="currentColor" strokeWidth={2}>
+          return (
+            <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-5">
+              <div className="flex justify-between items-center mb-4">
+                <div>
+                  <h3 className="font-bold text-gray-800">{t("dash.members", lang)}</h3>
+                  <p className="text-xs text-gray-400 mt-0.5">{totalUsed} of 6 slots used</p>
+                </div>
+                {emptySlots > 0 && (
+                  <a href="/add-member"
+                    className="bg-teal-50 hover:bg-teal-100 text-teal-700 text-sm font-semibold px-4 py-2 rounded-xl transition flex items-center gap-1">
+                    <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4" stroke="currentColor" strokeWidth={2.5}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
                     </svg>
-                  </div>
-                  <p className="text-xs text-gray-300 group-hover:text-teal-500 transition">Add</p>
-                </a>
-              ))}
+                    Add
+                  </a>
+                )}
+              </div>
+
+              <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
+                {allSlots.map((member, i) => {
+                  const isActive = activeMemberId
+                    ? activeMemberId === member.memberId
+                    : member.isPrimary;
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => setProfileModal(member)}
+                      className="flex flex-col items-center gap-1.5 group focus:outline-none"
+                    >
+                      <div className="relative">
+                        <div className={`w-14 h-14 rounded-2xl overflow-hidden bg-gradient-to-br from-teal-100 to-teal-200 transition ${isActive ? "ring-[3px] ring-teal-500 ring-offset-1" : "ring-2 ring-teal-100 group-hover:ring-teal-300"}`}>
+                          {member.photo
+                            ? <img src={member.photo} alt={member.name} className="w-full h-full object-cover" />
+                            : <div className="w-full h-full flex items-center justify-center text-teal-500 font-bold text-xl">{member.name?.[0] || "?"}</div>
+                          }
+                        </div>
+                        {member.isPrimary && (
+                          <span className="absolute -top-1 -right-1 w-4 h-4 bg-teal-500 rounded-full flex items-center justify-center">
+                            <svg viewBox="0 0 24 24" fill="white" className="w-2.5 h-2.5">
+                              <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z" />
+                            </svg>
+                          </span>
+                        )}
+                        {isActive && (
+                          <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 bg-teal-600 text-white text-[8px] px-1 py-0.5 rounded-full font-bold whitespace-nowrap">
+                            Active
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs font-semibold text-gray-700 text-center leading-tight truncate w-full">
+                        {member.name?.split(" ")[0] || "—"}
+                      </p>
+                      <p className="text-xs text-gray-400">{member.age} yr</p>
+                    </button>
+                  );
+                })}
+
+                {/* Empty slots */}
+                {Array.from({ length: emptySlots }).map((_, i) => (
+                  <a key={i} href="/add-member" className="flex flex-col items-center gap-1.5 group">
+                    <div className="w-14 h-14 rounded-2xl border-2 border-dashed border-gray-200 group-hover:border-teal-400 flex items-center justify-center transition bg-gray-50 group-hover:bg-teal-50">
+                      <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6 text-gray-300 group-hover:text-teal-400 transition" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                      </svg>
+                    </div>
+                    <p className="text-xs text-gray-300 group-hover:text-teal-500 transition">Add</p>
+                  </a>
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* ── Services Grid ── */}
         <div>

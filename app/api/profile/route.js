@@ -28,16 +28,13 @@ export async function GET(request) {
     }
 
     let familyCard = null;
-    let familyMembers = [];
 
     if (user.familyCardId) {
       familyCard = await FamilyCard.findById(user.familyCardId);
-      if (familyCard && familyCard.members?.length > 0) {
-        familyMembers = await User.find({ _id: { $in: familyCard.members } }).select(
-          "_id name age gender photo memberId relationship"
-        );
-      }
     }
+
+    // Family members are embedded subdocs in user.familyMembers[]
+    const familyMembers = user.familyMembers || [];
 
     return NextResponse.json({
       success: true,
