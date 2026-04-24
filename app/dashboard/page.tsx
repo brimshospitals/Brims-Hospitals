@@ -257,12 +257,15 @@ function DashboardContent() {
   const [toast, setToast]             = useState<{ msg: string; ok: boolean } | null>(null);
   const [paymentLoading, setPaymentLoading]   = useState(false);
   const [renewalLoading, setRenewalLoading]   = useState(false);
+  const [activeMemberId, setActiveMemberId]   = useState<string | null>(null);
+  const [profileModal, setProfileModal]       = useState<any | null>(null);
 
   useEffect(() => {
     if (payment === "success") showToast(`🎉 Family Card activate ho gayi! Card: ${cardNumber}`, true);
     else if (payment === "failed") showToast("❌ Payment fail ho gayi. Dobara try karein.", false);
     else if (renewal === "success") showToast(`✅ Card renew ho gayi! Valid till: ${renewalExpiry}`, true);
     else if (renewal === "failed") showToast("❌ Renewal payment fail. Dobara try karein.", false);
+    setActiveMemberId(localStorage.getItem("activeMemberId"));
     fetchProfile();
   }, []);
 
@@ -666,33 +669,45 @@ function DashboardContent() {
             </div>
 
             <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
-              {familyMembers.map((member, i) => (
-                <div key={i} className="flex flex-col items-center gap-1.5">
-                  <div className="relative">
-                    <div className="w-14 h-14 rounded-2xl overflow-hidden bg-gradient-to-br from-teal-100 to-teal-200 ring-2 ring-teal-100">
-                      {member.photo
-                        ? <img src={member.photo} alt={member.name} className="w-full h-full object-cover" />
-                        : (
-                          <div className="w-full h-full flex items-center justify-center text-teal-500 font-bold text-xl">
-                            {member.name?.[0] || "?"}
-                          </div>
-                        )
-                      }
+              {familyMembers.map((member, i) => {
+                const isActive = activeMemberId === member.memberId || (!activeMemberId && i === 0);
+                return (
+                  <button
+                    key={i}
+                    onClick={() => setProfileModal(member)}
+                    className="flex flex-col items-center gap-1.5 group focus:outline-none"
+                  >
+                    <div className="relative">
+                      <div className={`w-14 h-14 rounded-2xl overflow-hidden bg-gradient-to-br from-teal-100 to-teal-200 transition ${isActive ? "ring-3 ring-teal-500 ring-offset-1" : "ring-2 ring-teal-100 group-hover:ring-teal-300"}`}>
+                        {member.photo
+                          ? <img src={member.photo} alt={member.name} className="w-full h-full object-cover" />
+                          : (
+                            <div className="w-full h-full flex items-center justify-center text-teal-500 font-bold text-xl">
+                              {member.name?.[0] || "?"}
+                            </div>
+                          )
+                        }
+                      </div>
+                      {i === 0 && (
+                        <span className="absolute -top-1 -right-1 w-4 h-4 bg-teal-500 rounded-full flex items-center justify-center">
+                          <svg viewBox="0 0 24 24" fill="white" className="w-2.5 h-2.5">
+                            <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z" />
+                          </svg>
+                        </span>
+                      )}
+                      {isActive && (
+                        <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 bg-teal-600 text-white text-[8px] px-1 py-0.5 rounded-full font-bold whitespace-nowrap">
+                          Active
+                        </span>
+                      )}
                     </div>
-                    {i === 0 && (
-                      <span className="absolute -top-1 -right-1 w-4 h-4 bg-teal-500 rounded-full flex items-center justify-center">
-                        <svg viewBox="0 0 24 24" fill="white" className="w-2.5 h-2.5">
-                          <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z" />
-                        </svg>
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs font-semibold text-gray-700 text-center leading-tight truncate w-full text-center">
-                    {member.name?.split(" ")[0] || "—"}
-                  </p>
-                  <p className="text-xs text-gray-400">{member.age} yr</p>
-                </div>
-              ))}
+                    <p className="text-xs font-semibold text-gray-700 text-center leading-tight truncate w-full">
+                      {member.name?.split(" ")[0] || "—"}
+                    </p>
+                    <p className="text-xs text-gray-400">{member.age} yr</p>
+                  </button>
+                );
+              })}
 
               {/* Empty slots */}
               {Array.from({ length: 6 - familyMembers.length }).map((_, i) => (
@@ -816,6 +831,71 @@ function DashboardContent() {
         {/* Safe area for iPhone home indicator */}
         <div className="h-safe-area-inset-bottom" />
       </div>
+
+      {/* ── Member Profile Modal ── */}
+      {profileModal && (
+        <div
+          className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4"
+          onClick={() => setProfileModal(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 relative"
+            onClick={e => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setProfileModal(null)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 text-xl font-bold"
+            >×</button>
+
+            {/* Photo + name */}
+            <div className="flex flex-col items-center mb-5">
+              <div className="w-20 h-20 rounded-2xl overflow-hidden bg-teal-100 ring-4 ring-teal-100 mb-3">
+                {profileModal.photo
+                  ? <img src={profileModal.photo} alt={profileModal.name} className="w-full h-full object-cover" />
+                  : <div className="w-full h-full flex items-center justify-center text-teal-600 font-bold text-3xl">{profileModal.name?.[0]}</div>
+                }
+              </div>
+              <h3 className="text-lg font-bold text-gray-800">{profileModal.name}</h3>
+              <p className="text-xs text-gray-500 mt-0.5 capitalize">
+                {profileModal.isPrimary ? "Primary Member" : profileModal.relationship || "Family Member"}
+              </p>
+              <div className="bg-teal-50 border border-teal-200 rounded-lg px-3 py-1 mt-2">
+                <p className="text-xs font-mono font-bold text-teal-700">{profileModal.memberId}</p>
+              </div>
+            </div>
+
+            {/* Details */}
+            <div className="space-y-2 text-sm mb-5">
+              {[
+                ["Age", profileModal.age ? `${profileModal.age} years` : "—"],
+                ["Gender", profileModal.gender ? (profileModal.gender === "male" ? "Male" : "Female") : "—"],
+                ["Height", profileModal.height ? `${profileModal.height} cm` : "—"],
+                ["Weight", profileModal.weight ? `${profileModal.weight} kg` : "—"],
+                ...(profileModal.alternateMobile ? [["Alt. Mobile", profileModal.alternateMobile]] : []),
+                ...(profileModal.preExistingDiseases?.length ? [["Conditions", profileModal.preExistingDiseases.join(", ")]] : []),
+              ].map(([label, value]) => (
+                <div key={label} className="flex justify-between">
+                  <span className="text-gray-500">{label}</span>
+                  <span className="text-gray-800 font-medium text-right">{value}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Switch active button */}
+            <button
+              onClick={() => {
+                localStorage.setItem("activeMemberId", profileModal.memberId);
+                setActiveMemberId(profileModal.memberId);
+                setProfileModal(null);
+                showToast(`✅ ${profileModal.name} active profile set ho gayi`, true);
+              }}
+              className="w-full bg-teal-600 hover:bg-teal-700 text-white py-3 rounded-xl font-semibold transition text-sm"
+            >
+              ✓ Isko Active Profile Set Karein
+            </button>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
