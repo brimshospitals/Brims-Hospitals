@@ -4,8 +4,18 @@ import User from "../../../models/User";
 
 export const dynamic = "force-dynamic";
 
-function generateMemberId() {
-  return "BRIMS-" + Date.now().toString(36).toUpperCase();
+// Secondary member ID: same base as primary (BRIMSYYMMXXXXX), last digit = slot index 1–5
+function generateSecondaryMemberId(primaryMemberId, slotIndex) {
+  // New format: BRIMSYYMMXXXXX0 → strip last char, append slotIndex
+  if (primaryMemberId && /^BRIMS\d{9}/.test(primaryMemberId)) {
+    return primaryMemberId.slice(0, -1) + String(slotIndex);
+  }
+  // Fallback for legacy IDs (BRIMS-XXXXXX format)
+  const now  = new Date();
+  const YY   = String(now.getFullYear()).slice(-2);
+  const MM   = String(now.getMonth() + 1).padStart(2, "0");
+  const rand = String(Math.floor(10000 + Math.random() * 90000));
+  return `BRIMS${YY}${MM}${rand}${slotIndex}`;
 }
 
 export async function POST(request) {
@@ -59,8 +69,10 @@ export async function POST(request) {
     );
     const canBePregnant = isFemale && effectiveMarital === "married" && ageNum >= 17 && ageNum <= 50;
 
+    // Slot index = current count + 1 (1 for first secondary, up to 5)
+    const slotIndex = (primaryUser.familyMembers || []).length + 1;
     const newMember = {
-      memberId:             generateMemberId(),
+      memberId:             generateSecondaryMemberId(primaryUser.memberId, slotIndex),
       name:                 name.trim(),
       age:                  ageNum,
       gender,

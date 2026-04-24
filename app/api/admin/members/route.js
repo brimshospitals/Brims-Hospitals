@@ -24,9 +24,11 @@ export async function GET(request) {
     if (status === "inactive") query.isActive = false;
     if (search.trim()) {
       query.$or = [
-        { name:     { $regex: search.trim(), $options: "i" } },
-        { mobile:   { $regex: search.trim(), $options: "i" } },
-        { memberId: { $regex: search.trim(), $options: "i" } },
+        { name:                     { $regex: search.trim(), $options: "i" } },
+        { mobile:                   { $regex: search.trim(), $options: "i" } },
+        { memberId:                 { $regex: search.trim(), $options: "i" } },
+        { "familyMembers.name":     { $regex: search.trim(), $options: "i" } },
+        { "familyMembers.memberId": { $regex: search.trim(), $options: "i" } },
       ];
     }
 
@@ -38,8 +40,9 @@ export async function GET(request) {
       .select("-otp -otpExpiry -__v")
       .lean();
 
-    // Attach family card wallet balance
-    const enriched = await Promise.all(
+    // Attach family card wallet balance and expand embedded secondary members
+    const enriched = [];
+    await Promise.all(
       users.map(async (u) => {
         let walletBalance = 0;
         let cardStatus    = null;
@@ -52,7 +55,23 @@ export async function GET(request) {
             cardNumber    = card.cardNumber;
           }
         }
-        return { ...u, walletBalance, cardStatus, cardNumber };
+        // Primary user row
+        enriched.push({ ...u, walletBalance, cardStatus, cardNumber, isPrimary: true });
+        // Secondary members as separate rows
+        (u.familyMembers || []).forEach((fm) => {
+          enriched.push({
+            ...fm,
+            isPrimary:     false,
+            primaryUserId: u._id,
+            primaryName:   u.name,
+            mobile:        u.mobile,
+            walletBalance,
+            cardStatus,
+            cardNumber,
+            familyCardId:  u.familyCardId,
+            role:          u.role,
+          });
+        });
       })
     );
 
@@ -67,10 +86,20 @@ export async function PATCH(request) {
   if (error) return error;
 
   try {
-    const { userId, isActive } = await request.json();
-    if (!userId) return NextResponse.json({ success: false, message: "userId required" }, { status: 400 });
-
+    const { userId, isActive, primaryUserId, memberId } = await request.json();
     await connectDB();
+
+    // Toggle embedded secondary member
+    if (primaryUserId && memberId) {
+      await User.updateOne(
+        { _id: primaryUserId, "familyMembers._id": memberId },
+        { $set: { "familyMembers.$.isActive": isActive } }
+      );
+      return NextResponse.json({ success: true, message: `Member ${isActive ? "activated" : "deactivated"}` });
+    }
+
+    // Toggle primary user
+    if (!userId) return NextResponse.json({ success: false, message: "userId required" }, { status: 400 });
     const user = await User.findByIdAndUpdate(userId, { isActive }, { new: true }).select("name isActive").lean();
     if (!user) return NextResponse.json({ success: false, message: "User not found" }, { status: 404 });
 

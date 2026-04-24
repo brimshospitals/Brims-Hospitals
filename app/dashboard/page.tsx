@@ -346,7 +346,15 @@ function DashboardContent() {
   const expiringSoon = !cardExpired && daysToExpiry !== null && daysToExpiry <= 30;
 
   const isIncomplete = user && (user.age === 0 || user.name === "New User" || !user.name);
-  const displayName  = user?.name && user.name !== "New User" ? user.name : "User";
+  const allMembersFlat = user
+    ? [{ ...user, isPrimary: true, relationship: "self" }, ...familyMembers]
+    : familyMembers;
+  const activeDisplayMember: any = activeMemberId
+    ? (allMembersFlat.find((m: any) => m.memberId === activeMemberId) ?? user)
+    : user;
+  const displayName = activeDisplayMember?.name && activeDisplayMember.name !== "New User"
+    ? activeDisplayMember.name
+    : "User";
 
   if (loading) {
     return (
@@ -397,8 +405,8 @@ function DashboardContent() {
             {/* Photo */}
             <div className="relative flex-shrink-0">
               <div className="w-20 h-20 rounded-2xl overflow-hidden ring-4 ring-white/30 bg-white/20">
-                {user?.photo
-                  ? <img src={user.photo} alt={displayName} className="w-full h-full object-cover" />
+                {activeDisplayMember?.photo
+                  ? <img src={activeDisplayMember.photo} alt={displayName} className="w-full h-full object-cover" />
                   : (
                     <div className="w-full h-full flex items-center justify-center">
                       <svg viewBox="0 0 24 24" fill="none" className="w-10 h-10 text-white/60" stroke="currentColor" strokeWidth={1.5}>
@@ -415,13 +423,18 @@ function DashboardContent() {
 
             {/* Name & details */}
             <div className="flex-1 min-w-0">
-              <p className="text-teal-200 text-xs font-medium mb-0.5">{t("dash.hello", lang)} 🙏</p>
+              <p className="text-teal-200 text-xs font-medium mb-0.5">
+                {activeDisplayMember?.isPrimary === false
+                  ? <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] mr-1 capitalize">{activeDisplayMember.relationship || "Member"}</span>
+                  : null}
+                {t("dash.hello", lang)} 🙏
+              </p>
               <h1 className="text-white text-2xl font-bold leading-tight truncate">{displayName}</h1>
               <div className="flex items-center gap-3 mt-1.5 flex-wrap">
                 <span className="text-teal-200 text-xs">📱 +91 {user?.mobile}</span>
-                {user?.memberId && (
+                {activeDisplayMember?.memberId && (
                   <span className="bg-white/15 text-white text-xs px-2 py-0.5 rounded-full font-mono">
-                    {user.memberId}
+                    {activeDisplayMember.memberId}
                   </span>
                 )}
               </div>

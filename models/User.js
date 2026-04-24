@@ -1,8 +1,13 @@
 import mongoose from "mongoose";
 
-// Unique Member ID generator helper
+// Unique Member ID generator helper — format: BRIMSYYMMXXXXX0
+// YY=year, MM=month, XXXXX=5 random digits, last digit 0 for primary
 function generateMemberId() {
-  return "BRIMS-" + Date.now().toString(36).toUpperCase();
+  const now = new Date();
+  const YY   = String(now.getFullYear()).slice(-2);
+  const MM   = String(now.getMonth() + 1).padStart(2, "0");
+  const rand = String(Math.floor(10000 + Math.random() * 90000));
+  return `BRIMS${YY}${MM}${rand}0`;
 }
 
 // Health Record Schema (har member ka alag)

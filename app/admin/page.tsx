@@ -767,9 +767,13 @@ function MembersTab({ onOpenPatient }: { onOpenPatient: (id: string) => void }) 
 
   useEffect(() => { fetch_(1); setPage(1); }, [search, status]);
 
-  async function toggleActive(userId: string, current: boolean) {
-    setToggling(userId);
-    await fetch("/api/admin/members", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId, isActive: !current }) });
+  async function toggleActive(m: any) {
+    const key = String(m._id);
+    setToggling(key);
+    const body = m.isPrimary === false
+      ? { primaryUserId: m.primaryUserId, memberId: m._id, isActive: !m.isActive }
+      : { userId: m._id, isActive: !m.isActive };
+    await fetch("/api/admin/members", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     await fetch_(page);
     setToggling(null);
   }
@@ -800,12 +804,18 @@ function MembersTab({ onOpenPatient }: { onOpenPatient: (id: string) => void }) 
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {members.map((m) => (
-                  <tr key={m._id} className="hover:bg-gray-50 transition">
+                {members.map((m: any) => (
+                  <tr key={String(m._id)} className={`hover:bg-gray-50 transition ${m.isPrimary === false ? "bg-teal-50/30" : ""}`}>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         {m.photo ? <img src={m.photo} alt={m.name} className="w-8 h-8 rounded-lg object-cover flex-shrink-0" /> : <div className="w-8 h-8 rounded-lg bg-teal-100 flex items-center justify-center text-teal-700 font-bold text-sm flex-shrink-0">{m.name?.[0]}</div>}
-                        <div><p className="font-semibold text-gray-800">{m.name}</p><p className="text-xs text-gray-400">{m.age} yrs · {m.gender}</p></div>
+                        <div>
+                          <p className="font-semibold text-gray-800 flex items-center gap-1.5">
+                            {m.name}
+                            {m.isPrimary === false && <span className="text-[9px] bg-teal-100 text-teal-700 px-1.5 py-0.5 rounded-full font-bold capitalize">{m.relationship || "Secondary"}</span>}
+                          </p>
+                          <p className="text-xs text-gray-400">{m.age} yrs · {m.gender}{m.isPrimary === false ? ` · of ${m.primaryName}` : ""}</p>
+                        </div>
                       </div>
                     </td>
                     <td className="px-4 py-3 text-gray-600">📱 {m.mobile}</td>
@@ -820,10 +830,10 @@ function MembersTab({ onOpenPatient }: { onOpenPatient: (id: string) => void }) 
                       ) : <span className="text-xs text-gray-300">None</span>}
                     </td>
                     <td className="px-4 py-3">
-                      <Toggle value={m.isActive} onChange={() => toggleActive(m._id, m.isActive)} disabled={toggling === m._id} />
+                      <Toggle value={m.isActive} onChange={() => toggleActive(m)} disabled={toggling === String(m._id)} />
                     </td>
                     <td className="px-4 py-3">
-                      <button onClick={() => onOpenPatient(m._id)} className="text-xs bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-200 px-2.5 py-1 rounded-lg font-semibold transition">
+                      <button onClick={() => onOpenPatient(m.isPrimary === false ? m.primaryUserId : m._id)} className="text-xs bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-200 px-2.5 py-1 rounded-lg font-semibold transition">
                         👁 View
                       </button>
                     </td>
