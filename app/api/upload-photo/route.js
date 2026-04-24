@@ -3,13 +3,14 @@ import { v2 as cloudinary } from "cloudinary";
 
 export const dynamic = "force-dynamic";
 
-cloudinary.config({
-  cloud_name: process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || process.env.CLOUDINARY_CLOUD_NAME,
-  api_key:    process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
-
 export async function POST(request) {
+  // Config inside handler so env vars are always available in serverless
+  cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME || process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || "de1yqlwub",
+    api_key:    process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+  });
+
   try {
     const formData = await request.formData();
     const file = formData.get("photo") || formData.get("file");
