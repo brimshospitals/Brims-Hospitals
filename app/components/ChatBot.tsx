@@ -151,11 +151,25 @@ const SLOTS = [
   "12:00 PM","2:00 PM","3:00 PM","4:00 PM","5:00 PM",
 ];
 
-const SUGGESTED = [
-  "OPD appointment kaise book karein?",
-  "Brims Gold Card kya hai?",
-  "Blood test ke liye kya karna hoga?",
-  "Surgery package ka price kya hai?",
+const SUGGESTED_BOOKING = [
+  "📋 OPD appointment kaise book karein?",
+  "🧪 Lab test ghar par kaise hoga?",
+  "🔬 Surgery package ka price kya hai?",
+  "💳 Brims Health Card kaise milega?",
+];
+
+const SUGGESTED_HEALTH = [
+  "🌡️ Bukhar mein kya karna chahiye?",
+  "❤️ BP high ho to kya karein?",
+  "🩸 Diabetes control kaise karein?",
+  "🤰 Pregnancy mein kya dhyan rakhein?",
+];
+
+const SUGGESTED_PLATFORM = [
+  "💳 Brims Health Card kya hai aur iske fayde?",
+  "👨‍👩‍👧‍👦 Family Card mein kitne members ho sakte hain?",
+  "💰 Brims Wallet mein paise kaise add karein?",
+  "🏥 Nearest hospital kaise dhundein?",
 ];
 
 function linkify(text: string) {
@@ -378,7 +392,7 @@ export default function ChatBot() {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-white font-bold text-sm">Brims Assistant</p>
-              <p className="text-teal-200 text-xs">Booking + Health Help · 24×7</p>
+              <p className="text-teal-200 text-xs">Booking · Health · Platform Help · 24×7</p>
             </div>
             <div className="flex items-center gap-2">
               {view === "booking" && (
@@ -937,18 +951,47 @@ export default function ChatBot() {
                       <div className="bg-gray-100 rounded-2xl rounded-tl-none px-3 py-2.5 max-w-[85%]">
                         <p className="text-sm text-gray-800">
                           Namaste! 🙏 Main <strong>Brims Assistant</strong> hoon.<br />
-                          OPD booking ke liye <strong>"📋 OPD Book"</strong> dabayein, ya koi sawaal poochein!
+                          Booking karna ho, health sawaal poochna ho, ya platform ke baare mein jaanna ho — main har cheez mein madad karunga!
                         </p>
                       </div>
                     </div>
-                    <div className="pl-9 space-y-1.5">
-                      <p className="text-[11px] text-gray-400 font-semibold">Aap pooch sakte hain:</p>
-                      {SUGGESTED.map(s => (
-                        <button key={s} onClick={() => sendChat(s)}
-                          className="block w-full text-left text-xs text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-xl px-3 py-2 transition font-medium">
-                          {s}
-                        </button>
-                      ))}
+                    <div className="pl-9 space-y-3">
+                      {/* Booking questions */}
+                      <div>
+                        <p className="text-[10px] text-teal-500 font-bold uppercase tracking-wider mb-1.5">📋 Booking & Services</p>
+                        <div className="space-y-1.5">
+                          {SUGGESTED_BOOKING.map(s => (
+                            <button key={s} onClick={() => sendChat(s)}
+                              className="block w-full text-left text-xs text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-xl px-3 py-2 transition font-medium">
+                              {s}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      {/* Health questions */}
+                      <div>
+                        <p className="text-[10px] text-orange-500 font-bold uppercase tracking-wider mb-1.5">🩺 Health Sawaal</p>
+                        <div className="space-y-1.5">
+                          {SUGGESTED_HEALTH.map(s => (
+                            <button key={s} onClick={() => sendChat(s)}
+                              className="block w-full text-left text-xs text-orange-700 bg-orange-50 hover:bg-orange-100 border border-orange-200 rounded-xl px-3 py-2 transition font-medium">
+                              {s}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      {/* Platform questions */}
+                      <div>
+                        <p className="text-[10px] text-purple-500 font-bold uppercase tracking-wider mb-1.5">💳 Platform & Card</p>
+                        <div className="space-y-1.5">
+                          {SUGGESTED_PLATFORM.map(s => (
+                            <button key={s} onClick={() => sendChat(s)}
+                              className="block w-full text-left text-xs text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-xl px-3 py-2 transition font-medium">
+                              {s}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -1001,7 +1044,7 @@ export default function ChatBot() {
               </div>
 
               <div className="px-3 pb-2 flex items-center justify-between">
-                <p className="text-[10px] text-gray-300">Powered by Gemini AI</p>
+                <p className="text-[10px] text-gray-300">Powered by Gemini · Health + Booking Help</p>
                 {messages.length > 0 && (
                   <button onClick={() => setMessages([])} className="text-[10px] text-gray-300 hover:text-gray-500 transition">Clear chat</button>
                 )}
