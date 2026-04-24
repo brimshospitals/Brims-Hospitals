@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import Header from "../components/header";
 import PatientSelector, { SelectedPatient } from "../components/PatientSelector";
+import { BIHAR_DISTRICTS } from "../../lib/biharDistricts";
 
 const ROOM_TYPES = [
   { type: "General",   icon: "🛏️",  desc: "Shared ward — 4-6 beds",   multiplier: 1.0  },
@@ -16,14 +17,7 @@ const DEPARTMENTS = [
   "Pediatrics", "Psychiatry", "Dermatology", "ENT", "Ophthalmology",
 ];
 
-const BIHAR_DISTRICTS = [
-  "Patna","Gaya","Muzaffarpur","Bhagalpur","Darbhanga","Nalanda","Saran",
-  "Vaishali","Siwan","Gopalganj","Motihari","Samastipur","Begusarai","Munger",
-  "Ara","Buxar","Kaimur","Rohtas","Aurangabad","Jehanabad","Nawada","Sheikhpura",
-  "Lakhisarai","Jamui","Banka","Khagaria","Supaul","Madhubani","Sitamarhi",
-  "Sheohar","Muzaffarpur","Hajipur","Chapra","Motihari","Bettiah","Saharsa",
-  "Madhepura","Kishanganj","Araria","Purnia","Katihar","Bhagalpur",
-];
+// BIHAR_DISTRICTS imported from lib/biharDistricts
 
 const STAY_DURATIONS = [
   "1 din", "2-3 din", "4-5 din", "6-7 din", "1-2 hafta", "2-4 hafta", "1 mahine se zyada",

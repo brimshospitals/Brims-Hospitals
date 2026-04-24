@@ -2,16 +2,14 @@
 import { useState, useEffect } from "react";
 import Header from "../components/header";
 import PatientSelector, { SelectedPatient } from "../components/PatientSelector";
+import { BIHAR_DISTRICTS } from "../../lib/biharDistricts";
 
 const categories = [
   "General Surgery", "Laparoscopic Surgery", "Cardiac Surgery",
   "Orthopedic Surgery", "Gynecology", "Neurosurgery", "Urology",
 ];
 
-const biharDistricts = [
-  "Patna", "Saran", "Siwan", "Gopalganj", "Gaya", "Muzaffarpur",
-  "Bhagalpur", "Nalanda", "Vaishali", "Darbhanga",
-];
+const biharDistricts = BIHAR_DISTRICTS;
 
 export default function SurgeryPackagesPage() {
   const [packages, setPackages] = useState<any[]>([]);

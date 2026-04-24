@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { BIHAR_DISTRICTS } from "../../lib/biharDistricts";
 
 type ChatMsg = { role: "user" | "assistant"; content: string };
 
@@ -39,13 +40,7 @@ const DEFAULT_BOOKING: BookingState = {
   selectedDoctor: null, date: "", slot: "", bookingId: "", error: "",
 };
 
-const BIHAR_DISTRICTS = [
-  "Araria","Arwal","Aurangabad","Banka","Begusarai","Bhagalpur","Bhojpur","Buxar",
-  "Darbhanga","East Champaran","Gaya","Gopalganj","Jamui","Jehanabad","Kaimur",
-  "Katihar","Khagaria","Kishanganj","Lakhisarai","Madhepura","Madhubani","Munger",
-  "Muzaffarpur","Nalanda","Nawada","Patna","Purnia","Rohtas","Saharsa","Samastipur",
-  "Saran","Sheikhpura","Sheohar","Sitamarhi","Siwan","Supaul","Vaishali","West Champaran",
-];
+// BIHAR_DISTRICTS imported from lib/biharDistricts
 
 // Department-wise symptom library
 const DEPT_SYMPTOMS: Record<string, { icon: string; label: string; symptoms: string[] }> = {

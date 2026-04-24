@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import Header from "../components/header";
+import { BIHAR_DISTRICTS } from "../../lib/biharDistricts";
 
 const departments = [
   "General Medicine", "Cardiology", "Orthopedics", "Gynecology",
@@ -8,10 +9,7 @@ const departments = [
   "Dentistry", "Psychiatry", "Urology", "Nephrology", "Oncology",
 ];
 
-const biharDistricts = [
-  "Patna", "Saran", "Siwan", "Gopalganj", "Gaya", "Muzaffarpur",
-  "Bhagalpur", "Nalanda", "Vaishali", "Darbhanga", "Sitamarhi", "Purnia", "Begusarai",
-];
+const biharDistricts = BIHAR_DISTRICTS;
 
 export default function DoctorsSearchPage() {
   const [doctors, setDoctors] = useState<any[]>([]);

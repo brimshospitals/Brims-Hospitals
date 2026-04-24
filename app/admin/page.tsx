@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 import DoctorFullForm from "@/app/components/DoctorFullForm";
 import LabTestFullForm from "@/app/components/LabTestFullForm";
 import BookingStageTimeline from "@/app/components/BookingStageTimeline";
+import { BIHAR_DISTRICTS } from "@/lib/biharDistricts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Tab = "overview" | "members" | "hospitals" | "doctors" | "packages" | "labtests" | "bookings" | "staff" | "promo" | "reports" | "accounting" | "ambulance" | "articles" | "notifications" | "coordinators";
@@ -4001,7 +4002,7 @@ function CoordinatorsTab() {
 
   useEffect(() => { fetchCoordinators(); }, []);
 
-  const BIHAR_DISTRICTS = ["Araria","Arwal","Aurangabad","Banka","Begusarai","Bhagalpur","Bhojpur","Buxar","Darbhanga","East Champaran","Gaya","Gopalganj","Jamui","Jehanabad","Kaimur","Katihar","Khagaria","Kishanganj","Lakhisarai","Madhepura","Madhubani","Munger","Muzaffarpur","Nalanda","Nawada","Patna","Purnia","Rohtas","Saharsa","Samastipur","Saran","Sheikhpura","Sheohar","Sitamarhi","Siwan","Supaul","Vaishali","West Champaran"];
+  // BIHAR_DISTRICTS imported from lib/biharDistricts
 
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-5">

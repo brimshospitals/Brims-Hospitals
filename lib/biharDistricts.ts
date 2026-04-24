@@ -188,4 +188,12 @@ const biharDistricts: Record<string, string[]> = {
   ],
 };
 
+// Sorted array of all 38 district names — use wherever only district dropdown is needed
+export const BIHAR_DISTRICTS: string[] = Object.keys(biharDistricts).sort();
+
+// Get prakhands for a district (safe — returns [] if not found)
+export function getPrakhands(district: string): string[] {
+  return biharDistricts[district] || [];
+}
+
 export default biharDistricts;

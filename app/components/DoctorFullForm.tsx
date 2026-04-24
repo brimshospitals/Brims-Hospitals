@@ -1,5 +1,6 @@
 "use client";
 import { useState, useRef } from "react";
+import { BIHAR_DISTRICTS } from "../../lib/biharDistricts";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -11,13 +12,7 @@ const DEPARTMENTS = [
   "Endocrinology","Hematology","Plastic Surgery","Neurosurgery","Other",
 ];
 
-const BIHAR_DISTRICTS = [
-  "Patna","Gaya","Bhagalpur","Muzaffarpur","Darbhanga","Ara (Bhojpur)","Buxar","Chapra (Saran)",
-  "Sitamarhi","Madhubani","Supaul","Araria","Kishanganj","Purnia","Katihar","Madhepura",
-  "Saharsa","Vaishali","Nalanda","Nawada","Jehanabad","Aurangabad","Rohtas","Kaimur",
-  "Bhabua","Gopalganj","Siwan","Begusarai","Khagaria","Sheohar","West Champaran",
-  "East Champaran","Sheikhpura","Lakhisarai","Jamui","Banka","Munger","Samastipur","Other",
-];
+// BIHAR_DISTRICTS imported from lib/biharDistricts
 
 const DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
 const SHORT_DAYS: Record<string,string> = {

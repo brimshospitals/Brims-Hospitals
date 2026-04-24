@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import DoctorFullForm from "@/app/components/DoctorFullForm";
 import LabTestFullForm from "@/app/components/LabTestFullForm";
+import { BIHAR_DISTRICTS } from "@/lib/biharDistricts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Tab = "overview" | "bookings" | "doctors" | "lab" | "surgery" | "reports" | "labManage";
@@ -45,7 +46,7 @@ const PRE_SURGERY_TESTS = ["Blood Test (CBC)","LFT (Liver Function)","KFT (Kidne
 const ROOM_TYPES = ["General Room","Semi-Private Room","Private Room","Deluxe Room","Suite"];
 const HOSPITAL_TYPES = ["Single Specialist","Multi Specialist","Super Specialist","Clinic","Diagnostic Lab","Nursing Home"];
 const REPORT_CATEGORIES = ["Lab","Radiology","OPD","Surgery","Prescription","Other"];
-const BIHAR_DISTRICTS = ["Patna","Gaya","Bhagalpur","Muzaffarpur","Purnia","Darbhanga","Arrah","Begusarai","Katihar","Munger","Chapra","Saharsa","Sasaram","Hajipur","Siwan","Nalanda","Samastipur","Biharsharif","Motihari","Jehanabad","Aurangabad","Buxar","Nawada","Jamui","Lakhisarai","Sheikhpura","Khagaria","Supaul","Sitamarhi","Sheohar","Araria","Kishanganj","Forbesganj","Madhubani","Darbhanga","Other"];
+// BIHAR_DISTRICTS imported from lib/biharDistricts
 
 const hInp = "w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 transition";
 const hSel = "w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 bg-white transition";

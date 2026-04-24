@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import Header from "../components/header";
+import { BIHAR_DISTRICTS } from "../../lib/biharDistricts";
 
 const VEHICLE_TYPES = [
   {
@@ -41,13 +42,7 @@ const VEHICLE_TYPES = [
   },
 ];
 
-const BIHAR_DISTRICTS = [
-  "Patna","Gaya","Muzaffarpur","Bhagalpur","Darbhanga","Nalanda","Saran",
-  "Vaishali","Siwan","Gopalganj","Motihari","Samastipur","Begusarai","Munger",
-  "Ara","Buxar","Kaimur","Rohtas","Aurangabad","Jehanabad","Nawada","Purnia",
-  "Katihar","Kishanganj","Araria","Supaul","Madhubani","Sitamarhi","Sheohar",
-  "Saharsa","Madhepura","Khagaria","Jamui","Banka","Lakhisarai","Sheikhpura",
-];
+// BIHAR_DISTRICTS imported from lib/biharDistricts
 
 const EMERGENCY_TYPES = [
   "Heart Attack / Chest Pain",

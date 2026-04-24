@@ -1,16 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import Header from "../components/header";
-
-const DISTRICTS = [
-  "Patna","Saran","Siwan","Gopalganj","Gaya","Muzaffarpur",
-  "Bhagalpur","Nalanda","Vaishali","Darbhanga","Sitamarhi",
-  "Purnia","Begusarai","Araria","Arwal","Aurangabad","Banka",
-  "Buxar","East Champaran","West Champaran","Jamui","Jehanabad",
-  "Kaimur","Katihar","Khagaria","Kishanganj","Lakhisarai","Madhepura",
-  "Madhubani","Munger","Nawada","Rohtas","Saharsa","Samastipur",
-  "Sheikhpura","Sheohar","Supaul",
-];
+import { BIHAR_DISTRICTS as DISTRICTS } from "../../lib/biharDistricts";
 
 const HOSPITAL_TYPES = ["Single Specialist", "Multi Specialist", "Super Specialist"];
 

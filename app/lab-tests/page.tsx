@@ -2,16 +2,14 @@
 import { useState, useEffect } from "react";
 import Header from "../components/header";
 import PatientSelector, { SelectedPatient } from "../components/PatientSelector";
+import { BIHAR_DISTRICTS } from "../../lib/biharDistricts";
 
 const categories = [
   "Blood Test", "Urine Test", "Stool Test", "Imaging",
   "ECG", "X-Ray", "Ultrasound", "MRI", "CT Scan", "Pathology",
 ];
 
-const biharDistricts = [
-  "Patna", "Saran", "Siwan", "Gopalganj", "Gaya", "Muzaffarpur",
-  "Bhagalpur", "Nalanda", "Vaishali", "Darbhanga",
-];
+const biharDistricts = BIHAR_DISTRICTS;
 
 const timeSlots = [
   "7:00 AM - 9:00 AM",

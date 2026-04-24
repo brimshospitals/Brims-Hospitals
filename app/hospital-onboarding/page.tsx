@@ -1,14 +1,7 @@
 "use client";
 import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
-
-const BIHAR_DISTRICTS = [
-  "Araria","Arwal","Aurangabad","Banka","Begusarai","Bhagalpur","Bhojpur","Buxar",
-  "Darbhanga","East Champaran","Gaya","Gopalganj","Jamui","Jehanabad","Kaimur","Katihar",
-  "Khagaria","Kishanganj","Lakhisarai","Madhepura","Madhubani","Munger","Muzaffarpur",
-  "Nalanda","Nawada","Patna","Purnia","Rohtas","Saharsa","Samastipur","Saran","Sheikhpura",
-  "Sheohar","Sitamarhi","Siwan","Supaul","Vaishali","West Champaran",
-];
+import { BIHAR_DISTRICTS } from "../../lib/biharDistricts";
 
 const DEPARTMENTS = [
   "General Medicine","General Surgery","Pediatrics","Gynecology & Obstetrics",

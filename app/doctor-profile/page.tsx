@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { BIHAR_DISTRICTS } from "../../lib/biharDistricts";
 
 const DEPARTMENTS = [
   "General Medicine","General Surgery","Pediatrics","Gynecology & Obstetrics",
@@ -8,13 +9,7 @@ const DEPARTMENTS = [
   "Psychiatry","Radiology","Pathology","Anesthesiology","Dentistry","Physiotherapy","Other",
 ];
 
-const BIHAR_DISTRICTS = [
-  "Patna","Gaya","Bhagalpur","Muzaffarpur","Darbhanga","Ara (Bhojpur)","Buxar","Chapra (Saran)",
-  "Sitamarhi","Madhubani","Supaul","Araria","Kishanganj","Purnia","Katihar","Madhepura",
-  "Saharsa","Vaishali","Nalanda","Nawada","Jehanabad","Aurangabad","Rohtas","Kaimur",
-  "Bhabua","Gopalganj","Siwan","Begusarai","Khagaria","Sheohar","West Champaran",
-  "East Champaran","Sheikhpura","Lakhisarai","Jamui","Banka","Munger","Samastipur","Other",
-];
+// BIHAR_DISTRICTS imported from lib/biharDistricts
 
 const DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
 
