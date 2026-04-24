@@ -3,22 +3,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Header from "../components/header";
 import ImageCropper from "../components/ImageCropper";
-
-const biharDistricts: Record<string, string[]> = {
-  Patna: ["Patna Sadar","Danapur","Phulwari","Masaurhi","Paliganj","Bikram","Naubatpur","Dulhin Bazar","Punpun"],
-  Saran: ["Chhapra","Garkha","Marhaura","Manjhi","Parsa","Amnour","Dighwara","Sonepur","Revelganj","Mashrakh"],
-  Siwan: ["Siwan Sadar","Darauli","Raghunathpur","Hussainganj","Maharajganj","Basantpur","Mairwa","Barhariya"],
-  Gopalganj: ["Gopalganj Sadar","Kuchaikote","Barauli","Panchdeori","Bhorey","Thawe","Uchkagaon","Vijaypur"],
-  Gaya: ["Gaya Sadar","Bodh Gaya","Sherghati","Imamganj","Barachatti","Gurua"],
-  Muzaffarpur: ["Muzaffarpur Sadar","Kanti","Bochahan","Sakra","Kurhani","Motipur"],
-  Bhagalpur: ["Bhagalpur Sadar","Jagdishpur","Nathnagar","Sabour"],
-  Nalanda: ["Bihar Sharif","Rajgir","Islampur","Hilsa","Asthawan"],
-  Vaishali: ["Hajipur","Mahua","Lalganj","Vaishali","Raghopur"],
-  Darbhanga: ["Darbhanga Sadar","Benipur","Hayaghat","Baheri"],
-  Sitamarhi: ["Sitamarhi Sadar","Pupri","Riga","Bajpatti"],
-  Purnia: ["Purnia Sadar","Kasba","Bhawanipur","Dhamdaha"],
-  Begusarai: ["Begusarai Sadar","Barauni","Teghra","Matihani"],
-};
+import biharDistricts from "../../lib/biharDistricts";
 
 const diseases = ["HTN","Diabetes","CVD","CKD","Thyroid Disorder","Joint Pain","Pregnancy"];
 
