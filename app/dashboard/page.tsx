@@ -303,6 +303,21 @@ function DashboardContent() {
     setPaymentLoading(false);
   }
 
+  async function handleFreeActivate() {
+    setPaymentLoading(true);
+    try {
+      const res  = await fetch("/api/activate-card-free", { method: "POST" });
+      const data = await res.json();
+      if (data.success) {
+        showToast(`🎉 Card activated! (Test Mode) Card: ${data.cardNumber}`, true);
+        setTimeout(() => window.location.reload(), 1200);
+      } else {
+        showToast(data.message || "Error", false);
+      }
+    } catch { showToast("Network error.", false); }
+    setPaymentLoading(false);
+  }
+
   async function handleRenewCard() {
     setRenewalLoading(true);
     try {
@@ -614,6 +629,19 @@ function DashboardContent() {
                 )}
               </button>
               <p className="text-center text-xs text-gray-400 mt-2">Secure payment · PhonePe / UPI / Card</p>
+
+              {/* Test mode free activation */}
+              {process.env.NEXT_PUBLIC_SHOW_OTP === "true" && (
+                <div className="mt-3 border-t border-dashed border-amber-200 pt-3">
+                  <p className="text-center text-[10px] text-amber-500 font-bold mb-2">⚠️ TESTING MODE ONLY</p>
+                  <button
+                    onClick={handleFreeActivate}
+                    disabled={paymentLoading}
+                    className="w-full border-2 border-amber-400 bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold py-2.5 rounded-xl transition text-sm disabled:opacity-50">
+                    🧪 Free Activate (Test) — Bina Payment
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}

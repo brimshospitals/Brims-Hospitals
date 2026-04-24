@@ -46,12 +46,12 @@ export default function ReferralPage() {
     const msg = encodeURIComponent(
       `🏥 *Brims Hospitals* pe register karein aur apna OPD, Lab Test, Surgery sab ek jagah book karein!\n\n` +
       `Mere referral code se register karo — dono ko ₹50 wallet cashback milega! 🎉\n\n` +
-      `👉 ${data.shareLink || `https://brims-hospitals.vercel.app/login?ref=${data.referralCode}`}`
+      `👉 ${data.shareLink || `https://brims-hospitals-app.vercel.app/login?ref=${data.referralCode}`}`
     );
     window.open(`https://wa.me/?text=${msg}`, "_blank");
   }
 
-  const shareLink = data?.shareLink || (data?.referralCode ? `https://brims-hospitals.vercel.app/login?ref=${data.referralCode}` : "");
+  const shareLink = data?.shareLink || (data?.referralCode ? `https://brims-hospitals-app.vercel.app/login?ref=${data.referralCode}` : "");
 
   if (loading) {
     return (

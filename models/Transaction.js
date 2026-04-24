@@ -9,7 +9,8 @@ const transactionSchema = new mongoose.Schema({
   familyCardId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "FamilyCard",
-    required: true,
+    required: false,
+    default: null,
   },
   type: {
     type: String,
