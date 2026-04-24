@@ -5,7 +5,7 @@ import { checkOtpLimit } from "../../../lib/rateLimit";
 
 export const dynamic = "force-dynamic";
 
-const IS_DEV = process.env.NODE_ENV !== "production";
+const IS_DEV = process.env.NODE_ENV !== "production" || process.env.SHOW_OTP === "true";
 
 function generateOTP() {
   return Math.floor(100000 + Math.random() * 900000).toString();
