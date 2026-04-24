@@ -73,8 +73,9 @@ export default function RegisterClient() {
     }
   }
 
-  const showMarital = form.gender === "female" && parseInt(form.age) >= 18;
-  const showPregnancy = showMarital && form.maritalStatus === "married";
+  const age = parseInt(form.age) || 0;
+  const showMarital   = form.gender === "female" && age >= 18;
+  const showPregnancy = form.gender === "female" && form.maritalStatus === "married" && age >= 17 && age <= 50;
 
   async function handleSubmit() {
     setError("");

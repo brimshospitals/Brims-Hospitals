@@ -27,6 +27,8 @@ export default function SurgeryPackagesPage() {
   const [booking, setBooking] = useState(false);
   const [message, setMessage] = useState("");
   const [isPartialBooking, setIsPartialBooking] = useState(false);
+  const [prevReportUrl, setPrevReportUrl] = useState("");
+  const [reportUploading, setReportUploading] = useState(false);
 
   useEffect(() => {
     fetchPackages();
@@ -74,6 +76,21 @@ export default function SurgeryPackagesPage() {
     return room?.extraCharge || 0;
   }
 
+  async function handleReportUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setReportUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("photo", file);
+      const res  = await fetch("/api/upload-photo", { method: "POST", body: formData });
+      const data = await res.json();
+      if (data.success) setPrevReportUrl(data.url);
+      else setMessage("❌ Report upload fail: " + data.message);
+    } catch { setMessage("❌ Report upload error"); }
+    setReportUploading(false);
+  }
+
   async function handleBooking() {
     if (!selectedPackage) return;
     if (!selectedPatient) { setMessage("❌ Patient select karein"); return; }
@@ -103,6 +120,7 @@ export default function SurgeryPackagesPage() {
           familyCardId,
           isPartialBooking,
           depositAmount: isPartialBooking ? 1000 : undefined,
+          previousReportUrl: prevReportUrl || undefined,
         }),
       });
       const data = await res.json();
@@ -110,6 +128,7 @@ export default function SurgeryPackagesPage() {
         setMessage(`✅ Booking request submit ho gayi! Booking ID: ${data.booking.bookingId}. Hamari team 24 hours mein contact karegi.`);
         setSelectedPackage(null);
         setSelectedPatient(null);
+        setPrevReportUrl("");
       } else {
         setMessage("❌ " + data.message);
       }
@@ -379,6 +398,30 @@ export default function SurgeryPackagesPage() {
                       <p>• Hamari team 24 ghante mein date confirm karegi</p>
                     </div>
                   )}
+                </div>
+
+                {/* Previous Reports Upload */}
+                <div className="mb-4 border border-blue-200 rounded-xl p-4 bg-blue-50">
+                  <p className="text-sm font-bold text-blue-800 mb-1">📋 Purani Report Upload Karein (Optional)</p>
+                  <p className="text-xs text-blue-600 mb-3">Agar pehle se koi report / prescription hai to upload karein — doctor ko samajhne mein asaani hogi</p>
+                  {prevReportUrl ? (
+                    <div className="flex items-center gap-3">
+                      <span className="text-green-700 text-sm font-semibold">✅ Report uploaded!</span>
+                      <a href={prevReportUrl} target="_blank" rel="noreferrer" className="text-xs text-blue-600 underline">View</a>
+                      <button onClick={() => setPrevReportUrl("")} className="text-xs text-red-500 underline">Remove</button>
+                    </div>
+                  ) : reportUploading ? (
+                    <div className="flex items-center gap-2 text-blue-600 text-sm">
+                      <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                      Uploading...
+                    </div>
+                  ) : (
+                    <label className="cursor-pointer inline-flex items-center gap-2 bg-white border-2 border-blue-300 hover:border-blue-400 text-blue-700 text-sm font-semibold px-4 py-2 rounded-xl transition">
+                      📎 File Choose Karein
+                      <input type="file" accept="image/*,.pdf" onChange={handleReportUpload} className="hidden" />
+                    </label>
+                  )}
+                  <p className="text-[10px] text-blue-400 mt-1">Image ya PDF · Max 10MB</p>
                 </div>
 
                 {/* Total Price */}
