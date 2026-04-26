@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 // GET — list all primary users registered by this coordinator
 export async function GET(request) {
-  const { error, session } = await requireAuth(request, ["coordinator", "admin"]);
+  const { error, session } = await requireAuth(request, ["coordinator", "member", "admin"]);
   if (error) return error;
 
   try {
@@ -30,7 +30,7 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
-  const { error, session } = await requireAuth(request, ["coordinator", "admin"]);
+  const { error, session } = await requireAuth(request, ["coordinator", "member", "admin"]);
   if (error) return error;
 
   const body = await request.json();

@@ -71,11 +71,14 @@ export async function POST(request) {
 
     const coordinatorId = await generateCoordinatorId();
 
-    // Create User account for login (OTP-based)
+    // Create User account for login (OTP-based, same mobile = same login)
     let user = await User.findOne({ mobile: mobile.trim() });
     if (user) {
-      // Upgrade existing user to coordinator
-      await User.findByIdAndUpdate(user._id, { role: "coordinator" });
+      // Keep "member" role if they already have membership — coordinator features added via coordinatorId link
+      // Only set "coordinator" role for users who have no membership yet
+      const newRole = (user.role === "member") ? "member" : "coordinator";
+      await User.findByIdAndUpdate(user._id, { role: newRole });
+      user.role = newRole;
     } else {
       user = await User.create({
         mobile: mobile.trim(),

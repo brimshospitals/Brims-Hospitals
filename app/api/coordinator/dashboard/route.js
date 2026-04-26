@@ -7,7 +7,7 @@ import { requireAuth } from "../../../../lib/auth";
 export const dynamic = "force-dynamic";
 
 export async function GET(request) {
-  const { error, session } = await requireAuth(request, ["coordinator", "admin"]);
+  const { error, session } = await requireAuth(request, ["coordinator", "member", "admin"]);
   if (error) return error;
 
   try {

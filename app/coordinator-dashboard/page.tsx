@@ -111,6 +111,7 @@ export default function CoordinatorDashboard() {
   const [stats, setStats]           = useState<Stats | null>(null);
   const [trend, setTrend]           = useState<TrendPoint[]>([]);
   const [bookings, setBookings]     = useState<Booking[]>([]);
+  const [memberProfile, setMemberProfile] = useState<any>(null);
   const [families, setFamilies]     = useState<FamilyUser[]>([]);
   const [familiesLoading, setFamiliesLoading] = useState(false);
   const [familySearch, setFamilySearch] = useState("");
@@ -155,20 +156,27 @@ export default function CoordinatorDashboard() {
   const fetchDashboard = useCallback(async () => {
     setLoading(true);
     try {
-      const [dashRes, authRes] = await Promise.all([
+      const [dashRes, authRes, profileRes] = await Promise.all([
         fetch("/api/coordinator/dashboard"),
         fetch("/api/auth/me"),
+        fetch("/api/profile"),
       ]);
-      const dashData = await dashRes.json();
-      const authData = await authRes.json();
-      if (!authData.success || authData.user?.role !== "coordinator") {
-        router.push("/staff-login"); return;
+      const dashData    = await dashRes.json();
+      const authData    = await authRes.json();
+      const profileData = await profileRes.json();
+
+      const role = authData.user?.role;
+      if (!authData.success || (role !== "coordinator" && role !== "member")) {
+        router.push("/login"); return;
       }
       if (dashData.success) {
         setCoordinator(dashData.coordinator);
         setStats(dashData.stats);
         setTrend(dashData.trend || []);
         setBookings(dashData.bookings || []);
+      }
+      if (profileData.success) {
+        setMemberProfile(profileData.user || profileData);
       }
     } finally { setLoading(false); }
   }, [router]);
@@ -562,6 +570,57 @@ export default function CoordinatorDashboard() {
                 </div>
               )}
             </div>
+
+            {/* ── Member Card & Wallet ── */}
+            {memberProfile && (
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-bold text-gray-700 text-sm">Meri Membership</h3>
+                  <a href="/dashboard" className="text-xs text-teal-600 font-semibold">Member Dashboard →</a>
+                </div>
+                <div className="flex items-center gap-4">
+                  {/* Card status */}
+                  <div className="flex-1">
+                    {memberProfile.familyCardId ? (
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-teal-100 text-teal-700 border border-teal-200">
+                            ✓ Card Active
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-gray-400 mt-1">
+                          {memberProfile.familyCardId?.cardNumber || ""}
+                        </p>
+                        <p className="text-[10px] text-gray-400">
+                          Expires: {memberProfile.familyCardId?.expiryDate
+                            ? new Date(memberProfile.familyCardId.expiryDate).toLocaleDateString("en-IN", { month: "short", year: "numeric" })
+                            : "—"}
+                        </p>
+                      </div>
+                    ) : (
+                      <div>
+                        <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-gray-100 text-gray-500 border border-gray-200">
+                          No Card Yet
+                        </span>
+                        <p className="text-[10px] text-gray-400 mt-1">₹249/year activate karein</p>
+                      </div>
+                    )}
+                  </div>
+                  {/* Wallet */}
+                  <div className="text-right border-l border-gray-100 pl-4">
+                    <p className="text-[10px] text-gray-400 font-medium">Wallet Balance</p>
+                    <p className="font-black text-xl text-teal-700">{fmt(memberProfile.walletBalance || 0)}</p>
+                    <a href="/wallet" className="text-[10px] text-teal-600 underline">View wallet</a>
+                  </div>
+                </div>
+                {/* Family members count */}
+                {(memberProfile.familyMembers?.length || 0) > 0 && (
+                  <p className="text-xs text-gray-400 mt-2 pt-2 border-t border-gray-50">
+                    👨‍👩‍👧 {memberProfile.familyMembers.length} family member{memberProfile.familyMembers.length > 1 ? "s" : ""} linked
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Quick action */}
             <button

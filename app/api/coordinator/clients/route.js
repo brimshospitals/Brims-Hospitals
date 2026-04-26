@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 // No params → list all clients for this coordinator (derived from bookings)
 // ?mobile=9876543210 → lookup single user
 export async function GET(request) {
-  const { error, session } = await requireAuth(request, ["coordinator", "admin"]);
+  const { error, session } = await requireAuth(request, ["coordinator", "member", "admin"]);
   if (error) return error;
 
   try {
@@ -77,7 +77,7 @@ export async function GET(request) {
 
 // POST — create new client (member account) for coordinator
 export async function POST(request) {
-  const { error, session } = await requireAuth(request, ["coordinator", "admin"]);
+  const { error, session } = await requireAuth(request, ["coordinator", "member", "admin"]);
   if (error) return error;
 
   try {
@@ -109,7 +109,7 @@ export async function POST(request) {
     });
 
     // Increment coordinator's client count
-    if (session.role === "coordinator") {
+    if (session.role === "coordinator" || session.role === "member") {
       const coord = await Coordinator.findOne({ userId: session.userId });
       if (coord) {
         await Coordinator.findByIdAndUpdate(coord._id, { $inc: { totalClients: 1 } });
