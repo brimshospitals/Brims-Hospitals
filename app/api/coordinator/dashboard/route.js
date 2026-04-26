@@ -19,10 +19,14 @@ export async function GET(request) {
       return NextResponse.json({ success: false, message: "Coordinator profile nahi mila" }, { status: 404 });
     }
 
-    // Bookings made through this coordinator
+    // Bookings made through this coordinator — populated with service/hospital names
     const bookings = await Booking.find({ coordinatorId: coord._id })
+      .populate("packageId",  "name mrp offerPrice membershipPrice hospitalName")
+      .populate("labTestId",  "name mrp offerPrice membershipPrice hospitalName category")
+      .populate("doctorId",   "name department hospitalName opdFee offerFee")
+      .populate("hospitalId", "name")
       .sort({ createdAt: -1 })
-      .limit(50)
+      .limit(100)
       .lean();
 
     // Stats

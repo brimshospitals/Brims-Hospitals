@@ -117,6 +117,31 @@ export async function POST(request) {
       }
     }
 
+    // Coordinator activation commission — ₹100 jab registered client pehli baar card activate kare
+    if (isFirstActivation && user.registeredByCoordinator) {
+      try {
+        const { default: Coordinator } = await import("../../../models/Coordinator.js");
+        const coord = await Coordinator.findByIdAndUpdate(
+          user.registeredByCoordinator,
+          { $inc: { totalEarned: 100, pendingEarned: 100 } },
+          { new: true }
+        );
+        if (coord) {
+          const { default: Transaction } = await import("../../../models/Transaction.js");
+          await Transaction.create({
+            userId:      coord.userId,
+            type:        "credit",
+            amount:      100,
+            description: `Card Activation Commission — ${user.name} (${user.mobile}) ne Family Card activate kiya`,
+            referenceId: user._id.toString(),
+            status:      "success",
+          });
+        }
+      } catch (coordErr) {
+        console.error("Coordinator activation commission error:", coordErr);
+      }
+    }
+
     return NextResponse.redirect(
       `${process.env.NEXTAUTH_URL}/dashboard?payment=success&cardNumber=${cardNumber}`
     );

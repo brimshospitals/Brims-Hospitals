@@ -94,6 +94,31 @@ export async function POST(request) {
       }
     }
 
+    // Coordinator activation commission — ₹100 (test mode)
+    if (user.registeredByCoordinator) {
+      try {
+        const { default: Coordinator } = await import("../../../models/Coordinator.js");
+        const coord = await Coordinator.findByIdAndUpdate(
+          user.registeredByCoordinator,
+          { $inc: { totalEarned: 100, pendingEarned: 100 } },
+          { new: true }
+        );
+        if (coord) {
+          const { default: Transaction } = await import("../../../models/Transaction.js");
+          await Transaction.create({
+            userId:      coord.userId,
+            type:        "credit",
+            amount:      100,
+            description: `Card Activation Commission — ${user.name} (${user.mobile}) ne Family Card activate kiya`,
+            referenceId: user._id.toString(),
+            status:      "success",
+          });
+        }
+      } catch (coordErr) {
+        console.error("Coordinator activation commission error:", coordErr);
+      }
+    }
+
     return NextResponse.json({
       success: true,
       message: "Card activated (test mode — free)",

@@ -15,20 +15,42 @@ type Stats = {
 
 type TrendPoint = { date: string; bookings: number; earned: number };
 
+type PopulatedService = {
+  _id: string; name: string; mrp?: number; offerPrice?: number;
+  membershipPrice?: number; hospitalName?: string; category?: string;
+};
+type PopulatedDoctor = {
+  _id: string; name: string; department?: string; hospitalName?: string;
+  opdFee?: number; offerFee?: number;
+};
+
 type Booking = {
   _id: string; bookingId: string; type: string; status: string;
   amount: number; coordinatorCommission: number; coordinatorPaid: boolean;
   appointmentDate?: string; notes?: string; createdAt: string;
   isPartialBooking?: boolean; depositAmount?: number;
+  packageId?: PopulatedService;
+  labTestId?: PopulatedService;
+  doctorId?: PopulatedDoctor;
+  hospitalId?: { _id: string; name: string };
 };
 
-type Client = {
-  mobile: string; name: string; age?: number; gender?: string; visits: number; lastVisit?: string;
+type FamilyMember = {
+  _id: string; name: string; age: number; gender: string;
+  relationship: string; memberId?: string; isActive: boolean;
 };
+type FamilyUser = {
+  _id: string; name: string; mobile: string; memberId?: string;
+  age?: number; gender?: string; familyMembers?: FamilyMember[];
+  familyCardId?: { status: string; cardNumber: string; activationDate?: string; expiryDate?: string } | null;
+  createdAt?: string;
+};
+
+type SimpleClient = { mobile: string; name: string; age?: number; gender?: string; visits?: number };
 
 type BookingForm = {
   step: "client" | "service" | "details" | "confirm";
-  client?: Client; clientMobile: string; clientFound?: boolean;
+  client?: SimpleClient; clientMobile: string; clientFound?: boolean;
   newName: string; newAge: string; newGender: string;
   serviceType: "Surgery" | "Lab" | "OPD" | "IPD" | "";
   hospitalId: string; packageId: string; labTestId: string; doctorId: string;
@@ -89,13 +111,23 @@ export default function CoordinatorDashboard() {
   const [stats, setStats]           = useState<Stats | null>(null);
   const [trend, setTrend]           = useState<TrendPoint[]>([]);
   const [bookings, setBookings]     = useState<Booking[]>([]);
-  const [clients, setClients]       = useState<Client[]>([]);
-  const [clientSearch, setClientSearch] = useState("");
+  const [families, setFamilies]     = useState<FamilyUser[]>([]);
+  const [familiesLoading, setFamiliesLoading] = useState(false);
+  const [familySearch, setFamilySearch] = useState("");
+  const [familiesView, setFamiliesView] = useState<"list" | "register" | "add-member">("list");
+  const [fReg, setFReg] = useState({
+    mobile: "", otp: "", otpSent: false, otpLoading: false, userId: "",
+    name: "", age: "", gender: "male", district: "",
+    preExistingDiseases: [] as string[], idType: "", idNumber: "",
+  });
+  const [fMember, setFMember] = useState({
+    primaryMobile: "", name: "", age: "", gender: "male",
+    relationship: "spouse", loading: false, targetFamily: null as FamilyUser | null,
+  });
   const [bookingSearch, setBookingSearch] = useState("");
   const [bookingTypeFilter, setBookingTypeFilter] = useState("all");
   const [bookingStatusFilter, setBookingStatusFilter] = useState("all");
   const [loading, setLoading]       = useState(true);
-  const [clientsLoading, setClientsLoading] = useState(false);
   const [toast, setToast]           = useState("");
   const [toastOk, setToastOk]       = useState(true);
 
@@ -141,27 +173,20 @@ export default function CoordinatorDashboard() {
     } finally { setLoading(false); }
   }, [router]);
 
-  const fetchClients = useCallback(async (search = "") => {
-    setClientsLoading(true);
+  const fetchFamilies = useCallback(async () => {
+    setFamiliesLoading(true);
     try {
-      const res  = await fetch(`/api/coordinator/clients${search ? `?search=${encodeURIComponent(search)}` : ""}`);
+      const res  = await fetch("/api/coordinator/families");
       const data = await res.json();
-      if (data.success) setClients(data.clients || []);
-    } finally { setClientsLoading(false); }
+      if (data.success) setFamilies(data.families || []);
+    } finally { setFamiliesLoading(false); }
   }, []);
 
   useEffect(() => { fetchDashboard(); }, [fetchDashboard]);
 
   useEffect(() => {
-    if (tab === "clients") fetchClients(clientSearch);
-  }, [tab]);
-
-  // Debounced client search
-  useEffect(() => {
-    if (tab !== "clients") return;
-    const t = setTimeout(() => fetchClients(clientSearch), 400);
-    return () => clearTimeout(t);
-  }, [clientSearch]);
+    if (tab === "families") fetchFamilies();
+  }, [tab, fetchFamilies]);
 
   // ── Booking helpers ────────────────────────────────────────────────────────
   async function lookupClient() {
@@ -290,6 +315,103 @@ export default function CoordinatorDashboard() {
     const rate = coordinator.commissionRates[bForm.serviceType as keyof typeof coordinator.commissionRates] || 0;
     if (!rate) return null;
     return { rate, amount: Math.round(Number(bForm.amount) * rate / 100) };
+  }
+
+  // ── Family registration functions ─────────────────────────────────────────
+  async function famSendOtp() {
+    if (!/^\d{10}$/.test(fReg.mobile)) { showToast("Valid 10-digit mobile daalo", false); return; }
+    setFReg(f => ({ ...f, otpLoading: true }));
+    try {
+      const lkRes = await fetch("/api/coordinator/families", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "lookup", mobile: fReg.mobile }),
+      });
+      const lkData = await lkRes.json();
+      if (lkData.exists) {
+        showToast(`${lkData.user?.name || "User"} already registered hai — member add kar sakte hain`);
+        setFMember(m => ({ ...m, primaryMobile: fReg.mobile, targetFamily: lkData.user }));
+        setFamiliesView("add-member");
+        setFReg(f => ({ ...f, otpLoading: false }));
+        return;
+      }
+      const otpRes = await fetch("/api/coordinator/families", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "send-otp", mobile: fReg.mobile }),
+      });
+      const otpData = await otpRes.json();
+      if (otpData.success) {
+        setFReg(f => ({ ...f, otpSent: true, userId: otpData.userId, otpLoading: false }));
+        showToast("OTP bheja gaya 📱");
+      } else {
+        showToast(otpData.message || "OTP send failed", false);
+        setFReg(f => ({ ...f, otpLoading: false }));
+      }
+    } catch {
+      showToast("Network error", false);
+      setFReg(f => ({ ...f, otpLoading: false }));
+    }
+  }
+
+  async function famVerifyRegister() {
+    if (fReg.otp.length < 4) { showToast("OTP daalo", false); return; }
+    if (!fReg.name.trim() || !fReg.age) { showToast("Naam aur age zaruri hai", false); return; }
+    setFReg(f => ({ ...f, otpLoading: true }));
+    try {
+      const res = await fetch("/api/coordinator/families", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "verify-register", mobile: fReg.mobile, otp: fReg.otp,
+          name: fReg.name, age: fReg.age, gender: fReg.gender,
+          district: fReg.district, preExistingDiseases: fReg.preExistingDiseases,
+          idType: fReg.idType || undefined, idNumber: fReg.idNumber || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(data.message || "Register ho gaya!");
+        fetchFamilies();
+        setFReg({ mobile: "", otp: "", otpSent: false, otpLoading: false, userId: "", name: "", age: "", gender: "male", district: "", preExistingDiseases: [], idType: "", idNumber: "" });
+        setFamiliesView("list");
+      } else {
+        showToast(data.message || "Registration failed", false);
+        setFReg(f => ({ ...f, otpLoading: false }));
+      }
+    } catch {
+      showToast("Network error", false);
+      setFReg(f => ({ ...f, otpLoading: false }));
+    }
+  }
+
+  async function famAddMember() {
+    if (!fMember.name.trim() || !fMember.age || !fMember.relationship) {
+      showToast("Naam, age aur rishta zaruri hai", false); return;
+    }
+    const primary = fMember.targetFamily?.mobile || fMember.primaryMobile;
+    if (!primary) { showToast("Primary member mobile zaruri hai", false); return; }
+    setFMember(m => ({ ...m, loading: true }));
+    try {
+      const res = await fetch("/api/coordinator/families", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "add-member", primaryMobile: primary,
+          name: fMember.name, age: fMember.age, gender: fMember.gender,
+          relationship: fMember.relationship,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(data.message || "Member add ho gaya!");
+        fetchFamilies();
+        setFMember({ primaryMobile: "", name: "", age: "", gender: "male", relationship: "spouse", loading: false, targetFamily: null });
+        setFamiliesView("list");
+      } else {
+        showToast(data.message || "Failed", false);
+        setFMember(m => ({ ...m, loading: false }));
+      }
+    } catch {
+      showToast("Network error", false);
+      setFMember(m => ({ ...m, loading: false }));
+    }
   }
 
   // ── Loading ────────────────────────────────────────────────────────────────
@@ -451,83 +573,274 @@ export default function CoordinatorDashboard() {
           </div>
         )}
 
-        {/* ═══════════════════════ CLIENTS ══════════════════════════════════ */}
-        {tab === "clients" && (
+        {/* ═══════════════════════ FAMILIES ════════════════════════════════ */}
+        {tab === "families" && (
           <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <div className="flex-1 flex items-center bg-white border border-gray-200 rounded-xl px-3 py-2.5 gap-2 focus-within:border-green-400 transition">
-                <span className="text-gray-400 text-sm">🔍</span>
-                <input
-                  value={clientSearch}
-                  onChange={e => setClientSearch(e.target.value)}
-                  placeholder="Naam ya mobile se dhundein..."
-                  className="flex-1 text-sm outline-none bg-transparent"
-                />
-              </div>
-              <button
-                onClick={() => { setBForm(emptyForm); setTab("book"); }}
-                className="bg-green-600 text-white px-4 py-2.5 rounded-xl text-sm font-semibold flex-shrink-0"
-              >
-                + Add
-              </button>
-            </div>
 
-            {clientsLoading ? (
-              <div className="flex justify-center py-10">
-                <div className="w-7 h-7 border-3 border-green-400 border-t-transparent rounded-full animate-spin" />
-              </div>
-            ) : clients.length === 0 ? (
-              <div className="bg-white rounded-2xl border border-gray-100 py-12 text-center text-gray-400 text-sm">
-                <p className="text-3xl mb-2">👥</p>
-                {clientSearch ? "Koi result nahi mila" : "Koi client nahi hai abhi tak"}
-              </div>
-            ) : (
+            {/* ─ List view ─ */}
+            {familiesView === "list" && (
+              <>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 flex items-center bg-white border border-gray-200 rounded-xl px-3 py-2.5 gap-2 focus-within:border-green-400 transition">
+                    <span className="text-gray-400 text-sm">🔍</span>
+                    <input value={familySearch} onChange={e => setFamilySearch(e.target.value)}
+                      placeholder="Naam ya mobile se dhundein..."
+                      className="flex-1 text-sm outline-none bg-transparent" />
+                  </div>
+                  <button onClick={() => { setFReg({ mobile: "", otp: "", otpSent: false, otpLoading: false, userId: "", name: "", age: "", gender: "male", district: "", preExistingDiseases: [], idType: "", idNumber: "" }); setFamiliesView("register"); }}
+                    className="bg-green-600 text-white px-4 py-2.5 rounded-xl text-sm font-semibold flex-shrink-0 flex items-center gap-1">
+                    + Register
+                  </button>
+                </div>
+
+                {familiesLoading ? (
+                  <div className="flex justify-center py-10">
+                    <div className="w-8 h-8 border-4 border-green-200 border-t-green-600 rounded-full animate-spin" />
+                  </div>
+                ) : families.length === 0 ? (
+                  <div className="bg-white rounded-2xl border border-gray-100 py-14 text-center text-gray-400 text-sm">
+                    <p className="text-4xl mb-3">👨‍👩‍👧</p>
+                    <p className="font-semibold text-gray-500">Koi registered family nahi hai</p>
+                    <p className="text-xs mt-1">Register button se naya family add karein</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-xs text-gray-400 px-1">
+                      {families.filter(f => familySearch ? (f.name.toLowerCase().includes(familySearch.toLowerCase()) || f.mobile.includes(familySearch)) : true).length} families registered
+                    </p>
+                    {families
+                      .filter(f => familySearch ? (f.name.toLowerCase().includes(familySearch.toLowerCase()) || f.mobile.includes(familySearch)) : true)
+                      .map(fam => {
+                        const card = fam.familyCardId;
+                        const isActive = card?.status === "active";
+                        const memberCount = (fam.familyMembers || []).length;
+                        return (
+                          <div key={fam._id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="w-11 h-11 rounded-full bg-green-100 flex items-center justify-center text-green-700 font-bold text-lg flex-shrink-0">
+                                  {fam.name.charAt(0).toUpperCase()}
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="font-semibold text-gray-800 text-sm">{fam.name}</p>
+                                  <p className="text-xs text-gray-400 mt-0.5">
+                                    📱 {fam.mobile}
+                                    {fam.age ? ` · ${fam.age}y` : ""}
+                                    {fam.gender ? ` · ${fam.gender === "male" ? "M" : "F"}` : ""}
+                                  </p>
+                                  {fam.memberId && <p className="text-[10px] text-gray-400 font-mono mt-0.5">{fam.memberId}</p>}
+                                </div>
+                              </div>
+                              <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                                <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border ${isActive ? "bg-green-100 text-green-700 border-green-200" : "bg-gray-100 text-gray-500 border-gray-200"}`}>
+                                  {isActive ? "✓ Card Active" : "No Card"}
+                                </span>
+                                {isActive && (
+                                  <span className="text-[9px] text-green-600 font-medium">₹100 commission ✓</span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Family members */}
+                            {memberCount > 0 && (
+                              <div className="mt-3 pt-3 border-t border-gray-50 flex flex-wrap gap-1.5">
+                                {(fam.familyMembers || []).map(m => (
+                                  <span key={m._id} className="text-[10px] bg-gray-50 border border-gray-200 rounded-full px-2.5 py-0.5 text-gray-600">
+                                    {m.name} ({m.relationship})
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Action buttons */}
+                            <div className="mt-3 flex gap-2">
+                              <a href={`tel:${fam.mobile}`}
+                                className="flex-1 flex items-center justify-center gap-1 py-2 bg-gray-50 hover:bg-gray-100 text-gray-600 text-xs font-semibold rounded-xl transition">
+                                📞 Call
+                              </a>
+                              <a href={`https://wa.me/91${fam.mobile}`} target="_blank" rel="noreferrer"
+                                className="flex-1 flex items-center justify-center gap-1 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-semibold rounded-xl transition">
+                                💬 WhatsApp
+                              </a>
+                              {memberCount < 5 && (
+                                <button
+                                  onClick={() => { setFMember(m => ({ ...m, primaryMobile: fam.mobile, targetFamily: fam, name: "", age: "", gender: "male", relationship: "spouse" })); setFamiliesView("add-member"); }}
+                                  className="flex-1 flex items-center justify-center gap-1 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold rounded-xl transition">
+                                  + Member
+                                </button>
+                              )}
+                              <button
+                                onClick={() => { setBForm({ ...emptyForm, client: { mobile: fam.mobile, name: fam.name, age: fam.age, gender: fam.gender }, clientMobile: fam.mobile, clientFound: true, step: "service" }); setTab("book"); }}
+                                className="flex-1 flex items-center justify-center gap-1 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-xl transition">
+                                📋 Book
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* ─ Register new family ─ */}
+            {familiesView === "register" && (
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                <p className="px-4 py-2.5 text-xs text-gray-400 border-b border-gray-50">
-                  {clients.length} client{clients.length !== 1 ? "s" : ""}
-                </p>
-                {clients.map(c => (
-                  <div key={c.mobile} className="px-4 py-3.5 border-b border-gray-50 last:border-0 flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center text-green-700 font-bold text-base flex-shrink-0">
-                      {c.name.charAt(0).toUpperCase()}
+                <div className="bg-gradient-to-r from-green-600 to-emerald-700 p-4 flex items-center gap-3">
+                  <button onClick={() => setFamiliesView("list")} className="text-white/80 hover:text-white text-lg">←</button>
+                  <div>
+                    <h3 className="text-white font-bold text-sm">Register New Family</h3>
+                    <p className="text-green-200 text-xs">OTP verification ke saath</p>
+                  </div>
+                </div>
+                <div className="p-5 space-y-4">
+
+                  {/* Mobile + OTP */}
+                  {!fReg.otpSent ? (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-xs font-semibold text-gray-500 mb-1 block">Mobile Number *</label>
+                        <div className="flex gap-2">
+                          <div className="flex-1 flex items-center border border-gray-200 rounded-xl overflow-hidden focus-within:border-green-400 transition">
+                            <span className="px-3 py-2.5 bg-gray-50 text-gray-400 text-sm border-r border-gray-200">+91</span>
+                            <input type="tel" maxLength={10} value={fReg.mobile}
+                              onChange={e => setFReg(f => ({ ...f, mobile: e.target.value.replace(/\D/g, "") }))}
+                              placeholder="9876543210" className="flex-1 px-3 py-2.5 text-sm focus:outline-none" />
+                          </div>
+                          <button onClick={famSendOtp} disabled={fReg.otpLoading || fReg.mobile.length < 10}
+                            className="px-4 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-xl transition disabled:opacity-50">
+                            {fReg.otpLoading ? "..." : "Check"}
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-gray-700">{c.name}</p>
-                      <p className="text-xs text-gray-400">
-                        📱 {c.mobile}
-                        {c.age ? ` · ${c.age}y` : ""}
-                        {c.gender ? ` · ${c.gender === "male" ? "M" : "F"}` : ""}
-                        {c.visits > 0 ? ` · ${c.visits} visit${c.visits > 1 ? "s" : ""}` : ""}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
-                      {/* Call button */}
-                      <a href={`tel:${c.mobile}`}
-                        className="w-9 h-9 bg-green-50 hover:bg-green-100 text-green-700 rounded-xl flex items-center justify-center transition"
-                        title="Call">
-                        📞
-                      </a>
-                      {/* WhatsApp */}
-                      <a href={`https://wa.me/91${c.mobile}`} target="_blank" rel="noreferrer"
-                        className="w-9 h-9 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl flex items-center justify-center transition"
-                        title="WhatsApp">
-                        💬
-                      </a>
-                      {/* Quick book */}
-                      <button
-                        onClick={() => {
-                          setBForm(f => ({ ...emptyForm, client: c, clientMobile: c.mobile, clientFound: true, step: "service" }));
-                          setTab("book");
-                        }}
-                        className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-xl transition"
-                      >
-                        Book
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-2.5 text-sm text-green-700 font-medium flex items-center gap-2">
+                        📱 {fReg.mobile} — OTP bheja gaya
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-500 mb-1 block">OTP *</label>
+                        <input type="text" maxLength={6} inputMode="numeric" value={fReg.otp}
+                          onChange={e => setFReg(f => ({ ...f, otp: e.target.value.replace(/\D/g, "") }))}
+                          placeholder="6-digit OTP" className={inp} />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="col-span-2">
+                          <label className="text-xs font-semibold text-gray-500 mb-1 block">Poora Naam *</label>
+                          <input value={fReg.name} onChange={e => setFReg(f => ({ ...f, name: e.target.value }))}
+                            placeholder="Ramesh Kumar" className={inp} />
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold text-gray-500 mb-1 block">Age *</label>
+                          <input type="number" min={1} max={120} value={fReg.age}
+                            onChange={e => setFReg(f => ({ ...f, age: e.target.value }))}
+                            placeholder="35" className={inp} />
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold text-gray-500 mb-1 block">Gender *</label>
+                          <select value={fReg.gender} onChange={e => setFReg(f => ({ ...f, gender: e.target.value }))} className={sel}>
+                            <option value="male">Male</option>
+                            <option value="female">Female</option>
+                          </select>
+                        </div>
+                        <div className="col-span-2">
+                          <label className="text-xs font-semibold text-gray-500 mb-1 block">District</label>
+                          <input value={fReg.district} onChange={e => setFReg(f => ({ ...f, district: e.target.value }))}
+                            placeholder="Patna, Gaya, Muzaffarpur..." className={inp} />
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold text-gray-500 mb-1 block">ID Type</label>
+                          <select value={fReg.idType} onChange={e => setFReg(f => ({ ...f, idType: e.target.value }))} className={sel}>
+                            <option value="">-- Select --</option>
+                            <option value="Aadhaar">Aadhaar</option>
+                            <option value="PAN">PAN</option>
+                            <option value="Voter ID">Voter ID</option>
+                            <option value="Driving Licence">Driving Licence</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold text-gray-500 mb-1 block">ID Number</label>
+                          <input value={fReg.idNumber} onChange={e => setFReg(f => ({ ...f, idNumber: e.target.value }))}
+                            placeholder="XXXX XXXX XXXX" className={inp} />
+                        </div>
+                      </div>
+                      <button onClick={famVerifyRegister} disabled={fReg.otpLoading}
+                        className="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl text-sm font-bold transition disabled:opacity-50">
+                        {fReg.otpLoading ? "Register ho raha hai..." : "✓ Verify & Register"}
                       </button>
                     </div>
-                  </div>
-                ))}
+                  )}
+                </div>
               </div>
             )}
+
+            {/* ─ Add member ─ */}
+            {familiesView === "add-member" && (
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-4 flex items-center gap-3">
+                  <button onClick={() => { setFamiliesView("list"); setFMember(m => ({ ...m, targetFamily: null, primaryMobile: "" })); }} className="text-white/80 hover:text-white text-lg">←</button>
+                  <div>
+                    <h3 className="text-white font-bold text-sm">Add Family Member</h3>
+                    <p className="text-blue-200 text-xs">
+                      {fMember.targetFamily ? `${fMember.targetFamily.name} ki family mein` : "Primary member mobile enter karein"}
+                    </p>
+                  </div>
+                </div>
+                <div className="p-5 space-y-4">
+                  {!fMember.targetFamily && (
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 mb-1 block">Primary Member Mobile</label>
+                      <input type="tel" maxLength={10} value={fMember.primaryMobile}
+                        onChange={e => setFMember(m => ({ ...m, primaryMobile: e.target.value.replace(/\D/g, "") }))}
+                        placeholder="9876543210" className={inp} />
+                    </div>
+                  )}
+                  {fMember.targetFamily && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 text-sm text-blue-800 flex items-center gap-2">
+                      👨‍👩‍👧 <strong>{fMember.targetFamily.name}</strong> · {fMember.targetFamily.mobile}
+                      · {(fMember.targetFamily.familyMembers || []).length}/5 members
+                    </div>
+                  )}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="col-span-2">
+                      <label className="text-xs font-semibold text-gray-500 mb-1 block">Member Naam *</label>
+                      <input value={fMember.name} onChange={e => setFMember(m => ({ ...m, name: e.target.value }))}
+                        placeholder="Sunita Devi" className={inp} />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 mb-1 block">Age *</label>
+                      <input type="number" min={0} max={120} value={fMember.age}
+                        onChange={e => setFMember(m => ({ ...m, age: e.target.value }))}
+                        placeholder="28" className={inp} />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 mb-1 block">Gender *</label>
+                      <select value={fMember.gender} onChange={e => setFMember(m => ({ ...m, gender: e.target.value }))} className={sel}>
+                        <option value="male">Male</option>
+                        <option value="female">Female</option>
+                      </select>
+                    </div>
+                    <div className="col-span-2">
+                      <label className="text-xs font-semibold text-gray-500 mb-1 block">Rishta *</label>
+                      <select value={fMember.relationship} onChange={e => setFMember(m => ({ ...m, relationship: e.target.value }))} className={sel}>
+                        <option value="spouse">Spouse (Pati/Patni)</option>
+                        <option value="child">Child (Beta/Beti)</option>
+                        <option value="parent">Parent (Maa/Baap)</option>
+                        <option value="inlaw">In-law (Sasural)</option>
+                        <option value="sibling">Sibling (Bhai/Behan)</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </div>
+                  </div>
+                  <button onClick={famAddMember} disabled={fMember.loading}
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl text-sm font-bold transition disabled:opacity-50">
+                    {fMember.loading ? "Add ho raha hai..." : "✓ Add Member"}
+                  </button>
+                </div>
+              </div>
+            )}
+
           </div>
         )}
 
@@ -929,18 +1242,25 @@ export default function CoordinatorDashboard() {
         {/* ═══════════════════════ EARNINGS ═════════════════════════════════ */}
         {tab === "earnings" && (
           <div className="space-y-4">
+
             {/* Summary cards */}
-            <div className="grid grid-cols-3 gap-3">
-              {[
-                { label: "Total Earned",  value: fmt(stats?.totalEarned  || 0), color: "bg-green-50 text-green-700 border-green-200"  },
-                { label: "Pending",       value: fmt(stats?.pendingEarned || 0), color: "bg-amber-50 text-amber-700 border-amber-200"  },
-                { label: "Paid Out",      value: fmt(stats?.paidEarned    || 0), color: "bg-blue-50  text-blue-700  border-blue-200"   },
-              ].map(s => (
-                <div key={s.label} className={`rounded-2xl border p-4 text-center ${s.color}`}>
-                  <p className="font-black text-lg">{s.value}</p>
-                  <p className="text-[11px] font-semibold mt-0.5">{s.label}</p>
-                </div>
-              ))}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-green-50 border border-green-200 rounded-2xl p-4 text-center">
+                <p className="font-black text-xl text-green-700">{fmt(stats?.totalEarned || 0)}</p>
+                <p className="text-[11px] font-semibold text-green-600 mt-0.5">Total Earned</p>
+              </div>
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-center">
+                <p className="font-black text-xl text-amber-700">{fmt(stats?.pendingEarned || 0)}</p>
+                <p className="text-[11px] font-semibold text-amber-600 mt-0.5">Pending Payout</p>
+              </div>
+              <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 text-center">
+                <p className="font-black text-xl text-blue-700">{fmt(stats?.paidEarned || 0)}</p>
+                <p className="text-[11px] font-semibold text-blue-600 mt-0.5">Paid Out</p>
+              </div>
+              <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4 text-center">
+                <p className="font-black text-xl text-purple-700">{fmt(stats?.monthEarned || 0)}</p>
+                <p className="text-[11px] font-semibold text-purple-600 mt-0.5">This Month</p>
+              </div>
             </div>
 
             {/* Payout request */}
@@ -948,17 +1268,13 @@ export default function CoordinatorDashboard() {
               <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center gap-3">
                 <span className="text-2xl">💸</span>
                 <div className="flex-1">
-                  <p className="font-bold text-amber-800 text-sm">
-                    {fmt(stats?.pendingEarned || 0)} pending hai
-                  </p>
-                  <p className="text-xs text-amber-600">Admin se payout request karein</p>
+                  <p className="font-bold text-amber-800 text-sm">{fmt(stats?.pendingEarned || 0)} payout pending</p>
+                  <p className="text-xs text-amber-600">Admin se request karein</p>
                 </div>
-                <a
-                  href={`https://wa.me/919999999999?text=${encodeURIComponent(`Payout Request\nCoordinator: ${coordinator.name}\nID: ${coordinator.coordinatorId}\nPending: ${fmt(stats?.pendingEarned || 0)}\nPlease process payment.`)}`}
+                <a href={`https://wa.me/919999999999?text=${encodeURIComponent(`Payout Request\nCoordinator: ${coordinator.name} (${coordinator.coordinatorId})\nPending: ${fmt(stats?.pendingEarned || 0)}\nKripya payment process karein.`)}`}
                   target="_blank" rel="noreferrer"
-                  className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition whitespace-nowrap"
-                >
-                  Request Payout
+                  className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition whitespace-nowrap">
+                  Request Payout 💬
                 </a>
               </div>
             )}
@@ -966,23 +1282,28 @@ export default function CoordinatorDashboard() {
             {/* Trend chart */}
             {trend.length > 0 && (
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-                <h3 className="font-bold text-gray-700 text-sm mb-3">Last 7 Days</h3>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-bold text-gray-700 text-sm">Last 7 Days</h3>
+                  <span className="text-xs text-gray-400">{fmt(trend.reduce((s, d) => s + d.earned, 0))} total</span>
+                </div>
                 <TrendChart data={trend} />
-                <div className="mt-3 grid grid-cols-7 gap-1">
+                <div className="mt-2 grid grid-cols-7 gap-1">
                   {trend.map((d, i) => (
                     <div key={i} className="text-center">
-                      <p className="text-[10px] font-bold text-gray-700">{fmt(d.earned).replace("₹", "")}</p>
+                      <p className="text-[9px] text-gray-500">{d.bookings}bk</p>
                     </div>
                   ))}
                 </div>
               </div>
             )}
 
-            {/* Commission history */}
+            {/* Full commission ledger */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-100">
-                <h3 className="font-bold text-gray-700 text-sm">Commission History</h3>
+              <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+                <h3 className="font-bold text-gray-700 text-sm">Commission Ledger</h3>
+                <span className="text-xs text-gray-400">{bookings.filter(b => b.coordinatorCommission > 0).length} entries</span>
               </div>
+
               {bookings.filter(b => b.coordinatorCommission > 0).length === 0 ? (
                 <div className="py-10 text-center text-gray-400 text-sm">
                   <p className="text-3xl mb-2">💰</p>Koi commission nahi mili abhi tak
@@ -990,23 +1311,93 @@ export default function CoordinatorDashboard() {
               ) : (
                 bookings.filter(b => b.coordinatorCommission > 0).map(b => {
                   const n = parseNotes(b.notes);
+                  // Get service name from populated fields
+                  const svc = b.packageId || b.labTestId;
+                  const svcName = svc?.name || b.doctorId?.name || "—";
+                  const hospitalName = svc?.hospitalName || b.doctorId?.hospitalName || b.hospitalId?.name || "—";
+                  const mrp = svc?.mrp || b.doctorId?.opdFee || 0;
+                  const offerPrice = svc?.offerPrice || b.doctorId?.offerFee || mrp;
+                  const rate = coordinator.commissionRates[b.type as keyof typeof coordinator.commissionRates] || 0;
+
                   return (
-                    <div key={b._id} className="px-4 py-3.5 border-b border-gray-50 last:border-0 flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-semibold text-gray-700">
-                          {n.patientName || "—"} — {b.type}
-                        </p>
-                        <p className="text-xs text-gray-400">{b.bookingId} · {fmtDate(b.createdAt)}</p>
+                    <div key={b._id} className="border-b border-gray-50 last:border-0">
+                      {/* Header row */}
+                      <div className="px-4 pt-3 pb-1 flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-base">{TYPE_ICON[b.type] || "📋"}</span>
+                            <p className="text-sm font-semibold text-gray-800 truncate">{n.patientName || "—"}</p>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium border ${STATUS_COLOR[b.status] || "bg-gray-100 text-gray-600 border-gray-200"}`}>
+                              {b.status}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-gray-400 mt-0.5">{b.bookingId} · {fmtDate(b.createdAt)}</p>
+                        </div>
+                        <span className={`text-xs font-bold px-2.5 py-1 rounded-full border flex-shrink-0 ${b.coordinatorPaid ? "bg-green-100 text-green-700 border-green-200" : "bg-amber-100 text-amber-700 border-amber-200"}`}>
+                          {b.coordinatorPaid ? "✓ Paid" : "⏳ Pending"}
+                        </span>
                       </div>
-                      <div className="text-right">
-                        <p className={`text-sm font-bold ${b.coordinatorPaid ? "text-green-600" : "text-amber-600"}`}>
-                          {fmt(b.coordinatorCommission)}
-                        </p>
-                        <p className="text-[10px] text-gray-400">{b.coordinatorPaid ? "✓ Paid" : "⏳ Pending"}</p>
+
+                      {/* Detail grid */}
+                      <div className="mx-4 mb-3 bg-gray-50 rounded-xl p-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                        <div>
+                          <p className="text-gray-400">Service</p>
+                          <p className="font-semibold text-gray-700 truncate">{svcName}</p>
+                        </div>
+                        <div>
+                          <p className="text-gray-400">Hospital/Lab</p>
+                          <p className="font-semibold text-gray-700 truncate">{hospitalName}</p>
+                        </div>
+                        {mrp > 0 && (
+                          <div>
+                            <p className="text-gray-400">MRP</p>
+                            <p className="font-semibold text-gray-500 line-through">{fmt(mrp)}</p>
+                          </div>
+                        )}
+                        {offerPrice > 0 && (
+                          <div>
+                            <p className="text-gray-400">Offer Price</p>
+                            <p className="font-semibold text-gray-700">{fmt(offerPrice)}</p>
+                          </div>
+                        )}
+                        <div>
+                          <p className="text-gray-400">Booking Amount</p>
+                          <p className="font-semibold text-gray-700">{fmt(b.amount)}</p>
+                        </div>
+                        {b.isPartialBooking && b.depositAmount && (
+                          <div>
+                            <p className="text-gray-400">Advance Paid</p>
+                            <p className="font-semibold text-blue-600">{fmt(b.depositAmount)}</p>
+                          </div>
+                        )}
+                        <div>
+                          <p className="text-gray-400">Commission Rate</p>
+                          <p className="font-semibold text-gray-700">{rate}%</p>
+                        </div>
+                        <div>
+                          <p className="text-gray-400">Commission Earned</p>
+                          <p className={`font-black text-base ${b.coordinatorPaid ? "text-green-600" : "text-amber-600"}`}>
+                            {fmt(b.coordinatorCommission)}
+                          </p>
+                        </div>
                       </div>
                     </div>
                   );
                 })
+              )}
+
+              {/* Ledger total */}
+              {bookings.filter(b => b.coordinatorCommission > 0).length > 0 && (
+                <div className="px-4 py-3 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
+                  <div className="text-xs text-gray-500">
+                    <span className="font-semibold">{bookings.filter(b => b.coordinatorCommission > 0 && !b.coordinatorPaid).length}</span> pending ·{" "}
+                    <span className="font-semibold">{bookings.filter(b => b.coordinatorPaid).length}</span> paid
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-gray-400">Total Commission</p>
+                    <p className="font-black text-base text-green-700">{fmt(stats?.totalEarned || 0)}</p>
+                  </div>
+                </div>
               )}
             </div>
           </div>
@@ -1019,7 +1410,7 @@ export default function CoordinatorDashboard() {
         <div className="max-w-2xl mx-auto flex items-stretch h-16">
           {[
             { key: "dashboard", icon: "🏠", label: "Home"      },
-            { key: "clients",   icon: "👥", label: "Clients"   },
+            { key: "families",  icon: "👨‍👩‍👧", label: "Families" },
             { key: "book",      icon: "➕", label: "Book",  primary: true },
             { key: "bookings",  icon: "📋", label: "Bookings"  },
             { key: "earnings",  icon: "💰", label: "Earnings"  },

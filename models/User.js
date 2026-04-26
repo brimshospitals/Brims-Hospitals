@@ -175,6 +175,9 @@ const userSchema = new mongoose.Schema(
     staffId:       { type: mongoose.Schema.Types.ObjectId, ref: "Staff"       },
     coordinatorId: { type: mongoose.Schema.Types.ObjectId, ref: "Coordinator" },
 
+    // Which coordinator registered this user (for ₹100 card activation commission)
+    registeredByCoordinator: { type: mongoose.Schema.Types.ObjectId, ref: "Coordinator", default: null },
+
     // FCM Push Notification token (web/mobile)
     fcmToken: { type: String, default: null },
 
