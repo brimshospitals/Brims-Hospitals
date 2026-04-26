@@ -419,6 +419,12 @@ function DashboardContent() {
               </div>
               {/* Active dot */}
               <span className="absolute -bottom-1 -right-1 w-5 h-5 bg-green-400 border-2 border-teal-700 rounded-full" />
+              {/* HC badge — shown only for primary member who is a coordinator */}
+              {user?.coordinatorId && activeDisplayMember?.isPrimary !== false && (
+                <span className="absolute -top-2 -left-2 bg-green-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full border-2 border-teal-700 leading-none z-10 tracking-wide">
+                  HC
+                </span>
+              )}
             </div>
 
             {/* Name & details */}
@@ -430,12 +436,19 @@ function DashboardContent() {
                 {t("dash.hello", lang)} 🙏
               </p>
               <h1 className="text-white text-2xl font-bold leading-tight truncate">{displayName}</h1>
-              <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+              <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                 <span className="text-teal-200 text-xs">📱 +91 {user?.mobile}</span>
                 {activeDisplayMember?.memberId && (
                   <span className="bg-white/15 text-white text-xs px-2 py-0.5 rounded-full font-mono">
                     {activeDisplayMember.memberId}
                   </span>
+                )}
+                {user?.coordinatorId && activeDisplayMember?.isPrimary !== false && (
+                  <a href="/coordinator-dashboard"
+                    className="inline-flex items-center gap-1 bg-green-500/90 hover:bg-green-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full transition"
+                    title="Health Coordinator">
+                    🤝 HC
+                  </a>
                 )}
               </div>
             </div>
@@ -880,6 +893,12 @@ function DashboardContent() {
               <p className="text-xs text-gray-500 mt-0.5 capitalize">
                 {profileModal.isPrimary ? "Primary Member" : profileModal.relationship || "Family Member"}
               </p>
+              {profileModal.isPrimary && user?.coordinatorId && (
+                <a href="/coordinator-dashboard"
+                  className="inline-flex items-center gap-1.5 bg-green-100 hover:bg-green-200 text-green-700 border border-green-300 text-xs font-bold px-3 py-1 rounded-full mt-1.5 transition">
+                  🤝 Health Coordinator
+                </a>
+              )}
               <div className="bg-teal-50 border border-teal-200 rounded-lg px-3 py-1 mt-2">
                 <p className="text-xs font-mono font-bold text-teal-700">{profileModal.memberId}</p>
               </div>
