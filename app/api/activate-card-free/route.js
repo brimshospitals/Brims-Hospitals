@@ -61,6 +61,39 @@ export async function POST(request) {
     user.role = "member";
     await user.save();
 
+    // Referral cashback — dono ko ₹50
+    if (user.referredBy) {
+      try {
+        const referrer = await User.findOne({ referralCode: user.referredBy });
+        if (referrer) {
+          user.walletBalance    = (user.walletBalance    || 0) + 50;
+          referrer.walletBalance = (referrer.walletBalance || 0) + 50;
+          await Promise.all([user.save(), referrer.save()]);
+          const { default: Transaction } = await import("../../../models/Transaction.js");
+          await Transaction.create([
+            {
+              userId:      user._id,
+              type:        "credit",
+              amount:      50,
+              description: `Referral cashback — Family Card activate kiya (code: ${user.referredBy})`,
+              referenceId: user.referredBy,
+              status:      "success",
+            },
+            {
+              userId:      referrer._id,
+              type:        "credit",
+              amount:      50,
+              description: `Referral reward — ${user.name || "User"} ne Family Card activate kiya`,
+              referenceId: user._id.toString(),
+              status:      "success",
+            },
+          ]);
+        }
+      } catch (refErr) {
+        console.error("Referral cashback error:", refErr);
+      }
+    }
+
     return NextResponse.json({
       success: true,
       message: "Card activated (test mode — free)",

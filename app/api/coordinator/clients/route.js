@@ -7,8 +7,9 @@ import { requireAuth } from "../../../../lib/auth";
 
 export const dynamic = "force-dynamic";
 
-// GET — check if mobile is existing member
-// ?mobile=9876543210
+// GET — list clients OR check single mobile
+// No params → list all clients for this coordinator (derived from bookings)
+// ?mobile=9876543210 → lookup single user
 export async function GET(request) {
   const { error, session } = await requireAuth(request, ["coordinator", "admin"]);
   if (error) return error;
@@ -16,18 +17,59 @@ export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
     const mobile = searchParams.get("mobile")?.trim();
-
-    if (!mobile || !/^\d{10}$/.test(mobile)) {
-      return NextResponse.json({ success: false, message: "Valid mobile number daalo" }, { status: 400 });
-    }
+    const search = searchParams.get("search")?.trim() || "";
 
     await connectDB();
 
-    const user = await User.findOne({ mobile }).select("-otp -otpExpiry -professionalPassword -password").lean();
-    if (user) {
-      return NextResponse.json({ success: true, exists: true, user });
+    // Single mobile lookup
+    if (mobile) {
+      if (!/^\d{10}$/.test(mobile)) {
+        return NextResponse.json({ success: false, message: "Valid mobile number daalo" }, { status: 400 });
+      }
+      const user = await User.findOne({ mobile }).select("-otp -otpExpiry -password").lean();
+      if (user) return NextResponse.json({ success: true, exists: true, user });
+      return NextResponse.json({ success: true, exists: false, user: null });
     }
-    return NextResponse.json({ success: true, exists: false, user: null });
+
+    // List mode — derive clients from this coordinator's bookings
+    const coord = await Coordinator.findOne({ userId: session.userId }).select("_id").lean();
+    if (!coord) return NextResponse.json({ success: false, message: "Coordinator nahi mila" }, { status: 404 });
+
+    const bookings = await Booking.find({ coordinatorId: coord._id })
+      .select("notes userId createdAt")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // Build unique client map from bookings
+    const clientMap = new Map();
+    bookings.forEach(b => {
+      let n = {};
+      try { n = JSON.parse(b.notes || "{}"); } catch {}
+      const mob = n.patientMobile;
+      if (mob && !clientMap.has(mob)) {
+        clientMap.set(mob, {
+          mobile:    mob,
+          name:      n.patientName  || "—",
+          age:       n.patientAge,
+          gender:    n.patientGender,
+          userId:    b.userId,
+          lastVisit: b.createdAt,
+          visits:    1,
+        });
+      } else if (mob) {
+        clientMap.get(mob).visits++;
+      }
+    });
+
+    let clients = Array.from(clientMap.values());
+
+    // Apply search filter
+    if (search) {
+      const re = new RegExp(search, "i");
+      clients = clients.filter(c => re.test(c.name) || re.test(c.mobile));
+    }
+
+    return NextResponse.json({ success: true, clients, total: clients.length });
   } catch (err) {
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });
   }

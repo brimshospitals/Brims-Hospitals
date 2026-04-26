@@ -39,10 +39,35 @@ export async function GET(request) {
 
     // Unique clients
     const clientMobiles = new Set();
-    let notes;
     bookings.forEach(b => {
-      try { notes = JSON.parse(b.notes || "{}"); } catch { notes = {}; }
-      if (notes.patientMobile) clientMobiles.add(notes.patientMobile);
+      let n = {};
+      try { n = JSON.parse(b.notes || "{}"); } catch {}
+      if (n.patientMobile) clientMobiles.add(n.patientMobile);
+    });
+
+    // Last 7 days earnings trend
+    const trend = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      d.setDate(d.getDate() - i);
+      const next = new Date(d);
+      next.setDate(next.getDate() + 1);
+      const dayBookings = bookings.filter(b => {
+        const t = new Date(b.createdAt);
+        return t >= d && t < next;
+      });
+      trend.push({
+        date:     d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" }),
+        bookings: dayBookings.length,
+        earned:   dayBookings.reduce((s, b) => s + (b.coordinatorCommission || 0), 0),
+      });
+    }
+
+    // This month breakdown by type
+    const typeBreakdown = {};
+    monthBookings.forEach(b => {
+      typeBreakdown[b.type] = (typeBreakdown[b.type] || 0) + (b.coordinatorCommission || 0);
     });
 
     return NextResponse.json({
@@ -56,7 +81,10 @@ export async function GET(request) {
         totalEarned,
         pendingEarned,
         paidEarned,
+        monthEarned:    monthBookings.reduce((s, b) => s + (b.coordinatorCommission || 0), 0),
       },
+      trend,
+      typeBreakdown,
       bookings,
     });
   } catch (err) {

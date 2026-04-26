@@ -49,7 +49,6 @@ export async function POST(request) {
 
     await connectDB();
 
-    // Check karo koi existing card toh nahi
     const user = await User.findById(userId);
     if (!user) {
       return NextResponse.redirect(
@@ -57,11 +56,14 @@ export async function POST(request) {
       );
     }
 
+    // First-time activation only (not renewal — renewal uses /api/renew-card)
+    const isFirstActivation = !user.familyCardId;
+
     // Family Card banana
     const cardNumber = generateCardNumber();
     const activationDate = new Date();
     const expiryDate = new Date();
-    expiryDate.setFullYear(expiryDate.getFullYear() + 1); // 1 saal valid
+    expiryDate.setFullYear(expiryDate.getFullYear() + 1);
 
     const familyCard = await FamilyCard.create({
       primaryMemberId: userId,
@@ -76,11 +78,45 @@ export async function POST(request) {
       amountPaid: data?.amount ? data.amount / 100 : 249,
     });
 
-    // User ko card link karo
+    // User ko card link karo aur role upgrade
     user.familyCardId = familyCard._id;
+    user.role = "member";
     await user.save();
 
-    // Success page pe redirect
+    // Referral cashback — dono ko ₹50 jab pehli baar card activate ho
+    if (isFirstActivation && user.referredBy) {
+      try {
+        const referrer = await User.findOne({ referralCode: user.referredBy });
+        if (referrer) {
+          user.walletBalance    = (user.walletBalance    || 0) + 50;
+          referrer.walletBalance = (referrer.walletBalance || 0) + 50;
+          await Promise.all([user.save(), referrer.save()]);
+          const { default: Transaction } = await import("../../../models/Transaction.js");
+          await Transaction.create([
+            {
+              userId:      user._id,
+              type:        "credit",
+              amount:      50,
+              description: `Referral cashback — Family Card activate kiya (code: ${user.referredBy})`,
+              referenceId: user.referredBy,
+              status:      "success",
+            },
+            {
+              userId:      referrer._id,
+              type:        "credit",
+              amount:      50,
+              description: `Referral reward — ${user.name || "User"} ne Family Card activate kiya`,
+              referenceId: user._id.toString(),
+              status:      "success",
+            },
+          ]);
+        }
+      } catch (refErr) {
+        console.error("Referral cashback error:", refErr);
+        // Non-fatal — card activation should still succeed
+      }
+    }
+
     return NextResponse.redirect(
       `${process.env.NEXTAUTH_URL}/dashboard?payment=success&cardNumber=${cardNumber}`
     );

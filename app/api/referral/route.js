@@ -77,39 +77,15 @@ export async function POST(request) {
       return NextResponse.json({ success: false, message: "Apna khud ka code use nahi kar sakte" }, { status: 400 });
     }
 
-    // Apply referral
+    // Save referredBy — wallet cashback triggers on card activation, not here
     newUser.referredBy = referralCode.trim().toUpperCase();
-    newUser.walletBalance = (newUser.walletBalance || 0) + CASHBACK_AMOUNT;
     await newUser.save();
-
-    // Referrer ko bhi cashback
-    referrer.walletBalance = (referrer.walletBalance || 0) + CASHBACK_AMOUNT;
-    await referrer.save();
-
-    // Transactions record
-    await Transaction.create([
-      {
-        userId:      newUser._id,
-        type:        "credit",
-        amount:      CASHBACK_AMOUNT,
-        description: `Referral cashback — code ${referralCode} use kiya`,
-        referenceId: referralCode,
-        status:      "success",
-      },
-      {
-        userId:      referrer._id,
-        type:        "credit",
-        amount:      CASHBACK_AMOUNT,
-        description: `Referral reward — ${newUser.name || "New User"} ne aapka code use kiya`,
-        referenceId: newUser._id.toString(),
-        status:      "success",
-      },
-    ]);
 
     return NextResponse.json({
       success: true,
-      message: `₹${CASHBACK_AMOUNT} aapke wallet mein add ho gaye! ${referrer.name} ne aapko refer kiya tha.`,
+      message: `Referral code apply ho gaya! ₹${CASHBACK_AMOUNT} aapko aur ${referrer.name} dono ko milega jab aap Family Card activate karein.`,
       cashback: CASHBACK_AMOUNT,
+      referrerName: referrer.name,
     });
   } catch (error) {
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });

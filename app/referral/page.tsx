@@ -45,7 +45,7 @@ export default function ReferralPage() {
     if (!data) return;
     const msg = encodeURIComponent(
       `🏥 *Brims Hospitals* pe register karein aur apna OPD, Lab Test, Surgery sab ek jagah book karein!\n\n` +
-      `Mere referral code se register karo — dono ko ₹50 wallet cashback milega! 🎉\n\n` +
+      `Mere referral code se register karo — dono ko ₹50 wallet cashback milega jab Family Card activate hogi! 🎉\n\n` +
       `👉 ${data.shareLink || `https://brims-hospitals-app.vercel.app/login?ref=${data.referralCode}`}`
     );
     window.open(`https://wa.me/?text=${msg}`, "_blank");
@@ -99,7 +99,7 @@ export default function ReferralPage() {
           <div className="relative z-10">
             <p className="text-teal-100 text-xs font-semibold uppercase tracking-widest mb-1">Refer & Earn</p>
             <h1 className="text-2xl font-black mb-1">Dono ko milenge ₹50! 🎉</h1>
-            <p className="text-teal-100 text-sm">Apne dost ko refer karo — unhe bhi ₹50 milenge aur aapko bhi!</p>
+            <p className="text-teal-100 text-sm">Apne dost ko refer karo — jab woh Family Card activate karein, dono ko ₹50 milega!</p>
 
             <div className="mt-5 bg-white/20 backdrop-blur-sm rounded-2xl p-4 border border-white/30">
               <p className="text-teal-100 text-xs font-semibold uppercase tracking-wide mb-2">Aapka Referral Code</p>
@@ -193,7 +193,7 @@ export default function ReferralPage() {
             {[
               { step: "1", icon: "📤", title: "Apna code share karein",   desc: "Dost ko apna referral code ya link bhejein" },
               { step: "2", icon: "📝", title: "Dost register kare",       desc: "Woh register karte waqt aapka code enter karein" },
-              { step: "3", icon: "💰", title: "Dono ko ₹50 milte hain",  desc: "Unhe bhi ₹50 aur aapko bhi ₹50 wallet mein aata hai" },
+              { step: "3", icon: "💳", title: "Dost Family Card activate kare", desc: "₹249 mein card activate hone par — dono ko ₹50 wallet mein aata hai" },
               { step: "4", icon: "🛏️", title: "Wallet se booking karein", desc: "Balance se OPD, Lab, Surgery book karein" },
             ].map((item) => (
               <div key={item.step} className="flex items-start gap-3">
@@ -244,7 +244,7 @@ export default function ReferralPage() {
           <ul className="list-disc list-inside space-y-0.5">
             <li>Ek referral code sirf ek baar use ho sakta hai (per user)</li>
             <li>Apna khud ka code use nahi kar sakte</li>
-            <li>₹50 cashback wallet mein instantly credit hota hai</li>
+            <li>₹50 cashback tab milta hai jab referred person apni Family Card activate kare (₹249)</li>
             <li>Brims Hospitals is scheme ko kabhi bhi badal ya band kar sakta hai</li>
           </ul>
         </div>
