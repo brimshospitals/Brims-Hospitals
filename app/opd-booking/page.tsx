@@ -29,6 +29,7 @@ function OPDBookingContent() {
   // Profile data
   const [profile, setProfile]         = useState<any>(null);
   const [familyMembers, setFamilyMembers] = useState<any[]>([]);
+  const [hasMembership, setHasMembership] = useState(false);
   const [profileLoading, setProfileLoading] = useState(true);
 
   // Doctors
@@ -72,6 +73,7 @@ function OPDBookingContent() {
         if (data.success) {
           setProfile(data.user);
           setFamilyMembers(data.familyMembers || []);
+          setHasMembership(!!data.familyCard);
         }
       })
       .catch(() => {})
@@ -292,17 +294,26 @@ function OPDBookingContent() {
                         {doc.speciality && <p className="text-gray-400 text-xs">{doc.speciality}</p>}
                         {doc.experience && <p className="text-gray-400 text-xs">{doc.experience} yrs exp</p>}
                       </div>
-                      <div className="text-right flex-shrink-0">
-                        {doc.offerFee ? (
+                      <div className="ml-3 flex-shrink-0 text-right min-w-[80px] flex flex-col items-end">
+                        {doc.offerFee && doc.offerFee < doc.opdFee ? (
                           <>
-                            <p className="text-xs text-gray-400 line-through">₹{doc.opdFee}</p>
-                            <p className="font-bold text-blue-700 text-base">₹{doc.offerFee}</p>
+                            <p className="text-[11px] text-gray-400 line-through leading-none mb-0.5">MRP ₹{doc.opdFee}</p>
+                            <p className="font-black text-blue-700 text-xl leading-none">₹{doc.offerFee}</p>
+                            <span className="inline-block mt-1 text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-semibold">
+                              ₹{doc.opdFee - doc.offerFee} off
+                            </span>
                           </>
                         ) : (
-                          <p className="font-bold text-blue-700 text-base">₹{doc.opdFee}</p>
+                          <p className="font-black text-blue-700 text-xl leading-none">₹{doc.opdFee}</p>
+                        )}
+                        {!hasMembership && (
+                          <div className="mt-1.5 bg-green-50 border border-green-200 rounded-lg px-2 py-1 text-right">
+                            <p className="text-[10px] text-gray-500 leading-none mb-0.5">💳 Member</p>
+                            <p className="text-[10px] text-amber-600 font-semibold leading-none">Extra savings!</p>
+                          </div>
                         )}
                         {doc.rating > 0 && (
-                          <p className="text-xs text-amber-500">⭐ {doc.rating.toFixed(1)}</p>
+                          <p className="text-xs text-amber-500 mt-1">⭐ {doc.rating.toFixed(1)}</p>
                         )}
                       </div>
                     </div>
@@ -448,6 +459,18 @@ function OPDBookingContent() {
                 </span>
               </div>
             </div>
+
+            {/* Card nudge for non-members */}
+            {!hasMembership && selectedDoctor && selectedDoctor.opdFee > (selectedDoctor.offerFee || selectedDoctor.opdFee) && (
+              <div className="mb-4 bg-amber-50 border border-amber-300 rounded-xl p-3 flex items-center gap-3">
+                <span className="text-2xl">💳</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold text-amber-800">Family Card activate karein!</p>
+                  <p className="text-xs text-amber-700">Wallet se OPD book karein + family ko bhi add karein</p>
+                </div>
+                <a href="/dashboard" className="text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 px-3 py-1.5 rounded-lg whitespace-nowrap">₹249/yr →</a>
+              </div>
+            )}
 
             {/* Payment Mode */}
             <div className="mb-5">
@@ -608,6 +631,20 @@ function OPDBookingContent() {
               <Row label="Patient" value={booking.patientName} />
               <Row label="Fees" value={`₹${booking.amount}`} bold />
             </div>
+
+            {/* Savings banner */}
+            {selectedDoctor && selectedDoctor.opdFee > booking.amount && (
+              <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-xs text-green-700 mb-3 text-left font-semibold">
+                🎉 Aapne MRP ₹{selectedDoctor.opdFee} se ₹{selectedDoctor.opdFee - booking.amount} bachaye!
+              </div>
+            )}
+            {!hasMembership && (
+              <div className="bg-teal-50 border border-teal-200 rounded-xl px-4 py-3 text-xs text-teal-700 mb-3 text-left flex items-center gap-2">
+                <span>💳</span>
+                <span>Family Card activate karein (₹249/yr) — Wallet se bookings karein aur puri family ko manage karein!</span>
+                <a href="/dashboard" className="ml-auto font-bold text-teal-600 whitespace-nowrap">Activate →</a>
+              </div>
+            )}
 
             <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-700 mb-5 text-left">
               📱 Confirmation SMS +91 {booking.patientMobile} par bhej diya gaya hai

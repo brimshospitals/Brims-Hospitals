@@ -6,6 +6,7 @@ import Doctor from "../../../models/Doctor";
 import Hospital from "../../../models/Hospital";
 import SurgeryPackage from "../../../models/SurgeryPackage";
 import LabTest from "../../../models/LabTest";
+import SupportTicket from "../../../models/SupportTicket";
 import { requireAuth } from "../../../lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -35,6 +36,7 @@ export async function GET(request) {
       pendingDoctors,
       totalPackages,
       totalLabTests,
+      openSupportTickets,
       bookingStats,
     ] = await Promise.all([
       User.countDocuments({ role: { $in: ["user", "member"] }, isActive: true }),
@@ -44,6 +46,7 @@ export async function GET(request) {
       Doctor.countDocuments({ isActive: false }),
       SurgeryPackage.countDocuments({ isActive: true }),
       LabTest.countDocuments({ isActive: true }),
+      SupportTicket.countDocuments({ status: { $in: ["open", "in_progress"] } }),
       Booking.aggregate([
         { $group: { _id: "$status", count: { $sum: 1 }, revenue: { $sum: "$amount" } } },
       ]),
@@ -57,6 +60,7 @@ export async function GET(request) {
       pendingDoctors,
       totalPackages,
       totalLabTests,
+      openSupportTickets,
       bookings: { total: 0, pending: 0, confirmed: 0, completed: 0, cancelled: 0 },
       revenue: { total: 0, paid: 0 },
     };

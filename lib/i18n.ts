@@ -32,6 +32,7 @@ const translations: Record<string, Record<Lang, string>> = {
   "tile.ambulance":   { en: "Ambulance",          hi: "एम्बुलेंस" },
   "tile.referral":    { en: "Refer & Earn",       hi: "रेफर करें" },
   "tile.healthCard":  { en: "Health Card",        hi: "हेल्थ कार्ड" },
+  "tile.support":     { en: "Help & Support",     hi: "सहायता केंद्र" },
 
   "tile.opd.sub":         { en: "Specialist appointment",    hi: "विशेषज्ञ अपॉइंटमेंट" },
   "tile.teleconsult.sub": { en: "Video / Audio Call",        hi: "वीडियो / ऑडियो कॉल" },
@@ -43,6 +44,7 @@ const translations: Record<string, Record<Lang, string>> = {
   "tile.ambulance.sub":   { en: "Emergency request",         hi: "आपातकालीन अनुरोध" },
   "tile.referral.sub":    { en: "₹50 cashback per referral", hi: "₹50 कैशबैक प्रति रेफरल" },
   "tile.healthCard.sub":  { en: "Download PDF card",         hi: "PDF कार्ड डाउनलोड" },
+  "tile.support.sub":     { en: "Raise a ticket / Get help", hi: "टिकट बनाएं / सहायता" },
 
   // ── Common buttons ──
   "btn.book":         { en: "Book Now",           hi: "अभी बुक करें" },

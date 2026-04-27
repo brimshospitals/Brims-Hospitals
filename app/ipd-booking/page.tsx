@@ -421,16 +421,45 @@ export default function IPDBookingPage() {
             </div>
 
             {/* Cost estimate */}
-            <div className="bg-gradient-to-br from-teal-600 to-teal-500 rounded-2xl p-5 text-white">
-              <p className="text-teal-200 text-xs font-semibold uppercase tracking-wide mb-2">Estimated Cost</p>
-              <div className="flex items-end justify-between">
-                <div>
-                  <p className="text-3xl font-black">₹{totalEstimate.toLocaleString("en-IN")}</p>
-                  <p className="text-teal-200 text-xs mt-0.5">
-                    ₹{dailyRate.toLocaleString("en-IN")}/din × {estDays} din ({roomType} room)
-                  </p>
+            <div className="rounded-2xl overflow-hidden border border-gray-200">
+              <div className="bg-gray-50 px-4 pt-3 pb-2 space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-gray-400">Room rate</span>
+                  <span className="text-xs text-gray-500 font-medium">₹{dailyRate.toLocaleString("en-IN")}/din × {estDays} din</span>
                 </div>
-                <p className="text-teal-200 text-xs text-right">*Approximate<br/>Final amount<br/>on discharge</p>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-gray-500 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-gray-400 inline-block" />
+                    Room type
+                  </span>
+                  <span className="text-xs font-semibold text-gray-700">{roomType}</span>
+                </div>
+                {!hasMembership && (
+                  <div className="flex justify-between items-center pt-1 border-t border-gray-200">
+                    <span className="text-xs flex items-center gap-1.5 text-gray-400">
+                      <span className="text-sm leading-none">💳</span>
+                      Member Price
+                      <span className="text-[10px] bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded-full">Card chahiye</span>
+                    </span>
+                    <span className="text-xs font-bold text-gray-400">Extra savings</span>
+                  </div>
+                )}
+                {hasMembership && (
+                  <div className="flex justify-between items-center pt-1 border-t border-gray-200">
+                    <span className="text-xs text-teal-600 font-semibold flex items-center gap-1.5">
+                      <span className="text-sm leading-none">💳</span>
+                      Member benefit
+                    </span>
+                    <span className="text-xs font-bold text-teal-600">Priority bed + savings ✓</span>
+                  </div>
+                )}
+              </div>
+              <div className="bg-teal-600 px-4 py-3 flex justify-between items-center">
+                <div>
+                  <p className="text-teal-100 text-[11px] font-medium uppercase tracking-wide">Estimated Total</p>
+                  <p className="text-teal-200 text-[10px] mt-0.5">*Approximate — final bill on discharge</p>
+                </div>
+                <p className="text-white text-2xl font-black">₹{totalEstimate.toLocaleString("en-IN")}</p>
               </div>
             </div>
 
@@ -521,6 +550,28 @@ export default function IPDBookingPage() {
                 </div>
               </div>
             </div>
+
+            {/* Card nudge for non-members */}
+            {!hasMembership && (
+              <div className="rounded-2xl overflow-hidden border border-amber-200">
+                <div className="bg-gradient-to-r from-amber-500 to-orange-400 px-4 py-2 flex items-center gap-2">
+                  <span className="text-white text-lg">💳</span>
+                  <p className="text-white text-xs font-bold flex-1">Family Card activate karein — sirf ₹249/year</p>
+                  <a href="/dashboard" className="bg-white text-amber-600 text-xs font-black px-3 py-1 rounded-full whitespace-nowrap">Activate →</a>
+                </div>
+                <div className="bg-amber-50 px-4 py-2.5 space-y-1">
+                  <div className="flex items-center gap-2 text-xs text-amber-800">
+                    <span>✓</span><span>Wallet se deposit karein (bina counter gaye)</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-amber-800">
+                    <span>✓</span><span>IPD admission par priority bed + special rate</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-amber-800">
+                    <span>✓</span><span>Poori family (6 members) ek card mein cover</span>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Payment mode */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">

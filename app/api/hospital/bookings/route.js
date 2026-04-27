@@ -17,9 +17,11 @@ export async function GET(request) {
 
     if (!hospitalId) return NextResponse.json({ success: false, message: "hospitalId required" }, { status: 400 });
 
-    const dateFilter = searchParams.get("date") || "all";   // today | all
-    const status     = searchParams.get("status") || "all";  // pending|confirmed|completed|cancelled|all
-    const type       = searchParams.get("type")   || "all";  // OPD|Lab|Surgery|Consultation|IPD|all
+    const dateFilter = searchParams.get("date")     || "all";
+    const status     = searchParams.get("status")   || "all";
+    const type       = searchParams.get("type")     || "all";
+    const search     = searchParams.get("search")   || "";    // bookingId or patient mobile
+    const doctorId   = searchParams.get("doctorId") || "";    // filter by specific doctor
     const page       = parseInt(searchParams.get("page") || "1");
     const limit      = 20;
 
@@ -29,11 +31,20 @@ export async function GET(request) {
 
     if (status !== "all")   query.status = status;
     if (type   !== "all")   query.type   = type;
+    if (doctorId)           query.doctorId = doctorId;
 
     if (dateFilter === "today") {
       const start = new Date(); start.setHours(0,0,0,0);
       const end   = new Date(); end.setHours(23,59,59,999);
       query.appointmentDate = { $gte: start, $lte: end };
+    }
+
+    // Search by bookingId or patient mobile (stored in notes JSON)
+    if (search.trim()) {
+      query.$or = [
+        { bookingId: { $regex: search.trim(), $options: "i" } },
+        { notes:     { $regex: search.trim(), $options: "i" } },
+      ];
     }
 
     const total    = await Booking.countDocuments(query);

@@ -8,6 +8,7 @@ import Notification from "../../../models/Notification";
 import PromoCode from "../../../models/PromoCode";
 import CommissionSlab from "../../../models/CommissionSlab";
 import Coordinator from "../../../models/Coordinator";
+import Transaction from "../../../models/Transaction";
 import { requireAuth } from "../../../lib/auth";
 import { sendPushMulticast } from "../../../lib/fcm-admin";
 
@@ -116,18 +117,24 @@ export async function POST(request) {
     // ── Coordinator lookup ──────────────────────────────────────
     let coordId = undefined, coordName = "", coordCommissionAmt = 0, coordCommissionPct = 0;
     const resolvedCoordUserId = coordinatorUserId || (session.role === "coordinator" ? session.userId : null);
+    let coord = null;
     if (resolvedCoordUserId) {
-      const coord = await Coordinator.findOne({ userId: resolvedCoordUserId, isActive: true }).lean();
-      if (coord) {
-        coordId = coord._id;
-        coordName = coord.name;
-        coordCommissionPct = coord.commissionRates?.[type] ?? 0;
-        coordCommissionAmt = Math.round(bookingAmount * coordCommissionPct / 100);
-        // Update coordinator stats
-        await Coordinator.findByIdAndUpdate(coord._id, {
-          $inc: { totalBookings: 1, totalEarned: coordCommissionAmt, pendingEarned: coordCommissionAmt },
-        });
+      coord = await Coordinator.findOne({ userId: resolvedCoordUserId, isActive: true }).lean();
+    } else {
+      // Auto-detect: if this user was registered by a coordinator, credit that coordinator
+      const bookingUser = await User.findById(session.userId, "registeredByCoordinator").lean();
+      if (bookingUser?.registeredByCoordinator) {
+        coord = await Coordinator.findById(bookingUser.registeredByCoordinator).lean();
       }
+    }
+    if (coord) {
+      coordId = coord._id;
+      coordName = coord.name;
+      coordCommissionPct = coord.commissionRates?.[type] ?? 0;
+      coordCommissionAmt = Math.round(bookingAmount * coordCommissionPct / 100);
+      await Coordinator.findByIdAndUpdate(coord._id, {
+        $inc: { totalBookings: 1, totalEarned: coordCommissionAmt, pendingEarned: coordCommissionAmt },
+      });
     }
 
     // ── Partial booking for Surgery ─────────────────────────────
@@ -163,6 +170,64 @@ export async function POST(request) {
       depositAmount:    actualDepositAmount,
       balanceAmount:    balanceAmt,
     });
+
+    // ── Transaction records ────────────────────────────────────
+    try {
+      const txnsToCreate = [];
+
+      // Wallet payment deduction
+      if (paymentMode === "wallet" && bookingAmount > 0) {
+        const deductAmt = isPartialBooking ? actualDepositAmount : bookingAmount;
+        txnsToCreate.push({
+          userId:      session.userId,
+          type:        "debit",
+          amount:      deductAmt,
+          description: `Wallet Payment — ${type} Booking (${bookingId})`,
+          bookingId:   booking._id,
+          referenceId: bookingId,
+          category:    "booking_payment",
+          status:      "success",
+        });
+
+        // Deduct from wallet
+        await User.findByIdAndUpdate(session.userId, { $inc: { walletBalance: -deductAmt } });
+        await Booking.findByIdAndUpdate(booking._id, { paymentStatus: "paid" });
+      }
+
+      // Platform income record for online payment (created optimistically — confirmed in callback)
+      if (paymentMode === "online" && bookingAmount > 0) {
+        txnsToCreate.push({
+          userId:      session.userId,
+          type:        "credit",
+          amount:      isPartialBooking ? actualDepositAmount : bookingAmount,
+          description: `Online Payment — ${type} Booking (${bookingId})`,
+          bookingId:   booking._id,
+          referenceId: bookingId,
+          category:    "booking_payment",
+          status:      "pending",   // confirmed when PhonePe callback fires
+        });
+      }
+
+      // Coordinator booking commission
+      if (coordId && coordCommissionAmt > 0) {
+        txnsToCreate.push({
+          userId:      coord.userId,
+          type:        "credit",
+          amount:      coordCommissionAmt,
+          description: `Booking Commission (${coordCommissionPct}%) — ${type} Booking (${bookingId})`,
+          bookingId:   booking._id,
+          referenceId: bookingId,
+          category:    "coordinator_commission",
+          status:      "pending",   // becomes available when booking completed
+        });
+      }
+
+      if (txnsToCreate.length > 0) {
+        await Transaction.insertMany(txnsToCreate);
+      }
+    } catch (txnErr) {
+      console.error("Transaction record error:", txnErr.message);
+    }
 
     // ── Notifications ──────────────────────────────────────────
     const typeLabel = { OPD: "OPD Appointment", Lab: "Lab Test", Surgery: "Surgery Package", Consultation: "Teleconsultation" }[type] || type;

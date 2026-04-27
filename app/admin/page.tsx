@@ -7,7 +7,7 @@ import { BIHAR_DISTRICTS } from "@/lib/biharDistricts";
 import { MEDICAL_DEPARTMENTS, SURGERY_DEPARTMENTS, SURGERIES_BY_DEPARTMENT } from "@/lib/medicalDepartments";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type Tab = "overview" | "members" | "hospitals" | "doctors" | "packages" | "labtests" | "bookings" | "staff" | "promo" | "reports" | "accounting" | "ambulance" | "articles" | "notifications" | "coordinators";
+type Tab = "overview" | "members" | "hospitals" | "doctors" | "packages" | "labtests" | "bookings" | "staff" | "promo" | "reports" | "accounting" | "ambulance" | "articles" | "notifications" | "coordinators" | "ledger" | "support";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   pending:   { label: "Pending",   color: "bg-yellow-100 text-yellow-700 border-yellow-200" },
@@ -268,13 +268,59 @@ function InfoChip({ label, value }: { label: string; value: string }) {
 
 // ─── Hospital Detail Drawer ───────────────────────────────────────────────────
 function HospitalDrawer({ hospitalId, onClose, onVerify }: { hospitalId: string; onClose: () => void; onVerify: (id: string, verified: boolean) => void }) {
-  const [data, setData]       = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [data,      setData]      = useState<any>(null);
+  const [loading,   setLoading]   = useState(true);
+  const [commSlab,  setCommSlab]  = useState<any>(null);
+  const [commForm,  setCommForm]  = useState({ OPD: "", Lab: "", Surgery: "", Consultation: "", IPD: "", notes: "" });
+  const [commNotes, setCommNotes] = useState("");
+  const [savingComm, setSavingComm] = useState(false);
+  const [commMsg,   setCommMsg]   = useState<{ msg: string; ok: boolean } | null>(null);
 
   useEffect(() => {
-    fetch(`/api/admin/hospitals?detail=${hospitalId}`).then((r) => r.json())
-      .then((d) => { if (d.success) setData(d); }).finally(() => setLoading(false));
+    setLoading(true);
+    Promise.all([
+      fetch(`/api/admin/hospitals?detail=${hospitalId}`).then((r) => r.json()),
+      fetch(`/api/admin/commission-slabs?hospitalId=${hospitalId}`).then((r) => r.json()),
+    ]).then(([hData, slabData]) => {
+      if (hData.success)   setData(hData);
+      if (slabData.success) {
+        const slab = slabData.slab;
+        setCommSlab(slab);
+        setCommForm({
+          OPD:          String(slab?.rates?.OPD          ?? 10),
+          Lab:          String(slab?.rates?.Lab          ?? 12),
+          Surgery:      String(slab?.rates?.Surgery      ?? 8),
+          Consultation: String(slab?.rates?.Consultation ?? 15),
+          IPD:          String(slab?.rates?.IPD          ?? 8),
+          notes:        slab?.notes ?? "",
+        });
+      } else {
+        setCommForm({ OPD: "10", Lab: "12", Surgery: "8", Consultation: "15", IPD: "8", notes: "" });
+      }
+    }).finally(() => setLoading(false));
   }, [hospitalId]);
+
+  async function saveCommission() {
+    setSavingComm(true);
+    setCommMsg(null);
+    try {
+      const rates = {
+        OPD:          Number(commForm.OPD)          || 0,
+        Lab:          Number(commForm.Lab)          || 0,
+        Surgery:      Number(commForm.Surgery)      || 0,
+        Consultation: Number(commForm.Consultation) || 0,
+        IPD:          Number(commForm.IPD)          || 0,
+      };
+      const res  = await fetch("/api/admin/commission-slabs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hospitalId, rates, notes: commForm.notes }),
+      });
+      const json = await res.json();
+      setCommMsg({ msg: json.message || (json.success ? "Rates saved!" : "Error"), ok: json.success });
+      if (json.success) setCommSlab(json.slab);
+    } finally { setSavingComm(false); }
+  }
 
   const h = data?.hospital;
 
@@ -358,6 +404,42 @@ function HospitalDrawer({ hospitalId, onClose, onVerify }: { hospitalId: string;
                   </div>
                 </DrawerSection>
               )}
+
+              {/* ── Commission Rates Editor ── */}
+              <div className="bg-white rounded-2xl border border-indigo-100 shadow-sm p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-bold text-gray-800">📊 Commission Rates (%)</p>
+                  {commSlab && <span className="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Slab Active</span>}
+                </div>
+                <p className="text-xs text-gray-400">Online payment pe ye % platform rakhega, baaki hospital ko milega. Counter payment pe hospital ye % platform ko dega.</p>
+                {commMsg && <div className={`text-xs px-3 py-2 rounded-xl font-semibold ${commMsg.ok ? "bg-green-50 text-green-700 border border-green-200" : "bg-red-50 text-red-600 border border-red-200"}`}>{commMsg.msg}</div>}
+                <div className="grid grid-cols-5 gap-2">
+                  {(["OPD","Lab","Surgery","Consultation","IPD"] as const).map((t) => (
+                    <div key={t} className="flex flex-col gap-1">
+                      <label className="text-[10px] text-gray-500 font-semibold text-center">{t}</label>
+                      <div className="relative">
+                        <input
+                          type="number" min="0" max="100" step="0.5"
+                          value={commForm[t]}
+                          onChange={(e) => setCommForm((p) => ({ ...p, [t]: e.target.value }))}
+                          className="w-full border border-gray-200 rounded-xl px-2 py-2 text-sm text-center font-bold focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                        />
+                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">%</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <textarea
+                  rows={2} placeholder="Notes (optional — negotiation details, effective date, etc.)"
+                  value={commForm.notes}
+                  onChange={(e) => setCommForm((p) => ({ ...p, notes: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-none"
+                />
+                <button onClick={saveCommission} disabled={savingComm}
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-semibold py-2.5 rounded-xl transition">
+                  {savingComm ? "Saving..." : "💾 Save Commission Rates"}
+                </button>
+              </div>
             </>
           )}
         </div>
@@ -900,7 +982,7 @@ function HMPDoctorModal({ hospitalId, doctor, onClose, onSaved }: { hospitalId: 
       const payload: any = {
         hospitalId, ...f, opdFee: Number(f.opdFee), offerFee: Number(f.offerFee) || Number(f.opdFee),
         experience: Number(f.experience) || 0,
-        degrees: f.degrees ? f.degrees.split(",").map((s) => ({ degree: s.trim(), university: "", year: null })).filter((d) => d.degree) : [],
+        degrees: f.degrees ? f.degrees.split(",").map((s: string) => ({ degree: s.trim(), university: "", year: null })).filter((d: { degree: string }) => d.degree) : [],
       };
       if (isEdit) payload.doctorId = doctor._id;
       const res  = await fetch("/api/hospital/doctors", {
@@ -1063,7 +1145,7 @@ function HMPSurgeryModal({ hospitalId, pkg, onClose, onSaved }: { hospitalId: st
         roomOptions:           activeRoomOptions,
         surgeonName,
         surgeonExperience:     Number(surgeonExp) || 0,
-        surgeonDegrees:        surgeonDeg.split(",").map((s) => s.trim()).filter(Boolean),
+        surgeonDegrees:        surgeonDeg.split(",").map((s: string) => s.trim()).filter(Boolean),
         pickupFromHome:        pickup,
         pickupCharge:          pickup ? Number(pickupCharge) || 0 : 0,
         dropAvailable:         drop,
@@ -3922,11 +4004,15 @@ function CoordinatorsTab() {
   const [coordinators, setCoordinators] = useState<any[]>([]);
   const [loading,      setLoading]      = useState(false);
   const [toast,        setToast]        = useState("");
+  const [toastOk,      setToastOk]      = useState(true);
   const [showAdd,      setShowAdd]      = useState(false);
-  const [selected,     setSelected]     = useState<any>(null); // detail view
+  const [selected,     setSelected]     = useState<any>(null);
+  const [detailTab,    setDetailTab]    = useState<"overview"|"bookings"|"transactions">("overview");
+  const [detailLoading, setDetailLoading] = useState(false);
   const [saving,       setSaving]       = useState(false);
+  const [utrInput,     setUtrInput]     = useState("");
+  const [processingTxn, setProcessingTxn] = useState<string | null>(null);
 
-  // Add form state
   const [form, setForm] = useState({
     name: "", mobile: "", email: "", district: "", area: "", type: "health_worker",
     commOPD: "0", commLab: "30", commSurgery: "20", commConsultation: "0", commIPD: "10",
@@ -3939,7 +4025,9 @@ function CoordinatorsTab() {
 
   const INP = "w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400";
 
-  function showToast(msg: string) { setToast(msg); setTimeout(() => setToast(""), 3000); }
+  function showToast(msg: string, ok = true) {
+    setToast(msg); setToastOk(ok); setTimeout(() => setToast(""), 3500);
+  }
   function setF(k: string, v: string) { setForm(f => ({ ...f, [k]: v })); }
 
   async function fetchCoordinators() {
@@ -3952,15 +4040,25 @@ function CoordinatorsTab() {
   }
 
   async function fetchDetail(id: string) {
+    setDetailLoading(true);
     try {
       const res  = await fetch(`/api/admin/coordinators?id=${id}`);
       const data = await res.json();
-      if (data.success) setSelected({ ...data.coordinator, bookings: data.bookings || [] });
-    } catch {}
+      if (data.success) {
+        setSelected({
+          ...data.coordinator,
+          bookings:          data.bookings || [],
+          transactions:      data.transactions || [],
+          availableEarned:   data.availableEarned || 0,
+          pendingWithdrawals: data.pendingWithdrawals || [],
+        });
+        setDetailTab("overview");
+      }
+    } finally { setDetailLoading(false); }
   }
 
   async function addCoordinator() {
-    if (!form.name || !form.mobile) return showToast("Name aur mobile zaruri hai");
+    if (!form.name || !form.mobile) return showToast("Name aur mobile zaruri hai", false);
     setSaving(true);
     try {
       const res  = await fetch("/api/admin/coordinators", {
@@ -3981,9 +4079,9 @@ function CoordinatorsTab() {
         setShowAdd(false);
         setForm({ name: "", mobile: "", email: "", district: "", area: "", type: "health_worker", commOPD: "0", commLab: "30", commSurgery: "20", commConsultation: "0", commIPD: "10" });
         fetchCoordinators();
-      } else { showToast(data.message || "Server error — dobara try karein"); }
+      } else { showToast(data.message || "Server error", false); }
     } catch (e: any) {
-      showToast("Network error: " + (e?.message || "Unknown"));
+      showToast("Network error: " + (e?.message || "Unknown"), false);
     } finally { setSaving(false); }
   }
 
@@ -3998,19 +4096,40 @@ function CoordinatorsTab() {
     } catch {}
   }
 
-  useEffect(() => { fetchCoordinators(); }, []);
+  async function processWithdrawal(txnId: string) {
+    if (!utrInput.trim()) return showToast("UTR number darj karein", false);
+    setProcessingTxn(txnId);
+    try {
+      const res  = await fetch("/api/admin/coordinators", {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "process-withdraw", txnId, utr: utrInput.trim() }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(data.message || "Withdrawal processed!");
+        setUtrInput("");
+        if (selected) fetchDetail(selected._id);
+        fetchCoordinators();
+      } else { showToast(data.message || "Error", false); }
+    } catch { showToast("Network error", false); }
+    finally { setProcessingTxn(null); }
+  }
 
-  // BIHAR_DISTRICTS imported from lib/biharDistricts
+  useEffect(() => { fetchCoordinators(); }, []);
 
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-5">
-      {toast && <div className="fixed top-4 right-4 z-50 bg-teal-700 text-white px-4 py-2.5 rounded-xl shadow-lg text-sm">{toast}</div>}
+      {toast && (
+        <div className={`fixed top-4 right-4 z-50 px-4 py-2.5 rounded-xl shadow-lg text-sm text-white ${toastOk ? "bg-teal-700" : "bg-red-600"}`}>
+          {toast}
+        </div>
+      )}
 
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-xl font-bold text-gray-800">🤝 Health Coordinators</h2>
-          <p className="text-sm text-gray-400 mt-0.5">Local health workers jo booking karwate hain aur commission paate hain</p>
+          <p className="text-sm text-gray-400 mt-0.5">Local health workers — bookings + commission + withdrawal management</p>
         </div>
         <button onClick={() => setShowAdd(true)}
           className="px-4 py-2.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold rounded-xl transition">
@@ -4022,10 +4141,10 @@ function CoordinatorsTab() {
       {coordinators.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
-            { label: "Total",       value: coordinators.length,                                          color: "bg-teal-50  border-teal-100  text-teal-700"   },
-            { label: "Active",      value: coordinators.filter(c => c.isActive).length,                  color: "bg-green-50 border-green-100 text-green-700"   },
-            { label: "Bookings",    value: coordinators.reduce((s, c) => s + (c.totalBookings || 0), 0), color: "bg-blue-50  border-blue-100  text-blue-700"    },
-            { label: "Pending Pay", value: "₹" + coordinators.reduce((s, c) => s + (c.pendingEarned || 0), 0).toLocaleString("en-IN"), color: "bg-amber-50 border-amber-100 text-amber-700" },
+            { label: "Total",        value: coordinators.length,                                           color: "bg-teal-50  border-teal-100  text-teal-700"   },
+            { label: "Active",       value: coordinators.filter(c => c.isActive).length,                   color: "bg-green-50 border-green-100 text-green-700"   },
+            { label: "Total Bookings", value: coordinators.reduce((s, c) => s + (c.totalBookings || 0), 0), color: "bg-blue-50  border-blue-100  text-blue-700"    },
+            { label: "Total Earned", value: "₹" + coordinators.reduce((s, c) => s + (c.totalEarned || 0), 0).toLocaleString("en-IN"), color: "bg-purple-50 border-purple-100 text-purple-700" },
           ].map(c => (
             <div key={c.label} className={`rounded-2xl border p-4 ${c.color}`}>
               <p className="text-xl font-black">{c.value}</p>
@@ -4051,11 +4170,10 @@ function CoordinatorsTab() {
               <thead>
                 <tr className="text-[11px] font-bold text-gray-400 uppercase tracking-wide border-b border-gray-100 bg-gray-50">
                   <th className="px-4 py-3 text-left">Coordinator</th>
-                  <th className="px-4 py-3 text-left">Type</th>
-                  <th className="px-4 py-3 text-left">District</th>
+                  <th className="px-4 py-3 text-left">Type / District</th>
                   <th className="px-4 py-3 text-right">Bookings</th>
                   <th className="px-4 py-3 text-right">Earned</th>
-                  <th className="px-4 py-3 text-right">Pending</th>
+                  <th className="px-4 py-3 text-right">Pending Pay</th>
                   <th className="px-4 py-3 text-center">Status</th>
                   <th className="px-4 py-3 text-center">Action</th>
                 </tr>
@@ -4067,8 +4185,10 @@ function CoordinatorsTab() {
                       <p className="font-semibold text-gray-800">{c.name}</p>
                       <p className="text-xs text-gray-400">{c.mobile}{c.coordinatorId ? ` · ${c.coordinatorId}` : ""}</p>
                     </td>
-                    <td className="px-4 py-3 text-xs text-gray-600">{COORD_TYPES[c.type] || c.type}</td>
-                    <td className="px-4 py-3 text-xs text-gray-600">{c.district || "—"}</td>
+                    <td className="px-4 py-3">
+                      <p className="text-xs text-gray-600">{COORD_TYPES[c.type] || c.type}</p>
+                      <p className="text-xs text-gray-400">{c.district || "—"}</p>
+                    </td>
                     <td className="px-4 py-3 text-right font-semibold text-gray-700">{c.totalBookings || 0}</td>
                     <td className="px-4 py-3 text-right text-green-700 font-semibold">₹{(c.totalEarned || 0).toLocaleString("en-IN")}</td>
                     <td className="px-4 py-3 text-right">
@@ -4085,7 +4205,7 @@ function CoordinatorsTab() {
                       <div className="flex items-center justify-center gap-2">
                         <button onClick={() => fetchDetail(c._id)}
                           className="text-xs bg-blue-50 border border-blue-200 text-blue-700 px-2.5 py-1 rounded-lg font-semibold hover:bg-blue-100 transition">
-                          View
+                          💰 Earnings
                         </button>
                         <button onClick={() => toggleActive(c._id, c.isActive)}
                           className={`text-xs px-2.5 py-1 rounded-lg font-semibold border transition ${c.isActive ? "bg-red-50 border-red-200 text-red-600 hover:bg-red-100" : "bg-green-50 border-green-200 text-green-700 hover:bg-green-100"}`}>
@@ -4111,8 +4231,6 @@ function CoordinatorsTab() {
                 <h3 className="font-bold text-gray-800 text-lg">🤝 New Health Coordinator</h3>
                 <p className="text-sm text-gray-400 mt-0.5">Ek user account bhi ban jayega automatically</p>
               </div>
-
-              {/* Basic info */}
               <div className="space-y-3">
                 <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Basic Info</p>
                 <div className="grid grid-cols-2 gap-3">
@@ -4151,8 +4269,6 @@ function CoordinatorsTab() {
                   </div>
                 </div>
               </div>
-
-              {/* Commission rates */}
               <div className="space-y-3">
                 <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Commission Rates (%)</p>
                 <div className="grid grid-cols-3 gap-3">
@@ -4173,7 +4289,6 @@ function CoordinatorsTab() {
                 </div>
                 <p className="text-xs text-gray-400">Example: Surgery 20% → ₹10,000 surgery pe ₹2,000 milega coordinator ko</p>
               </div>
-
               <div className="flex gap-3 pt-1">
                 <button onClick={() => setShowAdd(false)} className="flex-1 border border-gray-200 text-gray-600 py-3 rounded-xl text-sm font-semibold">Cancel</button>
                 <button onClick={addCoordinator} disabled={saving}
@@ -4186,71 +4301,1257 @@ function CoordinatorsTab() {
         </>
       )}
 
-      {/* Detail Drawer */}
+      {/* ── Detail Drawer ── */}
       {selected && (
         <>
           <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={() => setSelected(null)} />
-          <div className="fixed right-0 top-0 h-full w-full max-w-md bg-white z-50 shadow-2xl overflow-y-auto">
-            <div className="p-5 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white">
+          <div className="fixed right-0 top-0 h-full w-full max-w-lg bg-white z-50 shadow-2xl flex flex-col">
+
+            {/* Header */}
+            <div className="px-5 py-4 border-b border-gray-100 flex items-start justify-between flex-shrink-0">
               <div>
-                <h3 className="font-bold text-gray-800">{selected.name}</h3>
-                <p className="text-xs text-gray-400">{selected.coordinatorId} · {COORD_TYPES[selected.type] || selected.type}</p>
+                <h3 className="font-bold text-gray-800 text-lg">{selected.name}</h3>
+                <p className="text-xs text-gray-400 mt-0.5">{selected.coordinatorId} · {COORD_TYPES[selected.type] || selected.type} · {selected.district || "—"}</p>
+                <p className="text-xs text-gray-500 mt-0.5">{selected.mobile}{selected.email ? ` · ${selected.email}` : ""}</p>
               </div>
-              <button onClick={() => setSelected(null)} className="text-gray-400 hover:text-gray-600 text-2xl">×</button>
+              <button onClick={() => setSelected(null)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none mt-1">×</button>
             </div>
-            <div className="p-5 space-y-5">
-              {/* Stats */}
-              <div className="grid grid-cols-3 gap-3">
-                {[
-                  { label: "Bookings",  value: selected.totalBookings || 0,          color: "bg-blue-50  text-blue-700"   },
-                  { label: "Earned",    value: "₹" + (selected.totalEarned || 0).toLocaleString("en-IN"),  color: "bg-green-50 text-green-700"  },
-                  { label: "Pending",   value: "₹" + (selected.pendingEarned || 0).toLocaleString("en-IN"), color: "bg-amber-50 text-amber-700" },
-                ].map(c => (
-                  <div key={c.label} className={`rounded-xl p-3 ${c.color}`}>
-                    <p className="font-black text-lg">{c.value}</p>
-                    <p className="text-xs opacity-70 font-medium">{c.label}</p>
-                  </div>
-                ))}
-              </div>
 
-              {/* Commission rates */}
-              <div className="bg-gray-50 rounded-xl p-4">
-                <p className="text-xs font-bold text-gray-500 uppercase mb-3">Commission Rates</p>
-                <div className="flex flex-wrap gap-2">
-                  {Object.entries(selected.commissionRates || {}).map(([t, r]) => (
-                    <span key={t} className="bg-white border border-gray-200 text-gray-700 text-xs px-3 py-1.5 rounded-full font-semibold">
-                      {t}: {r as number}%
-                    </span>
-                  ))}
+            {/* Sub-tabs */}
+            <div className="flex border-b border-gray-100 flex-shrink-0 px-5 pt-3 gap-1">
+              {(["overview","bookings","transactions"] as const).map(t => (
+                <button key={t} onClick={() => setDetailTab(t)}
+                  className={`px-3 py-2 text-xs font-semibold rounded-t-lg transition capitalize ${detailTab === t ? "bg-white border border-b-white border-gray-200 text-teal-700 -mb-px" : "text-gray-500 hover:text-gray-700"}`}>
+                  {t === "overview" ? "📊 Overview" : t === "bookings" ? `📋 Bookings (${selected.bookings?.length || 0})` : `💳 Transactions (${selected.transactions?.length || 0})`}
+                </button>
+              ))}
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+              {detailLoading && (
+                <div className="flex justify-center py-12">
+                  <div className="w-8 h-8 border-4 border-teal-200 border-t-teal-600 rounded-full animate-spin" />
                 </div>
-              </div>
+              )}
 
-              {/* Recent bookings */}
-              {selected.bookings && selected.bookings.length > 0 && (
-                <div>
-                  <p className="text-xs font-bold text-gray-500 uppercase mb-3">Recent Bookings</p>
-                  <div className="space-y-2">
-                    {selected.bookings.slice(0, 10).map((b: any) => {
-                      let pn = ""; try { pn = JSON.parse(b.notes || "{}").patientName || ""; } catch {}
-                      return (
-                        <div key={b._id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
-                          <div>
-                            <p className="text-sm font-semibold text-gray-700">{pn || "Patient"}</p>
-                            <p className="text-xs text-gray-400">{b.bookingId} · {b.type}</p>
+              {/* ── OVERVIEW TAB ── */}
+              {!detailLoading && detailTab === "overview" && (
+                <>
+                  {/* 4 earning stats */}
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { label: "Total Bookings",    value: selected.totalBookings || 0,                                     color: "bg-blue-50   border-blue-100   text-blue-700"   },
+                      { label: "Total Earned",      value: "₹" + (selected.totalEarned   || 0).toLocaleString("en-IN"),     color: "bg-green-50  border-green-100  text-green-700"  },
+                      { label: "Available Withdraw",value: "₹" + (selected.availableEarned || 0).toLocaleString("en-IN"),   color: "bg-teal-50   border-teal-100   text-teal-700"   },
+                      { label: "Total Paid Out",    value: "₹" + (selected.paidEarned    || 0).toLocaleString("en-IN"),     color: "bg-purple-50 border-purple-100 text-purple-700" },
+                    ].map(s => (
+                      <div key={s.label} className={`rounded-2xl border p-4 ${s.color}`}>
+                        <p className="text-xl font-black">{s.value}</p>
+                        <p className="text-xs font-semibold mt-0.5 opacity-70">{s.label}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Commission rates */}
+                  <div className="bg-gray-50 rounded-2xl p-4">
+                    <p className="text-xs font-bold text-gray-500 uppercase mb-3">Commission Rates</p>
+                    <div className="flex flex-wrap gap-2">
+                      {Object.entries(selected.commissionRates || {}).map(([t, r]) => (
+                        <span key={t} className="bg-white border border-gray-200 text-gray-700 text-xs px-3 py-1.5 rounded-full font-semibold">
+                          {t}: {r as number}%
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Pending withdrawal requests */}
+                  {selected.pendingWithdrawals && selected.pendingWithdrawals.length > 0 && (
+                    <div className="rounded-2xl overflow-hidden border border-amber-200">
+                      <div className="bg-gradient-to-r from-amber-500 to-orange-400 px-4 py-2 flex items-center gap-2">
+                        <span className="text-white text-lg">💸</span>
+                        <p className="text-white text-sm font-bold flex-1">Pending Withdrawal Requests</p>
+                        <span className="bg-white text-amber-700 text-xs font-black px-2 py-0.5 rounded-full">
+                          {selected.pendingWithdrawals.length} pending
+                        </span>
+                      </div>
+                      <div className="bg-amber-50 divide-y divide-amber-100">
+                        {selected.pendingWithdrawals.map((txn: any) => (
+                          <div key={txn._id} className="px-4 py-3 space-y-2">
+                            <div className="flex justify-between items-center">
+                              <div>
+                                <p className="text-sm font-bold text-amber-800">₹{(txn.amount || 0).toLocaleString("en-IN")}</p>
+                                <p className="text-xs text-amber-600">{txn.description}</p>
+                                <p className="text-[10px] text-amber-500">{new Date(txn.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</p>
+                              </div>
+                              <span className="text-xs bg-amber-200 text-amber-800 px-2 py-0.5 rounded-full font-semibold">Pending</span>
+                            </div>
+                            {/* UTR input + process button */}
+                            <div className="flex gap-2">
+                              <input
+                                value={processingTxn === txn._id ? utrInput : ""}
+                                onFocus={() => setProcessingTxn(txn._id)}
+                                onChange={e => { setProcessingTxn(txn._id); setUtrInput(e.target.value); }}
+                                placeholder="UTR number darj karein..."
+                                className="flex-1 border border-amber-300 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+                              />
+                              <button
+                                onClick={() => processWithdrawal(txn._id)}
+                                disabled={processingTxn === txn._id && !utrInput.trim()}
+                                className="bg-green-600 hover:bg-green-700 text-white text-xs font-bold px-3 py-2 rounded-xl disabled:opacity-50 transition whitespace-nowrap">
+                                ✓ Process
+                              </button>
+                            </div>
                           </div>
-                          <div className="text-right">
-                            <p className="text-sm font-bold text-green-700">₹{(b.coordinatorCommission || 0).toLocaleString("en-IN")}</p>
-                            <p className="text-xs text-gray-400">{new Date(b.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}</p>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* No pending = all clear */}
+                  {(!selected.pendingWithdrawals || selected.pendingWithdrawals.length === 0) && (
+                    <div className="bg-green-50 border border-green-100 rounded-2xl px-4 py-3 text-center">
+                      <p className="text-xs text-green-600 font-semibold">✓ Koi pending withdrawal request nahi hai</p>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* ── BOOKINGS TAB ── */}
+              {!detailLoading && detailTab === "bookings" && (
+                <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                  {selected.bookings?.length === 0 ? (
+                    <p className="text-center text-gray-400 text-sm py-10">Koi booking nahi hai</p>
+                  ) : (
+                    <div className="divide-y divide-gray-50">
+                      {(selected.bookings || []).map((b: any) => {
+                        let pn = ""; try { pn = JSON.parse(b.notes || "{}").patientName || ""; } catch {}
+                        const commission = b.coordinatorCommission || 0;
+                        const isPaid = b.coordinatorPaid;
+                        const isCompleted = b.status === "completed";
+                        const statusLabel = isPaid ? "Paid" : isCompleted ? "Ready" : b.status === "cancelled" ? "Cancelled" : "Pending";
+                        const statusColor = isPaid ? "bg-green-100 text-green-700 border-green-200"
+                          : isCompleted ? "bg-blue-100 text-blue-700 border-blue-200"
+                          : b.status === "cancelled" ? "bg-red-100 text-red-700 border-red-200"
+                          : "bg-amber-100 text-amber-700 border-amber-200";
+                        return (
+                          <div key={b._id} className="px-4 py-3 flex items-start gap-3">
+                            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5 ${isPaid ? "bg-green-100 text-green-700" : isCompleted ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"}`}>
+                              {isPaid ? "✓" : isCompleted ? "★" : "⏳"}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold text-gray-800 truncate">{pn || "Patient"}</p>
+                              <p className="text-xs text-gray-500">{b.bookingId} · {b.type}</p>
+                              <p className="text-[10px] text-gray-400">{new Date(b.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</p>
+                            </div>
+                            <div className="text-right flex-shrink-0">
+                              <p className={`text-sm font-bold ${commission > 0 ? "text-gray-800" : "text-gray-400"}`}>
+                                {commission > 0 ? `₹${commission.toLocaleString("en-IN")}` : "—"}
+                              </p>
+                              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${statusColor}`}>{statusLabel}</span>
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── TRANSACTIONS TAB ── */}
+              {!detailLoading && detailTab === "transactions" && (
+                <div className="space-y-3">
+                  {/* Summary */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-green-50 border border-green-100 rounded-xl p-3">
+                      <p className="text-lg font-black text-green-700">
+                        ₹{(selected.transactions || []).filter((t: any) => t.type === "credit" && t.status === "success").reduce((s: number, t: any) => s + (t.amount || 0), 0).toLocaleString("en-IN")}
+                      </p>
+                      <p className="text-xs text-green-600 font-semibold">Total Credits</p>
+                    </div>
+                    <div className="bg-orange-50 border border-orange-100 rounded-xl p-3">
+                      <p className="text-lg font-black text-orange-700">
+                        ₹{(selected.transactions || []).filter((t: any) => t.type === "debit" && t.status === "success").reduce((s: number, t: any) => s + (t.amount || 0), 0).toLocaleString("en-IN")}
+                      </p>
+                      <p className="text-xs text-orange-600 font-semibold">Total Debits (Paid)</p>
+                    </div>
+                  </div>
+
+                  {/* Full ledger */}
+                  <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                    <div className="px-4 py-3 border-b border-gray-50 bg-gray-50">
+                      <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Complete Transaction Ledger</p>
+                    </div>
+                    {(selected.transactions || []).length === 0 ? (
+                      <p className="text-center text-gray-400 text-sm py-8">Koi transaction nahi hai</p>
+                    ) : (
+                      <div className="divide-y divide-gray-50">
+                        {(selected.transactions || []).map((txn: any) => (
+                          <div key={txn._id} className="px-4 py-3 flex items-start gap-3">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 mt-0.5 ${
+                              txn.type === "credit" && txn.status === "success" ? "bg-green-100 text-green-700"
+                              : txn.type === "debit" && txn.status === "success" ? "bg-blue-100 text-blue-700"
+                              : "bg-amber-100 text-amber-700"
+                            }`}>
+                              {txn.type === "credit" ? "↓" : txn.status === "success" ? "↑" : "⏳"}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs text-gray-700 leading-snug">{txn.description}</p>
+                              {txn.paymentId && (
+                                <p className="text-[10px] text-blue-600 font-semibold mt-0.5">UTR: {txn.paymentId}</p>
+                              )}
+                              {txn.referenceId && !txn.paymentId && (
+                                <p className="text-[10px] text-gray-400 mt-0.5">Ref: {txn.referenceId}</p>
+                              )}
+                              <p className="text-[10px] text-gray-400 mt-0.5">
+                                {new Date(txn.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                                {" · "}
+                                {new Date(txn.createdAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+                              </p>
+                            </div>
+                            <div className="text-right flex-shrink-0">
+                              <p className={`text-sm font-bold ${txn.type === "credit" ? "text-green-600" : "text-orange-600"}`}>
+                                {txn.type === "credit" ? "+" : "-"}₹{(txn.amount || 0).toLocaleString("en-IN")}
+                              </p>
+                              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${
+                                txn.status === "success" ? "bg-green-100 text-green-700 border-green-200"
+                                : txn.status === "pending" ? "bg-amber-100 text-amber-700 border-amber-200"
+                                : "bg-red-100 text-red-700 border-red-200"
+                              }`}>{txn.status}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
             </div>
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ── LEDGER TAB ────────────────────────────────────────────────────────────────
+function LedgerTab() {
+  const [stats,        setStats]        = useState<any>({});
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [bookings,     setBookings]     = useState<any[]>([]);
+  const [pending,      setPending]      = useState<any[]>([]);
+  const [activeView,   setActiveView]   = useState("all");
+  const [loading,      setLoading]      = useState(false);
+  const [page,         setPage]         = useState(1);
+  const [totalPages,   setTotalPages]   = useState(1);
+  const [total,        setTotal]        = useState(0);
+  const [toast,        setToast]        = useState("");
+  const [toastOk,      setToastOk]      = useState(true);
+  const [utrMap,       setUtrMap]       = useState<Record<string,string>>({});
+  const [processing,   setProcessing]   = useState<string|null>(null);
+  // Add expense modal
+  const [showExpModal,  setShowExpModal]  = useState(false);
+  const [expAmount,     setExpAmount]     = useState("");
+  const [expDesc,       setExpDesc]       = useState("");
+  const [expCategory,   setExpCategory]   = useState("expense");
+  const [addingExp,     setAddingExp]     = useState(false);
+  // Booking detail drawer
+  const [selectedBooking,    setSelectedBooking]    = useState<any>(null);
+  const [bookingTxns,        setBookingTxns]        = useState<any[]>([]);
+  const [bookingTxnsLoading, setBookingTxnsLoading] = useState(false);
+  // Last-updated timestamp for live indicator
+  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  // Partner payouts section
+  const [payouts,            setPayouts]            = useState<any[]>([]);
+  const [payoutsLoading,     setPayoutsLoading]     = useState(false);
+  const [activePayoutEntity, setActivePayoutEntity] = useState("hospital");
+  const [payoutStatusFilter, setPayoutStatusFilter] = useState("pending");
+  const [payoutPage,         setPayoutPage]         = useState(1);
+  const [payoutTotalPages,   setPayoutTotalPages]   = useState(1);
+  const [payoutTotal,        setPayoutTotal]        = useState(0);
+  const [payoutPendingTotal, setPayoutPendingTotal] = useState(0);
+  const [payoutPendingCount, setPayoutPendingCount] = useState(0);
+  const [payoutUtrMap,       setPayoutUtrMap]       = useState<Record<string,string>>({});
+  const [processingPayout,   setProcessingPayout]   = useState<string|null>(null);
+
+  const isBookingView = activeView.startsWith("bookings-");
+
+  function showToast(msg: string, ok = true) {
+    setToast(msg); setToastOk(ok); setTimeout(() => setToast(""), 3000);
+  }
+
+  async function fetchLedger(pg = 1, view = activeView, silent = false) {
+    if (!silent) setLoading(true);
+    try {
+      const params = new URLSearchParams({ view, page: String(pg), limit: "30" });
+      const res  = await fetch(`/api/admin/ledger?${params}`);
+      const data = await res.json();
+      if (data.success) {
+        setStats(data.stats || {});
+        setTransactions(data.transactions || []);
+        setBookings(data.bookings || []);
+        setPending(data.pendingWithdrawals || []);
+        setTotalPages(data.pages || 1);
+        setTotal(data.total || 0);
+        setPage(pg);
+        setLastUpdated(new Date());
+      }
+    } finally { if (!silent) setLoading(false); }
+  }
+
+  function changeView(v: string) {
+    setActiveView(v);
+    fetchLedger(1, v);
+  }
+
+  // Auto-refresh stats every 30 seconds (silent — no loading spinner)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchLedger(page, activeView, true);
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [page, activeView]);
+
+  // Fetch transactions for selected booking whenever drawer opens
+  useEffect(() => {
+    if (!selectedBooking) { setBookingTxns([]); return; }
+    setBookingTxnsLoading(true);
+    const params = new URLSearchParams({
+      view:       "booking-txns",
+      bookingId:  selectedBooking._id,
+      bookingRef: selectedBooking.bookingId || "",
+    });
+    fetch(`/api/admin/ledger?${params}`)
+      .then(r => r.json())
+      .then(d => { if (d.success) setBookingTxns(d.transactions || []); })
+      .catch(() => {})
+      .finally(() => setBookingTxnsLoading(false));
+  }, [selectedBooking?._id]);
+
+  async function processWithdrawal(txnId: string) {
+    const utr = utrMap[txnId] || "";
+    if (!utr.trim()) return showToast("UTR number darj karein", false);
+    setProcessing(txnId);
+    try {
+      const res  = await fetch("/api/admin/coordinators", {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "process-withdraw", txnId, utr: utr.trim() }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(data.message || "Payment processed!");
+        setUtrMap(m => ({ ...m, [txnId]: "" }));
+        fetchLedger(page, activeView);
+      } else { showToast(data.message || "Error", false); }
+    } catch { showToast("Network error", false); }
+    finally { setProcessing(null); }
+  }
+
+  async function addExpense() {
+    if (!expAmount || parseFloat(expAmount) <= 0) return showToast("Valid amount darj karein", false);
+    if (!expDesc.trim()) return showToast("Description zaruri hai", false);
+    setAddingExp(true);
+    try {
+      const res  = await fetch("/api/admin/ledger", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: parseFloat(expAmount), description: expDesc.trim(), category: expCategory }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(data.message || "Entry added!");
+        setShowExpModal(false); setExpAmount(""); setExpDesc(""); setExpCategory("expense");
+        fetchLedger(page, activeView);
+      } else { showToast(data.message || "Error", false); }
+    } catch { showToast("Network error", false); }
+    finally { setAddingExp(false); }
+  }
+
+  useEffect(() => { fetchLedger(1, "all"); }, []);
+
+  // ── Partner payouts ────────────────────────────────────────────────────────
+  async function fetchPayouts(entity = activePayoutEntity, statusF = payoutStatusFilter, pg = 1) {
+    setPayoutsLoading(true);
+    try {
+      const params = new URLSearchParams({ entity, status: statusF, page: String(pg) });
+      const res  = await fetch(`/api/admin/payouts?${params}`);
+      const data = await res.json();
+      if (data.success) {
+        setPayouts(data.bookings || []);
+        setPayoutTotalPages(data.pages || 1);
+        setPayoutTotal(data.total || 0);
+        setPayoutPendingTotal(data.pendingTotal || 0);
+        setPayoutPendingCount(data.pendingCount || 0);
+        setPayoutPage(pg);
+      }
+    } finally { setPayoutsLoading(false); }
+  }
+
+  function changePayoutEntity(entity: string) {
+    setActivePayoutEntity(entity);
+    setPayoutStatusFilter("pending");
+    setPayoutUtrMap({});
+    fetchPayouts(entity, "pending", 1);
+  }
+
+  function changePayoutStatus(statusF: string) {
+    setPayoutStatusFilter(statusF);
+    fetchPayouts(activePayoutEntity, statusF, 1);
+  }
+
+  async function processPartnerPayout(bookingId: string) {
+    const utr = payoutUtrMap[bookingId] || "";
+    if (!utr.trim()) return showToast("UTR number darj karein", false);
+    setProcessingPayout(bookingId);
+    try {
+      const res  = await fetch("/api/admin/payouts", {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bookingId, utr: utr.trim(), entity: activePayoutEntity }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(data.message || "Payout processed!");
+        setPayoutUtrMap(m => ({ ...m, [bookingId]: "" }));
+        fetchPayouts(activePayoutEntity, payoutStatusFilter, payoutPage);
+      } else { showToast(data.message || "Error", false); }
+    } catch { showToast("Network error", false); }
+    finally { setProcessingPayout(null); }
+  }
+
+  useEffect(() => { fetchPayouts("hospital", "pending", 1); }, []);
+
+  // ── Stat card definitions ──────────────────────────────────────────────────
+  const statCards = [
+    // Row 1: Bookings
+    { key: "bookings-all",       icon: "📋", label: "Total Bookings",   value: (stats.totalBookings    || 0).toLocaleString("en-IN"), sub: `₹${(stats.totalBookingValue||0).toLocaleString("en-IN")} value`,   active: "border-blue-300  bg-blue-600  text-white",   idle: "border-blue-100  bg-blue-50  text-blue-700"  },
+    { key: "bookings-pending",   icon: "⏳", label: "Pending",           value: (stats.pendingBookings  || 0).toLocaleString("en-IN"), sub: "Confirmation awaited",                                             active: "border-amber-300 bg-amber-600 text-white",   idle: "border-amber-100 bg-amber-50 text-amber-700" },
+    { key: "bookings-confirmed", icon: "✅", label: "Confirmed",          value: (stats.confirmedBookings||0).toLocaleString("en-IN"), sub: "Ready for service",                                                active: "border-green-300 bg-green-600 text-white",   idle: "border-green-100 bg-green-50 text-green-700" },
+    { key: "bookings-completed", icon: "🏁", label: "Completed",          value: (stats.completedBookings||0).toLocaleString("en-IN"), sub: "Services delivered",                                               active: "border-teal-300  bg-teal-600  text-white",   idle: "border-teal-100  bg-teal-50  text-teal-700"  },
+    // Row 2: Finance
+    { key: "income",             icon: "💰", label: "Total Earnings",    value: "₹" + (stats.totalIncome    ||0).toLocaleString("en-IN"), sub: "Platform income received",   active: "border-emerald-300 bg-emerald-600 text-white", idle: "border-emerald-100 bg-emerald-50 text-emerald-700" },
+    { key: "expenses",           icon: "💸", label: "Total Expenses",    value: "₹" + (stats.totalExpenses  ||0).toLocaleString("en-IN"), sub: "Payouts & cashbacks",        active: "border-red-300  bg-red-600  text-white",      idle: "border-red-100   bg-red-50   text-red-600"        },
+    { key: "pending-payouts",    icon: "⚡", label: "Pending Payouts",   value: "₹" + (stats.pendingPayouts ||0).toLocaleString("en-IN"), sub: `${stats.pendingPayoutsCount||0} withdrawal requests`, active: "border-orange-300 bg-orange-600 text-white", idle: "border-orange-100 bg-orange-50 text-orange-700" },
+    { key: "paid-out",           icon: "🏦", label: "Paid Out",           value: "₹" + (stats.totalPaidOut   ||0).toLocaleString("en-IN"), sub: "Processed withdrawals",      active: "border-gray-400 bg-gray-700 text-white",      idle: "border-gray-200  bg-gray-50  text-gray-700"       },
+  ];
+
+  const quickFilters = [
+    { key: "all",         label: "All Transactions" },
+    { key: "income",      label: "💰 Income" },
+    { key: "expenses",    label: "💸 Expenses" },
+    { key: "coordinator", label: "🤝 Coordinators" },
+    { key: "wallet",      label: "👛 Wallet" },
+    { key: "staff",       label: "👨‍💼 Staff" },
+  ];
+
+  return (
+    <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-5">
+      {toast && (
+        <div className={`fixed top-4 right-4 z-50 px-4 py-2.5 rounded-xl shadow-lg text-sm text-white ${toastOk ? "bg-teal-700" : "bg-red-600"}`}>
+          {toast}
+        </div>
+      )}
+
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-gray-800">📒 Master Ledger</h2>
+          <div className="flex items-center gap-2 mt-0.5">
+            <span className="inline-flex items-center gap-1 text-[10px] text-green-600 font-semibold">
+              <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse inline-block" />
+              Live
+            </span>
+            <span className="text-[10px] text-gray-400">
+              Updated {lastUpdated.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+            </span>
+            <button
+              onClick={() => fetchLedger(page, activeView)}
+              className="text-[10px] text-teal-600 hover:underline font-semibold">
+              ↻ Refresh
+            </button>
+          </div>
+        </div>
+        <button
+          onClick={() => setShowExpModal(true)}
+          className="flex-shrink-0 bg-gray-800 hover:bg-gray-900 text-white text-xs font-bold px-3 py-2 rounded-xl transition">
+          + Add Entry
+        </button>
+      </div>
+
+      {/* ── Row 1: Booking stats ─────────────────────────────────────────── */}
+      <div>
+        <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-2">📋 Bookings</p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {statCards.slice(0, 4).map(card => (
+            <button
+              key={card.key}
+              onClick={() => changeView(card.key)}
+              className={`rounded-2xl border p-3 text-left transition hover:shadow-md ${activeView === card.key ? card.active : card.idle}`}>
+              <p className="text-xl font-black leading-none">{card.value}</p>
+              <p className="text-[11px] font-bold mt-1.5 opacity-80">{card.icon} {card.label}</p>
+              <p className="text-[10px] mt-0.5 opacity-60">{card.sub}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Row 2: Finance stats ─────────────────────────────────────────── */}
+      <div>
+        <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-2">💰 Platform Finance</p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {statCards.slice(4).map(card => (
+            <button
+              key={card.key}
+              onClick={() => changeView(card.key)}
+              className={`rounded-2xl border p-3 text-left transition hover:shadow-md ${activeView === card.key ? card.active : card.idle}`}>
+              <p className="text-xl font-black leading-none">{card.value}</p>
+              <p className="text-[11px] font-bold mt-1.5 opacity-80">{card.icon} {card.label}</p>
+              <p className="text-[10px] mt-0.5 opacity-60">{card.sub}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Net balance banner ───────────────────────────────────────────── */}
+      <div className={`rounded-2xl overflow-hidden border ${(stats.netBalance || 0) >= 0 ? "border-green-300" : "border-red-300"}`}>
+        <div className={`px-5 py-3 flex items-center justify-between ${(stats.netBalance || 0) >= 0 ? "bg-green-600" : "bg-red-600"}`}>
+          <div>
+            <p className="text-white/80 text-[11px] font-semibold uppercase tracking-wide">Net Platform Balance</p>
+            <p className="text-white/60 text-[10px] mt-0.5">Total Income − Total Expenses</p>
+          </div>
+          <div className="text-right">
+            <p className="text-white text-2xl font-black">
+              {(stats.netBalance || 0) >= 0 ? "+" : "−"}₹{Math.abs(stats.netBalance || 0).toLocaleString("en-IN")}
+            </p>
+            <p className="text-white/60 text-[10px]">₹{(stats.totalIncome||0).toLocaleString("en-IN")} in − ₹{(stats.totalExpenses||0).toLocaleString("en-IN")} out</p>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Partner Payouts ─────────────────────────────────────────────── */}
+      <div className="rounded-2xl border border-indigo-200 overflow-hidden">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-indigo-600 to-blue-600 px-4 py-3 flex items-center justify-between">
+          <div>
+            <p className="text-white font-bold text-sm">🏦 Partner Payouts</p>
+            <p className="text-white/70 text-[10px] mt-0.5">Platform commission katne ke baad hospital / lab / doctor ko bhejne wala paisa</p>
+          </div>
+          {payoutPendingCount > 0 && (
+            <span className="bg-white text-indigo-700 text-xs font-black px-2.5 py-1 rounded-full">
+              {payoutPendingCount} pending
+            </span>
+          )}
+        </div>
+
+        <div className="bg-indigo-50 px-4 py-3 space-y-3">
+          {/* Entity tabs */}
+          <div className="flex flex-wrap gap-1.5">
+            {[
+              { key: "hospital",  icon: "🏥", label: "Hospital" },
+              { key: "lab",       icon: "🧪", label: "Lab" },
+              { key: "doctor",    icon: "🩺", label: "Doctor" },
+              { key: "ambulance", icon: "🚑", label: "Ambulance" },
+            ].map(tab => (
+              <button key={tab.key} onClick={() => changePayoutEntity(tab.key)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition ${
+                  activePayoutEntity === tab.key
+                    ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+                    : "bg-white text-indigo-700 border-indigo-200 hover:border-indigo-400"
+                }`}>
+                {tab.icon} {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Pending total banner */}
+          {payoutPendingTotal > 0 && (
+            <div className="bg-white rounded-xl px-4 py-2.5 flex items-center justify-between border border-indigo-100">
+              <div>
+                <p className="text-[10px] text-indigo-500 font-semibold uppercase tracking-wide">Pending Payout</p>
+                <p className="text-xs text-indigo-600">{payoutPendingCount} bookings — waiting for UTR</p>
+              </div>
+              <p className="text-lg font-black text-indigo-700">₹{payoutPendingTotal.toLocaleString("en-IN")}</p>
+            </div>
+          )}
+
+          {/* Status filter */}
+          <div className="flex gap-2">
+            {[
+              { key: "pending", label: "⏳ Pending" },
+              { key: "paid",    label: "✅ Paid" },
+              { key: "all",     label: "All" },
+            ].map(s => (
+              <button key={s.key} onClick={() => changePayoutStatus(s.key)}
+                className={`px-3 py-1 rounded-xl text-xs font-semibold border transition ${
+                  payoutStatusFilter === s.key
+                    ? "bg-indigo-600 text-white border-indigo-600"
+                    : "bg-white text-gray-600 border-gray-200 hover:border-indigo-300"
+                }`}>
+                {s.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Payout list */}
+          {payoutsLoading ? (
+            <div className="flex justify-center py-6">
+              <div className="w-6 h-6 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+            </div>
+          ) : payouts.length === 0 ? (
+            <div className="bg-white rounded-xl py-6 text-center border border-indigo-100">
+              <p className="text-sm text-indigo-400 font-semibold">
+                {payoutStatusFilter === "pending"
+                  ? `✅ Koi pending ${activePayoutEntity} payout nahi hai`
+                  : "Koi record nahi mila"}
+              </p>
+              {payoutStatusFilter === "pending" && (
+                <p className="text-[10px] text-gray-400 mt-1">Sabhi payouts processed ho chuke hain</p>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {payouts.map((b: any) => {
+                const notes = b.parsedNotes || {};
+                const entityName =
+                  activePayoutEntity === "doctor"
+                    ? (b.doctorId?.name || b.hospitalId?.name || "—")
+                    : (b.hospitalId?.name || b.doctorId?.name || "—");
+
+                return (
+                  <div key={b._id} className="bg-white rounded-xl border border-indigo-100 overflow-hidden">
+                    <div className="px-4 py-3 flex flex-wrap items-start gap-3">
+                      {/* Left: booking info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-xs font-black text-indigo-700">{b.bookingId || "—"}</p>
+                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${
+                            b.status === "completed" ? "bg-teal-100 text-teal-700 border-teal-200"
+                            : b.status === "confirmed" ? "bg-green-100 text-green-700 border-green-200"
+                            : "bg-amber-100 text-amber-700 border-amber-200"
+                          }`}>{b.status}</span>
+                          <span className="text-[9px] font-semibold text-blue-600 bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded-full">
+                            {b.paymentMode?.toUpperCase()}
+                          </span>
+                        </div>
+                        <p className="text-xs font-semibold text-gray-700 mt-1">{entityName}</p>
+                        <p className="text-[10px] text-gray-400">
+                          {notes.patientName || "—"} · {b.type}
+                          {b.appointmentDate ? ` · ${new Date(b.appointmentDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}` : ""}
+                        </p>
+                        {b.payoutStatus === "paid" && b.payoutUtr && (
+                          <p className="text-[10px] font-mono text-green-600 mt-1">
+                            ✅ UTR: {b.payoutUtr}
+                            {b.payoutProcessedAt ? ` · ${new Date(b.payoutProcessedAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}` : ""}
+                          </p>
+                        )}
+                      </div>
+                      {/* Right: amount + action */}
+                      <div className="flex-shrink-0 text-right">
+                        <div className="mb-1.5">
+                          <p className="text-[9px] text-gray-400">Total Booking</p>
+                          <p className="text-xs font-bold text-gray-600">₹{(b.amount || 0).toLocaleString("en-IN")}</p>
+                        </div>
+                        <div className="mb-2">
+                          <p className="text-[9px] text-indigo-500 font-semibold">Payable ({100 - (b.commissionPct || 0)}%)</p>
+                          <p className="text-sm font-black text-indigo-700">₹{(b.hospitalPayable || 0).toLocaleString("en-IN")}</p>
+                        </div>
+                        {b.payoutStatus !== "paid" && (
+                          <div className="flex gap-1.5 justify-end">
+                            <input
+                              value={payoutUtrMap[b._id] || ""}
+                              onChange={e => setPayoutUtrMap(m => ({ ...m, [b._id]: e.target.value }))}
+                              placeholder="UTR no."
+                              className="border border-indigo-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-indigo-50 w-24"
+                            />
+                            <button
+                              onClick={() => processPartnerPayout(b._id)}
+                              disabled={processingPayout === b._id}
+                              className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-2.5 py-1 rounded-lg disabled:opacity-50 transition whitespace-nowrap">
+                              {processingPayout === b._id ? "..." : "✓ Pay"}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Payout pagination */}
+          {payoutTotalPages > 1 && !payoutsLoading && (
+            <div className="flex items-center justify-between pt-1">
+              <p className="text-[10px] text-indigo-400">Page {payoutPage} of {payoutTotalPages} ({payoutTotal} records)</p>
+              <div className="flex gap-2">
+                <button disabled={payoutPage <= 1}
+                  onClick={() => fetchPayouts(activePayoutEntity, payoutStatusFilter, payoutPage - 1)}
+                  className="px-2.5 py-1 bg-white border border-indigo-200 rounded-lg text-xs font-semibold disabled:opacity-40">← Prev</button>
+                <button disabled={payoutPage >= payoutTotalPages}
+                  onClick={() => fetchPayouts(activePayoutEntity, payoutStatusFilter, payoutPage + 1)}
+                  className="px-2.5 py-1 bg-white border border-indigo-200 rounded-lg text-xs font-semibold disabled:opacity-40">Next →</button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Pending withdrawals action bar ──────────────────────────────── */}
+      {pending.length > 0 && (
+        <div className="rounded-2xl overflow-hidden border border-amber-200">
+          <div className="bg-gradient-to-r from-amber-500 to-orange-400 px-4 py-2 flex items-center gap-2">
+            <span className="text-white text-lg">⚡</span>
+            <p className="text-white text-sm font-bold flex-1">Action Required — Pending Withdrawals</p>
+            <span className="bg-white text-amber-700 text-xs font-black px-2 py-0.5 rounded-full">{pending.length}</span>
+          </div>
+          <div className="bg-amber-50 divide-y divide-amber-100">
+            {pending.map((txn: any) => (
+              <div key={txn._id} className="px-4 py-3 flex flex-wrap items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-amber-800">
+                    {txn.coordinator?.name || txn.userId?.name || "Coordinator"}
+                    <span className="text-amber-600 font-normal ml-2">— ₹{(txn.amount || 0).toLocaleString("en-IN")}</span>
+                  </p>
+                  <p className="text-xs text-amber-600 truncate">{txn.description}</p>
+                  <p className="text-[10px] text-amber-500">{new Date(txn.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</p>
+                </div>
+                <div className="flex gap-2 flex-shrink-0">
+                  <input
+                    value={utrMap[txn._id] || ""}
+                    onChange={e => setUtrMap(m => ({ ...m, [txn._id]: e.target.value }))}
+                    placeholder="Enter UTR..."
+                    className="border border-amber-300 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white w-36"
+                  />
+                  <button
+                    onClick={() => processWithdrawal(txn._id)}
+                    disabled={processing === txn._id}
+                    className="bg-green-600 hover:bg-green-700 text-white text-xs font-bold px-3 py-1.5 rounded-xl disabled:opacity-50 transition">
+                    {processing === txn._id ? "..." : "✓ Pay"}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Quick filter pills (transaction views only) ──────────────────── */}
+      {!isBookingView && (
+        <div className="flex flex-wrap gap-2">
+          {quickFilters.map(f => (
+            <button key={f.key} onClick={() => changeView(f.key)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition ${
+                activeView === f.key
+                  ? "bg-teal-600 text-white border-teal-600 shadow-sm"
+                  : "bg-white text-gray-600 border-gray-200 hover:border-teal-300"
+              }`}>
+              {f.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ── Active view label ────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-semibold text-gray-600">
+          {isBookingView ? "Bookings" : "Transactions"}
+          {total > 0 && <span className="ml-2 text-gray-400 font-normal">({total.toLocaleString("en-IN")} records)</span>}
+        </p>
+        {isBookingView && (
+          <button onClick={() => changeView("all")} className="text-xs text-teal-600 hover:underline font-semibold">
+            ← Back to Transactions
+          </button>
+        )}
+      </div>
+
+      {/* ── Content table ───────────────────────────────────────────────── */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        {loading ? (
+          <div className="flex justify-center py-16"><div className="w-8 h-8 border-4 border-teal-200 border-t-teal-600 rounded-full animate-spin" /></div>
+        ) : isBookingView ? (
+          /* ── Bookings table ──────────────────────────────────────────── */
+          bookings.length === 0 ? (
+            <div className="text-center py-12 text-gray-400 text-sm">Koi booking nahi mili</div>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-[11px] font-bold text-gray-400 uppercase tracking-wide border-b border-gray-100 bg-gray-50">
+                      <th className="px-4 py-3 text-left">Booking ID</th>
+                      <th className="px-4 py-3 text-left">Patient</th>
+                      <th className="px-4 py-3 text-left">Type / Service</th>
+                      <th className="px-4 py-3 text-right">Amount</th>
+                      <th className="px-4 py-3 text-center">Status</th>
+                      <th className="px-4 py-3 text-left">Date</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {bookings.map((b: any) => {
+                      const notes = b.parsedNotes || {};
+                      return (
+                        <tr
+                          key={b._id}
+                          className="hover:bg-teal-50 cursor-pointer transition"
+                          onClick={() => setSelectedBooking(b)}
+                        >
+                          <td className="px-4 py-3">
+                            <p className="text-xs font-bold text-teal-700 hover:underline">{b.bookingId || "—"}</p>
+                            <p className="text-[10px] text-gray-400">{b.paymentMode || "—"}</p>
+                          </td>
+                          <td className="px-4 py-3">
+                            <p className="text-xs font-semibold text-gray-800">{notes.patientName || b.userId?.name || "—"}</p>
+                            <p className="text-[10px] text-gray-400">{notes.patientMobile || b.userId?.mobile || ""}</p>
+                          </td>
+                          <td className="px-4 py-3">
+                            <p className="text-xs text-gray-700 font-medium">{b.type || "—"}</p>
+                            <p className="text-[10px] text-gray-400">{b.hospitalId?.name || b.doctorId?.name || ""}</p>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <p className="text-sm font-black text-gray-800">₹{(b.amount || 0).toLocaleString("en-IN")}</p>
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                              b.status === "completed" ? "bg-teal-100 text-teal-700 border-teal-200"
+                              : b.status === "confirmed" ? "bg-green-100 text-green-700 border-green-200"
+                              : b.status === "pending"   ? "bg-amber-100 text-amber-700 border-amber-200"
+                              : "bg-red-100 text-red-700 border-red-200"
+                            }`}>{b.status}</span>
+                          </td>
+                          <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
+                            {new Date(b.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )
+        ) : (
+          /* ── Transactions table ──────────────────────────────────────── */
+          transactions.length === 0 ? (
+            <div className="text-center py-12 text-gray-400 text-sm">Koi transaction nahi mila</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-[11px] font-bold text-gray-400 uppercase tracking-wide border-b border-gray-100 bg-gray-50">
+                    <th className="px-4 py-3 text-left">User</th>
+                    <th className="px-4 py-3 text-left">Category</th>
+                    <th className="px-4 py-3 text-left">Description</th>
+                    <th className="px-4 py-3 text-left">Ref / UTR</th>
+                    <th className="px-4 py-3 text-right">Amount</th>
+                    <th className="px-4 py-3 text-center">Status</th>
+                    <th className="px-4 py-3 text-left">Date</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {transactions.map((txn: any) => (
+                    <tr key={txn._id} className="hover:bg-gray-50 transition">
+                      <td className="px-4 py-3">
+                        <p className="font-semibold text-gray-800 text-xs">{txn.coordinator?.name || txn.userId?.name || "—"}</p>
+                        <p className="text-[10px] text-gray-400">{txn.userId?.mobile || ""}</p>
+                        {txn.userId?.role && (
+                          <span className="text-[9px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">{txn.userId.role}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap ${
+                          ["card_activation_payment","booking_payment","booking_advance","platform_charge","wallet_topup"].includes(txn.category)
+                            ? "bg-green-100 text-green-700 border-green-200"
+                            : txn.category === "withdrawal"
+                              ? "bg-blue-100 text-blue-700 border-blue-200"
+                              : "bg-orange-100 text-orange-700 border-orange-200"
+                        }`}>
+                          {txn.categoryLabel || txn.category || "other"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 max-w-[160px]">
+                        <p className="text-xs text-gray-600 leading-snug line-clamp-2">{txn.description}</p>
+                      </td>
+                      <td className="px-4 py-3">
+                        <p className="text-[10px] text-blue-600 font-semibold font-mono">{txn.paymentId || txn.referenceId || "—"}</p>
+                      </td>
+                      <td className={`px-4 py-3 text-right font-black text-sm whitespace-nowrap ${
+                        ["card_activation_payment","booking_payment","booking_advance","platform_charge","wallet_topup"].includes(txn.category)
+                          ? "text-green-600"
+                          : txn.type === "credit" ? "text-teal-600" : "text-orange-600"
+                      }`}>
+                        {["card_activation_payment","booking_payment","booking_advance","platform_charge","wallet_topup"].includes(txn.category) ? "▲" : txn.type === "credit" ? "+" : "▼"}
+                        ₹{(txn.amount || 0).toLocaleString("en-IN")}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                          txn.status === "success" ? "bg-green-100 text-green-700 border-green-200"
+                          : txn.status === "pending" ? "bg-amber-100 text-amber-700 border-amber-200"
+                          : "bg-red-100 text-red-700 border-red-200"
+                        }`}>{txn.status}</span>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
+                        {new Date(txn.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
+        )}
+
+        {/* Pagination */}
+        {totalPages > 1 && !loading && (
+          <div className="px-4 py-3 border-t border-gray-100 flex items-center justify-between">
+            <p className="text-xs text-gray-400">Page {page} of {totalPages}</p>
+            <div className="flex gap-2">
+              <button disabled={page <= 1} onClick={() => fetchLedger(page - 1, activeView)}
+                className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-semibold disabled:opacity-40">← Prev</button>
+              <button disabled={page >= totalPages} onClick={() => fetchLedger(page + 1, activeView)}
+                className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-semibold disabled:opacity-40">Next →</button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Booking Detail Drawer ───────────────────────────────────────── */}
+      {selectedBooking && (() => {
+        const b     = selectedBooking;
+        const notes = b.parsedNotes || {};
+
+        const statusColor =
+          b.status === "completed" ? "bg-teal-100 text-teal-700 border-teal-200"
+          : b.status === "confirmed" ? "bg-green-100 text-green-700 border-green-200"
+          : b.status === "pending"   ? "bg-amber-100 text-amber-700 border-amber-200"
+          : "bg-red-100 text-red-700 border-red-200";
+
+        // Payment mode labels
+        const PAYMENT_MODE: Record<string, { label: string; sub: string; icon: string; color: string }> = {
+          counter:   { label: "Hospital Counter",    sub: "Offline / Cash",          icon: "🏦", color: "bg-gray-100  text-gray-700  border-gray-200"   },
+          wallet:    { label: "Brims Wallet",         sub: "Platform (Digital)",      icon: "👛", color: "bg-teal-100  text-teal-700  border-teal-200"   },
+          online:    { label: "Payment Gateway",      sub: "Online / PhonePe",        icon: "📱", color: "bg-blue-100  text-blue-700  border-blue-200"   },
+          insurance: { label: "Insurance / TPA",      sub: "Cashless",                icon: "🛡️", color: "bg-purple-100 text-purple-700 border-purple-200" },
+          partial:   { label: "Advance / Deposit",    sub: "Balance due at counter",  icon: "💰", color: "bg-amber-100 text-amber-700 border-amber-200"  },
+        };
+        const pm = PAYMENT_MODE[b.paymentMode] || { label: b.paymentMode || "—", sub: "", icon: "💳", color: "bg-gray-100 text-gray-600 border-gray-200" };
+
+        return (
+          <div className="fixed inset-0 bg-black/40 z-50 flex justify-end" onClick={() => setSelectedBooking(null)}>
+            <div
+              className="bg-white w-full max-w-sm h-full overflow-y-auto shadow-2xl flex flex-col"
+              onClick={e => e.stopPropagation()}
+            >
+              {/* ── Header ── */}
+              <div className="sticky top-0 bg-white border-b border-gray-100 px-5 py-4 flex items-start justify-between z-10">
+                <div>
+                  <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Booking Detail</p>
+                  <p className="text-lg font-black text-teal-700 mt-0.5">{b.bookingId || "—"}</p>
+                  <div className="flex gap-1.5 mt-1.5 flex-wrap">
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${statusColor}`}>
+                      {b.status?.toUpperCase()}
+                    </span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200">
+                      {TYPE_ICON[b.type] || "📋"} {b.type}
+                    </span>
+                    {b.isPartialBooking && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200">
+                        Partial
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <button onClick={() => setSelectedBooking(null)}
+                  className="text-gray-400 hover:text-gray-700 text-2xl font-light leading-none mt-0.5">×</button>
+              </div>
+
+              <div className="flex-1 px-5 py-4 space-y-4">
+
+                {/* ── Patient ── */}
+                <div className="bg-gray-50 rounded-2xl p-4 space-y-1.5">
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Patient</p>
+                  <p className="font-bold text-gray-800 text-sm">{notes.patientName || b.userId?.name || "—"}</p>
+                  <p className="text-xs text-gray-500">📱 +91 {notes.patientMobile || b.userId?.mobile || "—"}</p>
+                  {(notes.patientAge || notes.patientGender) && (
+                    <p className="text-xs text-gray-500">
+                      {notes.patientAge ? `${notes.patientAge} yrs` : ""}
+                      {notes.patientAge && notes.patientGender ? " · " : ""}
+                      {notes.patientGender || ""}
+                    </p>
+                  )}
+                  {notes.isNewPatient !== undefined && (
+                    <span className={`inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                      notes.isNewPatient ? "bg-blue-100 text-blue-700 border-blue-200" : "bg-gray-100 text-gray-600 border-gray-200"
+                    }`}>{notes.isNewPatient ? "New Patient" : "Existing Patient"}</span>
+                  )}
+                </div>
+
+                {/* ── Service details ── */}
+                <div className="space-y-2.5">
+                  {b.hospitalId?.name && (
+                    <div className="flex justify-between items-start gap-3 text-sm">
+                      <span className="text-gray-400 flex-shrink-0">🏥 Hospital</span>
+                      <span className="font-semibold text-gray-700 text-right">{b.hospitalId.name}</span>
+                    </div>
+                  )}
+                  {b.doctorId?.name && (
+                    <div className="flex justify-between items-start gap-3 text-sm">
+                      <span className="text-gray-400 flex-shrink-0">🩺 Doctor</span>
+                      <span className="font-semibold text-gray-700 text-right">
+                        {b.doctorId.name}{b.doctorId.department ? ` · ${b.doctorId.department}` : ""}
+                      </span>
+                    </div>
+                  )}
+                  {b.appointmentDate && (
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-gray-400">📅 Date</span>
+                      <span className="font-semibold text-gray-700">
+                        {new Date(b.appointmentDate).toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" })}
+                      </span>
+                    </div>
+                  )}
+                  {b.slot && (
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-gray-400">🕐 Slot</span>
+                      <span className="font-semibold text-gray-700">{b.slot}</span>
+                    </div>
+                  )}
+                  {notes.symptoms && (
+                    <div className="flex justify-between items-start gap-3 text-sm">
+                      <span className="text-gray-400 flex-shrink-0">🤒 Symptoms</span>
+                      <span className="font-semibold text-gray-700 text-right">{notes.symptoms}</span>
+                    </div>
+                  )}
+                  {b.roomType && (
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-gray-400">🛏️ Room</span>
+                      <span className="font-semibold text-gray-700">{b.roomType}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* ── Payment Details ── */}
+                <div>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Payment Details</p>
+                  <div className="rounded-2xl overflow-hidden border border-gray-200">
+                    {/* Payment mode card */}
+                    <div className={`px-4 py-3 flex items-center gap-3 border-b border-gray-100 ${pm.color.split(" ")[0]}`}>
+                      <span className="text-xl">{pm.icon}</span>
+                      <div className="flex-1">
+                        <p className={`text-xs font-bold ${pm.color.split(" ").slice(1).join(" ")}`}>{pm.label}</p>
+                        <p className="text-[10px] text-gray-500">{pm.sub}</p>
+                      </div>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${pm.color}`}>
+                        {b.paymentMode?.toUpperCase() || "—"}
+                      </span>
+                    </div>
+
+                    {/* Insurance details */}
+                    {(notes.insurancePolicyNo || notes.insurerName) && (
+                      <div className="bg-gray-50 px-4 py-2.5 space-y-1 border-b border-gray-100">
+                        {notes.insurerName && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-400">Insurer</span>
+                            <span className="font-semibold text-gray-700">{notes.insurerName}</span>
+                          </div>
+                        )}
+                        {notes.insurancePolicyNo && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-400">Policy No.</span>
+                            <span className="font-mono font-bold text-gray-700">{notes.insurancePolicyNo}</span>
+                          </div>
+                        )}
+                        {notes.tpaName && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-400">TPA</span>
+                            <span className="font-semibold text-gray-700">{notes.tpaName}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Partial booking breakdown */}
+                    {b.isPartialBooking && (
+                      <div className="bg-amber-50 px-4 py-2.5 space-y-1 border-b border-amber-100">
+                        <div className="flex justify-between text-xs">
+                          <span className="text-amber-600 font-semibold">Deposit Paid</span>
+                          <span className="font-bold text-amber-700">₹{(b.depositAmount || b.amount || 0).toLocaleString("en-IN")}</span>
+                        </div>
+                        {b.balanceAmount > 0 && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-amber-600 font-semibold">Balance Due</span>
+                            <span className="font-bold text-red-600">₹{b.balanceAmount.toLocaleString("en-IN")}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Payment ID */}
+                    {b.paymentId && (
+                      <div className="bg-gray-50 px-4 py-2 border-b border-gray-100">
+                        <p className="text-[10px] text-gray-400">Payment Ref / Gateway ID</p>
+                        <p className="font-mono text-[11px] text-blue-600 font-semibold mt-0.5 break-all">{b.paymentId}</p>
+                      </div>
+                    )}
+
+                    {/* Amount footer */}
+                    <div className="bg-teal-600 px-4 py-3 flex justify-between items-center">
+                      <div>
+                        <p className="text-teal-100 text-[10px] font-semibold uppercase tracking-wide">Amount Received</p>
+                        {b.isPartialBooking && (
+                          <p className="text-teal-200 text-[10px]">Deposit only</p>
+                        )}
+                      </div>
+                      <p className="text-white text-2xl font-black">₹{(b.amount || 0).toLocaleString("en-IN")}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── Transaction History ── */}
+                <div>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">
+                    Transaction History
+                    {bookingTxns.length > 0 && (
+                      <span className="ml-1.5 bg-teal-100 text-teal-700 text-[9px] font-black px-1.5 py-0.5 rounded-full">
+                        {bookingTxns.length}
+                      </span>
+                    )}
+                  </p>
+
+                  {bookingTxnsLoading ? (
+                    <div className="flex justify-center py-6">
+                      <div className="w-6 h-6 border-2 border-teal-200 border-t-teal-600 rounded-full animate-spin" />
+                    </div>
+                  ) : bookingTxns.length === 0 ? (
+                    <div className="bg-gray-50 rounded-2xl px-4 py-5 text-center">
+                      <p className="text-xs text-gray-400">
+                        {b.paymentMode === "counter"
+                          ? "Cash payment — no digital transaction record"
+                          : "Koi transaction record nahi mila"}
+                      </p>
+                      {b.paymentMode === "counter" && (
+                        <p className="text-[10px] text-gray-400 mt-1">Counter payments are tracked manually by staff</p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {bookingTxns.map((txn: any, idx: number) => {
+                        const isIncome = ["card_activation_payment","booking_payment","booking_advance","platform_charge","wallet_topup"].includes(txn.category);
+                        return (
+                          <div key={txn._id || idx} className="rounded-2xl border border-gray-100 overflow-hidden">
+                            {/* Transaction row header */}
+                            <div className="flex items-center justify-between px-3 py-2 bg-gray-50">
+                              <div className="flex items-center gap-2">
+                                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-black flex-shrink-0 ${
+                                  txn.type === "credit" ? "bg-green-100 text-green-700" : "bg-orange-100 text-orange-700"
+                                }`}>
+                                  {txn.type === "credit" ? "▲" : "▼"}
+                                </span>
+                                <div>
+                                  <p className="text-[10px] font-bold text-gray-700">
+                                    {txn.categoryLabel || txn.category || "Transaction"}
+                                  </p>
+                                  <p className="text-[9px] text-gray-400">
+                                    {new Date(txn.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                                    {" · "}
+                                    {new Date(txn.createdAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="text-right flex-shrink-0">
+                                <p className={`text-sm font-black ${isIncome ? "text-green-600" : "text-orange-600"}`}>
+                                  {txn.type === "credit" ? "+" : "−"}₹{(txn.amount || 0).toLocaleString("en-IN")}
+                                </p>
+                                <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full border ${
+                                  txn.status === "success" ? "bg-green-100 text-green-700 border-green-200"
+                                  : txn.status === "pending" ? "bg-amber-100 text-amber-700 border-amber-200"
+                                  : "bg-red-100 text-red-700 border-red-200"
+                                }`}>{txn.status}</span>
+                              </div>
+                            </div>
+                            {/* Description + ref */}
+                            <div className="px-3 py-2 space-y-1">
+                              <p className="text-[10px] text-gray-500 leading-snug">{txn.description}</p>
+                              {(txn.paymentId || txn.referenceId) && (
+                                <p className="text-[9px] font-mono text-blue-500">
+                                  Ref: {txn.paymentId || txn.referenceId}
+                                </p>
+                              )}
+                              {txn.userId?.name && (
+                                <p className="text-[9px] text-gray-400">By: {txn.userId.name} ({txn.userId.role})</p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* ── Timestamps ── */}
+                <div className="text-center space-y-1 pb-2">
+                  <p className="text-[10px] text-gray-400">
+                    📌 Booked: {new Date(b.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                    {" "}{new Date(b.createdAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+                  </p>
+                  {b.updatedAt && b.updatedAt !== b.createdAt && (
+                    <p className="text-[10px] text-gray-400">
+                      🔄 Updated: {new Date(b.updatedAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Add Entry Modal ──────────────────────────────────────────────── */}
+      {showExpModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl">
+            <div className="px-5 pt-5 pb-3 border-b border-gray-100">
+              <h3 className="text-base font-bold text-gray-800">+ Add Manual Entry</h3>
+              <p className="text-xs text-gray-400 mt-0.5">Expense, pickup charge, ya platform charge manually add karein</p>
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Category</label>
+                <select value={expCategory} onChange={e => setExpCategory(e.target.value)}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400">
+                  <option value="expense">💸 Expense (debit)</option>
+                  <option value="pickup_charge">🏍️ Pickup Charge (debit)</option>
+                  <option value="platform_charge">🏥 Platform Charge from Hospital (credit)</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Amount (₹)</label>
+                <input
+                  type="number" min="1" value={expAmount} onChange={e => setExpAmount(e.target.value)}
+                  placeholder="e.g. 500"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Description</label>
+                <input
+                  value={expDesc} onChange={e => setExpDesc(e.target.value)}
+                  placeholder="e.g. Office rent July 2026"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                />
+              </div>
+            </div>
+            <div className="px-5 pb-5 flex gap-2">
+              <button onClick={() => setShowExpModal(false)}
+                className="flex-1 border border-gray-200 rounded-xl py-2.5 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition">
+                Cancel
+              </button>
+              <button onClick={addExpense} disabled={addingExp}
+                className="flex-1 bg-gray-800 hover:bg-gray-900 text-white rounded-xl py-2.5 text-sm font-bold transition disabled:opacity-50">
+                {addingExp ? "Adding..." : "Add Entry"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -4767,6 +6068,364 @@ function NotificationsTab() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// ── SUPPORT TAB ───────────────────────────────────────────────────────────────
+const SUPPORT_CATS: Record<string, { icon: string; label: string }> = {
+  booking:         { icon: "📋", label: "Booking" },
+  payment:         { icon: "💳", label: "Payment" },
+  cancellation:    { icon: "❌", label: "Cancellation" },
+  service:         { icon: "🏥", label: "Service" },
+  home_collection: { icon: "🏍️", label: "Home Collection" },
+  report:          { icon: "📄", label: "Reports" },
+  account:         { icon: "👤", label: "Account/Wallet" },
+  other:           { icon: "💬", label: "Other" },
+};
+
+const SUPPORT_STATUS: Record<string, { label: string; color: string; dot: string; active: string; idle: string }> = {
+  open:        { label: "Open",        dot: "bg-blue-500",   color: "bg-blue-100 text-blue-700 border-blue-200",   active: "border-blue-400 bg-blue-600 text-white",   idle: "border-blue-100 bg-blue-50 text-blue-700"   },
+  in_progress: { label: "In Progress", dot: "bg-amber-500",  color: "bg-amber-100 text-amber-700 border-amber-200", active: "border-amber-400 bg-amber-600 text-white",  idle: "border-amber-100 bg-amber-50 text-amber-700" },
+  resolved:    { label: "Resolved",    dot: "bg-green-500",  color: "bg-green-100 text-green-700 border-green-200", active: "border-green-400 bg-green-600 text-white",  idle: "border-green-100 bg-green-50 text-green-700" },
+  closed:      { label: "Closed",      dot: "bg-gray-400",   color: "bg-gray-100 text-gray-600 border-gray-200",   active: "border-gray-400 bg-gray-600 text-white",   idle: "border-gray-100 bg-gray-50 text-gray-600"   },
+};
+const SUPPORT_PRIORITY: Record<string, { label: string; color: string }> = {
+  low:    { label: "Low",    color: "bg-gray-100 text-gray-500 border-gray-200" },
+  medium: { label: "Medium", color: "bg-blue-100 text-blue-700 border-blue-200" },
+  high:   { label: "High",   color: "bg-orange-100 text-orange-700 border-orange-200" },
+  urgent: { label: "🚨 Urgent", color: "bg-red-100 text-red-700 border-red-200" },
+};
+
+function SupportTab() {
+  const [tickets,        setTickets]        = useState<any[]>([]);
+  const [stats,          setStats]          = useState<any>({ open: 0, in_progress: 0, resolved: 0, closed: 0 });
+  const [loading,        setLoading]        = useState(false);
+  const [page,           setPage]           = useState(1);
+  const [totalPages,     setTotalPages]     = useState(1);
+  const [total,          setTotal]          = useState(0);
+  const [statusFilter,   setStatusFilter]   = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [search,         setSearch]         = useState("");
+  const [selectedTicket, setSelectedTicket] = useState<any>(null);
+  const [detailLoading,  setDetailLoading]  = useState(false);
+  const [replyText,      setReplyText]      = useState("");
+  const [replying,       setReplying]       = useState(false);
+  const [newStatus,      setNewStatus]      = useState("");
+  const [newPriority,    setNewPriority]    = useState("");
+  const [updating,       setUpdating]       = useState(false);
+  const [toast,          setToast]          = useState("");
+  const [toastOk,        setToastOk]        = useState(true);
+  const threadRef = React.useRef<HTMLDivElement>(null);
+
+  function showToast(msg: string, ok = true) {
+    setToast(msg); setToastOk(ok); setTimeout(() => setToast(""), 3000);
+  }
+
+  async function fetchTickets(pg = 1, sf = statusFilter, cf = categoryFilter, sq = search) {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ page: String(pg), status: sf, category: cf });
+      if (sq.trim()) params.set("search", sq.trim());
+      const res  = await fetch(`/api/admin/support?${params}`);
+      const data = await res.json();
+      if (data.success) {
+        setTickets(data.tickets || []);
+        setStats(data.stats || {});
+        setTotalPages(data.pages || 1);
+        setTotal(data.total || 0);
+        setPage(pg);
+      }
+    } finally { setLoading(false); }
+  }
+
+  async function fetchDetail(ticketId: string) {
+    setDetailLoading(true);
+    try {
+      const res  = await fetch(`/api/support/${ticketId}`);
+      const data = await res.json();
+      if (data.success) {
+        setSelectedTicket(data.ticket);
+        setNewStatus(data.ticket.status);
+        setNewPriority(data.ticket.priority);
+        setTimeout(() => threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: "smooth" }), 100);
+      }
+    } finally { setDetailLoading(false); }
+  }
+
+  async function sendReply() {
+    if (!replyText.trim() || !selectedTicket) return;
+    setReplying(true);
+    try {
+      const res  = await fetch("/api/admin/support", {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ticketId: selectedTicket.ticketId, message: replyText.trim(), status: newStatus, priority: newPriority }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast("Reply bhej diya!");
+        setReplyText("");
+        fetchDetail(selectedTicket.ticketId);
+        fetchTickets(page);
+      } else { showToast(data.message || "Error", false); }
+    } catch { showToast("Network error", false); }
+    finally { setReplying(false); }
+  }
+
+  async function updateTicket() {
+    if (!selectedTicket) return;
+    setUpdating(true);
+    try {
+      const res  = await fetch("/api/admin/support", {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ticketId: selectedTicket.ticketId, status: newStatus, priority: newPriority }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast("Ticket updated!");
+        fetchDetail(selectedTicket.ticketId);
+        fetchTickets(page);
+      } else { showToast(data.message || "Error", false); }
+    } catch { showToast("Network error", false); }
+    finally { setUpdating(false); }
+  }
+
+  useEffect(() => { fetchTickets(); }, []);
+
+  const statCards = [
+    { key: "open",        label: "Open",        icon: "📬" },
+    { key: "in_progress", label: "In Progress", icon: "⚙️" },
+    { key: "resolved",    label: "Resolved",    icon: "✅" },
+    { key: "closed",      label: "Closed",      icon: "🔒" },
+  ];
+
+  return (
+    <div className="p-4 md:p-6 max-w-6xl mx-auto">
+      {toast && (
+        <div className={`fixed top-4 right-4 z-50 px-4 py-2.5 rounded-xl shadow-lg text-sm text-white font-semibold ${toastOk ? "bg-teal-700" : "bg-red-600"}`}>
+          {toast}
+        </div>
+      )}
+
+      <h2 className="text-xl font-bold text-gray-800 mb-5">🎧 Customer Care — Support Tickets</h2>
+
+      {/* Stat cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+        {statCards.map(sc => {
+          const cfg = SUPPORT_STATUS[sc.key];
+          const isActive = statusFilter === sc.key;
+          return (
+            <button key={sc.key} onClick={() => { setStatusFilter(isActive ? "all" : sc.key); fetchTickets(1, isActive ? "all" : sc.key); }}
+              className={`rounded-2xl border p-3 text-left transition hover:shadow-md ${isActive ? cfg.active : cfg.idle}`}>
+              <p className="text-2xl font-black">{(stats[sc.key] || 0).toLocaleString("en-IN")}</p>
+              <p className="text-[11px] font-bold mt-1 opacity-80">{sc.icon} {sc.label}</p>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Filters */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3 mb-4 flex flex-wrap gap-3 items-center">
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter") fetchTickets(1, statusFilter, categoryFilter, search); }}
+          placeholder="Search ticket ID / subject / booking..."
+          className="flex-1 min-w-[180px] border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+        />
+        <select value={categoryFilter} onChange={e => { setCategoryFilter(e.target.value); fetchTickets(1, statusFilter, e.target.value); }}
+          className="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400">
+          <option value="all">All Categories</option>
+          {Object.entries(SUPPORT_CATS).map(([k, v]) => (
+            <option key={k} value={k}>{v.icon} {v.label}</option>
+          ))}
+        </select>
+        <button onClick={() => fetchTickets(1, statusFilter, categoryFilter, search)}
+          className="bg-teal-600 text-white text-sm font-bold px-4 py-2 rounded-xl hover:bg-teal-700 transition">
+          🔍 Search
+        </button>
+        <button onClick={() => { setSearch(""); setStatusFilter("all"); setCategoryFilter("all"); fetchTickets(1, "all", "all", ""); }}
+          className="text-sm text-gray-500 hover:text-gray-700 font-semibold px-2">
+          ✕ Reset
+        </button>
+      </div>
+
+      <div className="flex gap-4">
+        {/* Ticket list */}
+        <div className={`flex-1 min-w-0 ${selectedTicket ? "hidden md:block md:max-w-md" : ""}`}>
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            {loading ? (
+              <div className="flex justify-center py-16"><div className="w-8 h-8 border-4 border-teal-200 border-t-teal-600 rounded-full animate-spin" /></div>
+            ) : tickets.length === 0 ? (
+              <div className="text-center py-12 text-gray-400 text-sm">Koi ticket nahi mila</div>
+            ) : (
+              <>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-[11px] font-bold text-gray-400 uppercase tracking-wide border-b border-gray-100 bg-gray-50">
+                        <th className="px-4 py-3 text-left">Ticket</th>
+                        <th className="px-4 py-3 text-left">User</th>
+                        <th className="px-4 py-3 text-left">Category</th>
+                        <th className="px-4 py-3 text-center">Priority</th>
+                        <th className="px-4 py-3 text-center">Status</th>
+                        <th className="px-4 py-3 text-left">Date</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {tickets.map((t: any) => {
+                        const sc  = SUPPORT_STATUS[t.status]   || SUPPORT_STATUS.open;
+                        const pc  = SUPPORT_PRIORITY[t.priority] || SUPPORT_PRIORITY.medium;
+                        const cat = SUPPORT_CATS[t.category]   || { icon: "💬", label: t.category };
+                        const isSelected = selectedTicket?.ticketId === t.ticketId;
+                        return (
+                          <tr key={t._id}
+                            className={`cursor-pointer transition ${isSelected ? "bg-teal-50" : "hover:bg-gray-50"}`}
+                            onClick={() => fetchDetail(t.ticketId)}>
+                            <td className="px-4 py-3">
+                              <p className="text-xs font-black text-teal-700">{t.ticketId}</p>
+                              {t.bookingRef && <p className="text-[10px] font-mono text-blue-500">{t.bookingRef}</p>}
+                              <p className="text-[10px] text-gray-500 mt-0.5 line-clamp-1 max-w-[120px]">{t.subject}</p>
+                            </td>
+                            <td className="px-4 py-3">
+                              <p className="text-xs font-semibold text-gray-700">{t.userId?.name || "—"}</p>
+                              <p className="text-[10px] text-gray-400">{t.userId?.mobile}</p>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className="text-xs text-gray-600">{cat.icon} {cat.label}</span>
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${pc.color}`}>{pc.label}</span>
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${sc.color}`}>
+                                <span className={`inline-block w-1.5 h-1.5 rounded-full ${sc.dot} mr-1`} />
+                                {sc.label}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">
+                              {new Date(t.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                {totalPages > 1 && (
+                  <div className="px-4 py-3 border-t border-gray-100 flex items-center justify-between">
+                    <p className="text-xs text-gray-400">Page {page} of {totalPages} ({total} tickets)</p>
+                    <div className="flex gap-2">
+                      <button disabled={page <= 1} onClick={() => fetchTickets(page - 1)}
+                        className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-semibold disabled:opacity-40">← Prev</button>
+                      <button disabled={page >= totalPages} onClick={() => fetchTickets(page + 1)}
+                        className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-semibold disabled:opacity-40">Next →</button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Detail panel */}
+        {selectedTicket && (
+          <div className="w-full md:w-[420px] flex-shrink-0">
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm flex flex-col" style={{ height: "calc(100vh - 280px)", minHeight: "500px" }}>
+
+              {/* Detail header */}
+              <div className="px-4 py-3 border-b border-gray-100 flex items-start justify-between gap-2 flex-shrink-0">
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wide">{selectedTicket.ticketId}</p>
+                  <p className="text-sm font-bold text-gray-800 truncate mt-0.5">{selectedTicket.subject}</p>
+                  <div className="flex flex-wrap gap-1.5 mt-1.5">
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${SUPPORT_STATUS[selectedTicket.status]?.color}`}>
+                      {SUPPORT_STATUS[selectedTicket.status]?.label}
+                    </span>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${SUPPORT_PRIORITY[selectedTicket.priority]?.color}`}>
+                      {SUPPORT_PRIORITY[selectedTicket.priority]?.label}
+                    </span>
+                    {selectedTicket.bookingRef && (
+                      <span className="text-[10px] font-mono bg-teal-50 text-teal-700 border border-teal-100 px-2 py-0.5 rounded-full">
+                        {selectedTicket.bookingRef}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-gray-400 mt-1">
+                    👤 {selectedTicket.userId?.name || "—"} · {selectedTicket.userId?.mobile || ""}
+                  </p>
+                </div>
+                <button onClick={() => setSelectedTicket(null)} className="text-gray-400 hover:text-gray-700 text-2xl leading-none flex-shrink-0">×</button>
+              </div>
+
+              {/* Admin controls */}
+              <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 flex gap-2 flex-wrap flex-shrink-0">
+                <select value={newStatus} onChange={e => setNewStatus(e.target.value)}
+                  className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-teal-400">
+                  <option value="open">📬 Open</option>
+                  <option value="in_progress">⚙️ In Progress</option>
+                  <option value="resolved">✅ Resolved</option>
+                  <option value="closed">🔒 Closed</option>
+                </select>
+                <select value={newPriority} onChange={e => setNewPriority(e.target.value)}
+                  className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-teal-400">
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="urgent">🚨 Urgent</option>
+                </select>
+                <button onClick={updateTicket} disabled={updating}
+                  className="bg-gray-700 hover:bg-gray-800 text-white text-xs font-bold px-3 py-1 rounded-lg transition disabled:opacity-50">
+                  {updating ? "..." : "Update"}
+                </button>
+              </div>
+
+              {/* Thread */}
+              {detailLoading ? (
+                <div className="flex-1 flex justify-center items-center">
+                  <div className="w-6 h-6 border-2 border-teal-200 border-t-teal-600 rounded-full animate-spin" />
+                </div>
+              ) : (
+                <div ref={threadRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+                  {(selectedTicket.messages || []).map((msg: any, idx: number) => {
+                    const isAdmin = ["admin", "staff"].includes(msg.senderRole);
+                    return (
+                      <div key={msg._id || idx} className={`flex ${isAdmin ? "justify-end" : "justify-start"}`}>
+                        <div className={`max-w-[85%] rounded-2xl px-3 py-2.5 ${isAdmin ? "bg-teal-600 text-white rounded-tr-sm" : "bg-gray-100 text-gray-800 rounded-tl-sm"}`}>
+                          <p className={`text-[10px] font-bold mb-1 ${isAdmin ? "text-teal-100" : "text-gray-500"}`}>
+                            {isAdmin ? `🎧 ${msg.senderName || "Support"}` : `👤 ${msg.senderName || "User"}`}
+                          </p>
+                          <p className="text-xs leading-relaxed whitespace-pre-wrap">{msg.message}</p>
+                          <p className={`text-[9px] mt-1 text-right ${isAdmin ? "text-teal-200" : "text-gray-400"}`}>
+                            {new Date(msg.createdAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Reply input */}
+              <div className="px-4 py-3 border-t border-gray-100 flex gap-2 flex-shrink-0">
+                <textarea
+                  value={replyText}
+                  onChange={e => setReplyText(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendReply(); } }}
+                  placeholder="Reply likhein... (Enter to send)"
+                  rows={2}
+                  className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-teal-400 resize-none"
+                />
+                <button onClick={sendReply} disabled={replying || !replyText.trim()}
+                  className="bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold px-3 rounded-xl disabled:opacity-50 transition flex-shrink-0">
+                  {replying ? "..." : "Send"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // ── MAIN PAGE ─────────────────────────────────────────────────────────────────
 export default function AdminPage() {
   const [authed, setAuthed]     = useState(false);
@@ -4812,6 +6471,8 @@ export default function AdminPage() {
     { key: "reports",       icon: "📈", label: "Revenue Reports"                        },
     { key: "accounting",    icon: "💰", label: "Accounting"                             },
     { key: "coordinators",  icon: "🤝", label: "Coordinators"                           },
+    { key: "ledger",        icon: "📒", label: "Master Ledger"                          },
+    { key: "support",       icon: "🎧", label: "Customer Care",  badge: stats?.openSupportTickets },
     { key: "ambulance",     icon: "🚑", label: "Ambulance"                              },
     { key: "articles",      icon: "📰", label: "Articles"                               },
     { key: "notifications", icon: "🔔", label: "Notifications"                          },
@@ -4883,6 +6544,8 @@ export default function AdminPage() {
         {activeTab === "reports"       && <RevenueReportsTab />}
         {activeTab === "accounting"    && <AccountingTab />}
         {activeTab === "coordinators"  && <CoordinatorsTab />}
+        {activeTab === "ledger"        && <LedgerTab />}
+        {activeTab === "support"       && <SupportTab />}
         {activeTab === "ambulance"     && <AmbulanceTab />}
         {activeTab === "articles"      && <ArticlesTab />}
         {activeTab === "notifications" && <NotificationsTab />}

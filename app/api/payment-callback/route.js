@@ -3,6 +3,7 @@ import crypto from "crypto";
 import connectDB from "../../../lib/mongodb";
 import User from "../../../models/User";
 import FamilyCard from "../../../models/FamilyCard";
+import Transaction from "../../../models/Transaction";
 
 export const dynamic = "force-dynamic";
 
@@ -35,10 +36,11 @@ export async function POST(request) {
 
     const { code, data } = decodedResponse;
 
-    // URL se userId aur txnId lo
-    const url = new URL(request.url);
+    // URL se userId, txnId aur from lo
+    const url  = new URL(request.url);
     const userId = url.searchParams.get("userId");
-    const txnId = url.searchParams.get("txnId");
+    const txnId  = url.searchParams.get("txnId");
+    const from   = url.searchParams.get("from"); // "coordinator" if coordinator initiated
 
     // Payment success check
     if (code !== "PAYMENT_SUCCESS") {
@@ -83,6 +85,22 @@ export async function POST(request) {
     user.role = "member";
     await user.save();
 
+    // Record platform income — ₹249 received via PhonePe
+    const paidAmount = data?.amount ? data.amount / 100 : 249;
+    try {
+      await Transaction.create({
+        userId: user._id,
+        type: "credit",
+        amount: paidAmount,
+        description: `Card Activation Payment — ${user.name} (${user.mobile})`,
+        referenceId: data?.transactionId || txnId,
+        category: "card_activation_payment",
+        status: "success",
+      });
+    } catch (txnErr) {
+      console.error("Failed to record activation payment transaction:", txnErr);
+    }
+
     // Referral cashback — dono ko ₹50 jab pehli baar card activate ho
     if (isFirstActivation && user.referredBy) {
       try {
@@ -99,6 +117,7 @@ export async function POST(request) {
               amount:      50,
               description: `Referral cashback — Family Card activate kiya (code: ${user.referredBy})`,
               referenceId: user.referredBy,
+              category:    "referral_cashback",
               status:      "success",
             },
             {
@@ -107,6 +126,7 @@ export async function POST(request) {
               amount:      50,
               description: `Referral reward — ${user.name || "User"} ne Family Card activate kiya`,
               referenceId: user._id.toString(),
+              category:    "referral_cashback",
               status:      "success",
             },
           ]);
@@ -134,6 +154,7 @@ export async function POST(request) {
             amount:      100,
             description: `Card Activation Commission — ${user.name} (${user.mobile}) ne Family Card activate kiya`,
             referenceId: user._id.toString(),
+            category:    "card_activation",
             status:      "success",
           });
         }
@@ -142,9 +163,11 @@ export async function POST(request) {
       }
     }
 
-    return NextResponse.redirect(
-      `${process.env.NEXTAUTH_URL}/dashboard?payment=success&cardNumber=${cardNumber}`
-    );
+    const successUrl = from === "coordinator"
+      ? `${process.env.NEXTAUTH_URL}/dashboard?payment=success&cardNumber=${cardNumber}&from=coordinator`
+      : `${process.env.NEXTAUTH_URL}/dashboard?payment=success&cardNumber=${cardNumber}`;
+
+    return NextResponse.redirect(successUrl);
   } catch (error) {
     console.error("Payment Callback Error:", error);
     return NextResponse.redirect(

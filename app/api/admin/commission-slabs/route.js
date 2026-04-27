@@ -6,16 +6,26 @@ import { requireAuth } from "../../../../lib/auth";
 
 export const dynamic = "force-dynamic";
 
-// GET — list all commission slabs
+// GET — list all slabs OR single slab for a hospital (?hospitalId=xxx)
 export async function GET(request) {
   const { error } = await requireAuth(request, ["admin"]);
   if (error) return error;
 
   try {
+    const { searchParams } = new URL(request.url);
+    const hospitalId = searchParams.get("hospitalId");
+
     await connectDB();
+
+    // Single hospital slab lookup (used by HospitalDrawer)
+    if (hospitalId) {
+      const slab = await CommissionSlab.findOne({ hospitalId, isActive: true }).lean();
+      return NextResponse.json({ success: true, slab: slab || null });
+    }
+
+    // All slabs list
     const slabs = await CommissionSlab.find({}).sort({ createdAt: -1 }).lean();
 
-    // Enrich with hospital info for hospitals that don't have a slab yet
     const hospitals = await Hospital.find({ isVerified: true, isActive: true })
       .select("_id name address")
       .lean();

@@ -42,6 +42,12 @@ export default function LabTestsPage() {
   const [selectedSlot, setSelectedSlot]     = useState("");
   const [paymentType, setPaymentType]       = useState("counter");
 
+  // Promo code
+  const [promoInput, setPromoInput]     = useState("");
+  const [promoData, setPromoData]       = useState<any>(null);
+  const [promoLoading, setPromoLoading] = useState(false);
+  const [promoError, setPromoError]     = useState("");
+
   // Home collection address
   const [hcAddress, setHcAddress] = useState({
     flat: "", street: "", landmark: "", district: "Patna", pincode: "",
@@ -105,6 +111,22 @@ export default function LabTestsPage() {
     return total;
   }
 
+  async function applyPromo() {
+    if (!promoInput.trim() || !selectedTest) return;
+    setPromoLoading(true); setPromoError(""); setPromoData(null);
+    try {
+      const res = await fetch("/api/promo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: promoInput.trim(), amount: getTotalAmount(selectedTest), bookingType: "Lab" }),
+      });
+      const data = await res.json();
+      if (data.success) setPromoData(data);
+      else setPromoError(data.message);
+    } catch { setPromoError("Network error. Dobara try karein."); }
+    setPromoLoading(false);
+  }
+
   function openBooking(test: any) {
     setSelectedTest(test);
     setHomeCollection(false);
@@ -113,6 +135,7 @@ export default function LabTestsPage() {
     setPaymentType("online");
     setSelectedPatient(null);
     setHcAddress({ flat: "", street: "", landmark: "", district: "Patna", pincode: "" });
+    setPromoInput(""); setPromoData(null); setPromoError("");
     setMessage("");
   }
 
@@ -137,6 +160,9 @@ export default function LabTestsPage() {
 
       const familyCardId = localStorage.getItem("familyCardId") || null;
 
+      const baseAmount  = getTotalAmount(selectedTest);
+      const finalAmount = promoData ? promoData.finalAmount : baseAmount;
+
       // Online payment — PhonePe pe redirect karo
       if (paymentType === "online") {
         const res = await fetch("/api/create-lab-order", {
@@ -152,9 +178,10 @@ export default function LabTestsPage() {
               : selectedSlot,
             homeCollection,
             homeAddress: homeCollection ? hcAddress : undefined,
-            amount: getTotalAmount(selectedTest),
+            amount: finalAmount,
             patientName: selectedPatient.name,
             patientMobile: selectedPatient.mobile,
+            ...(promoData && { promoCode: promoData.code, promoDiscount: promoData.discount }),
           }),
         });
         const data = await res.json();
@@ -187,16 +214,23 @@ export default function LabTestsPage() {
           symptoms: selectedPatient.symptoms,
           isNewPatient: selectedPatient.isNewPatient,
           paymentMode: paymentType,
-          amount: getTotalAmount(selectedTest),
+          amount: finalAmount,
           familyCardId,
+          ...(promoData && { promoCode: promoData.code, promoDiscount: promoData.discount }),
         }),
       });
       const data = await res.json();
       if (data.success) {
-        setMessage(`✅ Booking ho gayi! Booking ID: ${data.booking.bookingId}`);
+        const savedVsMrp = (selectedTest.mrp || 0) - finalAmount;
+        const couldSave  = !hasMembership && selectedTest.membershipPrice
+          ? selectedTest.offerPrice - selectedTest.membershipPrice : 0;
+        let successMsg = `✅ Booking confirm! Booking ID: ${data.booking.bookingId}`;
+        if (savedVsMrp > 0) successMsg += ` · MRP se ₹${savedVsMrp.toLocaleString("en-IN")} bachaye!`;
+        if (couldSave  > 0) successMsg += ` · 💳 Card activate karo aur ₹${couldSave.toLocaleString("en-IN")} aur bachao!`;
+        setMessage(successMsg);
         setSelectedTest(null);
         if (paymentType === "wallet") {
-          setWalletBalance((prev) => prev - getTotalAmount(selectedTest));
+          setWalletBalance((prev) => prev - finalAmount);
         }
       } else {
         setMessage("❌ " + data.message);
@@ -265,14 +299,17 @@ export default function LabTestsPage() {
 
         {/* Membership Banner */}
         {!hasMembership && (
-          <div className="bg-gradient-to-r from-teal-600 to-teal-700 rounded-2xl p-4 text-white mb-6 flex justify-between items-center">
-            <div>
-              <p className="font-bold">💳 Family Card se extra discount!</p>
-              <p className="text-sm text-teal-100">Lab tests par 10–20% extra off milta hai</p>
+          <div className="bg-gradient-to-r from-teal-600 to-teal-700 rounded-2xl p-4 text-white mb-6">
+            <div className="flex justify-between items-center">
+              <div>
+                <p className="font-bold">💳 Family Card se extra discount!</p>
+                <p className="text-sm text-teal-100">Lab tests par Member Price milega — har test par paise bachao</p>
+              </div>
+              <a href="/dashboard" className="bg-white text-teal-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-teal-50 flex-shrink-0">
+                ₹249/yr →
+              </a>
             </div>
-            <a href="/dashboard" className="bg-white text-teal-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-teal-50">
-              Activate
-            </a>
+            <p className="text-xs text-teal-200 mt-2">👇 Neeche diye price tags mein green 💳 Member Price dekho — kitna bachega!</p>
           </div>
         )}
 
@@ -316,13 +353,39 @@ export default function LabTestsPage() {
                         <p className="text-xs text-gray-400">📍 {test.address.district}</p>
                       )}
                     </div>
-                    <div className="text-right ml-4">
-                      <p className="text-xs text-gray-400 line-through">₹{test.mrp.toLocaleString()}</p>
-                      <p className="text-xl font-bold text-teal-600">₹{getPrice(test).toLocaleString()}</p>
-                      {hasMembership && test.membershipDiscount > 0 && (
-                        <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
-                          {test.membershipDiscount}% off
-                        </span>
+                    {/* ── Price Column ── */}
+                    <div className="ml-3 flex-shrink-0 text-right min-w-[88px]">
+                      <p className="text-[11px] text-gray-400 line-through leading-none mb-1">
+                        MRP ₹{test.mrp.toLocaleString()}
+                      </p>
+                      {hasMembership ? (
+                        <>
+                          <p className="text-xl font-black text-teal-600 leading-none">
+                            ₹{getPrice(test).toLocaleString()}
+                          </p>
+                          {test.mrp > getPrice(test) && (
+                            <span className="inline-block mt-1.5 bg-green-100 text-green-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                              ✓ ₹{(test.mrp - getPrice(test)).toLocaleString()} saved
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-xl font-black text-teal-700 leading-none">
+                            ₹{test.offerPrice.toLocaleString()}
+                          </p>
+                          {test.membershipPrice && test.membershipPrice < test.offerPrice && (
+                            <div className="mt-1.5 bg-green-50 border border-green-200 rounded-lg px-2 py-1 text-right">
+                              <p className="text-[10px] text-gray-500 leading-none mb-0.5">💳 Member</p>
+                              <p className="text-sm font-black text-green-600 leading-none">
+                                ₹{test.membershipPrice.toLocaleString()}
+                              </p>
+                              <p className="text-[10px] text-amber-600 font-semibold leading-none mt-0.5">
+                                ₹{(test.offerPrice - test.membershipPrice).toLocaleString()} extra off
+                              </p>
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>
@@ -510,6 +573,40 @@ export default function LabTestsPage() {
                   )}
                 </div>
 
+                {/* Promo Code */}
+                <div>
+                  <p className="text-sm font-medium text-gray-700 mb-2">🏷️ Promo Code (Optional)</p>
+                  <div className="flex gap-2">
+                    <input
+                      value={promoInput}
+                      onChange={(e) => { setPromoInput(e.target.value.toUpperCase()); setPromoData(null); setPromoError(""); }}
+                      placeholder="Code enter karein"
+                      className="flex-1 border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 font-mono uppercase"
+                    />
+                    <button
+                      type="button"
+                      onClick={applyPromo}
+                      disabled={promoLoading || !promoInput.trim()}
+                      className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold rounded-xl transition disabled:opacity-50"
+                    >
+                      {promoLoading ? "..." : "Apply"}
+                    </button>
+                  </div>
+                  {promoData && (
+                    <div className="mt-2 flex items-center justify-between p-2.5 bg-green-50 border border-green-200 rounded-xl">
+                      <div className="flex items-center gap-2">
+                        <span className="text-green-600 text-base">✅</span>
+                        <div>
+                          <p className="text-xs font-bold text-green-700">{promoData.code} applied!</p>
+                          <p className="text-[11px] text-green-600">₹{promoData.discount.toLocaleString("en-IN")} discount mila</p>
+                        </div>
+                      </div>
+                      <button type="button" onClick={() => { setPromoData(null); setPromoInput(""); }} className="text-gray-400 hover:text-red-500 text-sm">✕</button>
+                    </div>
+                  )}
+                  {promoError && <p className="mt-1.5 text-xs text-red-500">{promoError}</p>}
+                </div>
+
                 {/* Payment */}
                 <div>
                   <p className="text-sm font-medium text-gray-700 mb-2">Payment Method</p>
@@ -572,27 +669,91 @@ export default function LabTestsPage() {
                   </div>
                 </div>
 
-                {/* Total */}
-                <div className="bg-teal-50 rounded-xl p-4">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <p className="text-sm text-gray-600">Total Amount</p>
-                      <p className="text-xs text-gray-400 line-through">MRP: ₹{selectedTest.mrp.toLocaleString()}</p>
+                {/* Card activation nudge for non-members */}
+                {!hasMembership && selectedTest.membershipPrice && selectedTest.membershipPrice < selectedTest.offerPrice && (
+                  <div className="rounded-2xl overflow-hidden border border-amber-200">
+                    <div className="bg-gradient-to-r from-amber-500 to-orange-400 px-4 py-2 flex items-center gap-2">
+                      <span className="text-white text-lg">💳</span>
+                      <p className="text-white text-xs font-bold flex-1">Family Card activate karein — sirf ₹249/year</p>
+                      <a href="/dashboard" className="bg-white text-amber-600 text-xs font-black px-3 py-1 rounded-full whitespace-nowrap">
+                        Activate →
+                      </a>
                     </div>
-                    <p className="text-2xl font-bold text-teal-700">
-                      ₹{getTotalAmount(selectedTest).toLocaleString()}
-                    </p>
+                    <div className="bg-amber-50 px-4 py-2 flex items-center justify-between">
+                      <span className="text-xs text-amber-700">Is test par aur kitna bachega:</span>
+                      <span className="text-sm font-black text-amber-700">
+                        ₹{(selectedTest.offerPrice - selectedTest.membershipPrice).toLocaleString("en-IN")} extra savings
+                      </span>
+                    </div>
                   </div>
-                  {hasMembership && selectedTest.membershipDiscount > 0 && (
-                    <p className="text-xs text-green-600 mt-1">
-                      ✅ {selectedTest.membershipDiscount}% membership discount applied!
-                    </p>
-                  )}
-                  {homeCollection && selectedTest.homeCollectionCharge > 0 && (
-                    <p className="text-xs text-gray-500 mt-1">
-                      Home collection charge: +₹{selectedTest.homeCollectionCharge}
-                    </p>
-                  )}
+                )}
+
+                {/* Total — receipt-style 3-price breakdown */}
+                <div className="rounded-2xl overflow-hidden border border-gray-200">
+                  <div className="bg-gray-50 px-4 pt-3 pb-2 space-y-2">
+                    {/* MRP row */}
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-gray-400">MRP</span>
+                      <span className="text-xs text-gray-400 line-through font-medium">₹{selectedTest.mrp.toLocaleString()}</span>
+                    </div>
+                    {/* Offer Price row */}
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-gray-500 flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-gray-400 inline-block" />
+                        Offer Price
+                      </span>
+                      <span className={`text-xs font-semibold ${hasMembership && selectedTest.membershipPrice && selectedTest.membershipPrice < selectedTest.offerPrice ? "text-gray-400 line-through" : "text-gray-700"}`}>
+                        ₹{selectedTest.offerPrice.toLocaleString()}
+                      </span>
+                    </div>
+                    {/* Member Price row */}
+                    {selectedTest.membershipPrice && (
+                      <div className="flex justify-between items-center">
+                        <span className={`text-xs flex items-center gap-1.5 ${hasMembership ? "text-teal-600 font-semibold" : "text-gray-400"}`}>
+                          <span className="text-sm leading-none">💳</span>
+                          Member Price
+                          {!hasMembership && (
+                            <span className="text-[10px] bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded-full">Card chahiye</span>
+                          )}
+                        </span>
+                        <span className={`text-xs font-bold ${hasMembership ? "text-teal-600" : "text-gray-400"}`}>
+                          ₹{selectedTest.membershipPrice.toLocaleString()}
+                        </span>
+                      </div>
+                    )}
+                    {/* Home collection add-on */}
+                    {homeCollection && selectedTest.homeCollectionCharge > 0 && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-gray-500 flex items-center gap-1.5">
+                          <span className="text-sm leading-none">🏠</span>
+                          Home collection
+                        </span>
+                        <span className="text-xs font-semibold text-gray-600">+₹{selectedTest.homeCollectionCharge.toLocaleString()}</span>
+                      </div>
+                    )}
+                    {/* Promo discount */}
+                    {promoData && (
+                      <div className="flex justify-between items-center pt-1 border-t border-gray-200">
+                        <span className="text-xs text-green-600 font-semibold flex items-center gap-1.5">
+                          <span className="text-sm leading-none">🏷️</span>
+                          Promo ({promoData.code})
+                        </span>
+                        <span className="text-xs font-bold text-green-600">−₹{promoData.discount.toLocaleString("en-IN")}</span>
+                      </div>
+                    )}
+                  </div>
+                  {/* You Pay row — highlighted */}
+                  <div className="bg-teal-600 px-4 py-3 flex justify-between items-center">
+                    <div>
+                      <p className="text-teal-100 text-[11px] font-medium uppercase tracking-wide">Aap Pay Karein</p>
+                      {selectedTest.mrp > (promoData ? promoData.finalAmount : getTotalAmount(selectedTest)) && (
+                        <p className="text-teal-200 text-[10px] mt-0.5">
+                          MRP se ₹{(selectedTest.mrp - (promoData ? promoData.finalAmount : getTotalAmount(selectedTest))).toLocaleString("en-IN")} ki bachat
+                        </p>
+                      )}
+                    </div>
+                    <p className="text-white text-2xl font-black">₹{(promoData ? promoData.finalAmount : getTotalAmount(selectedTest)).toLocaleString()}</p>
+                  </div>
                 </div>
 
                 {message && (
@@ -606,8 +767,8 @@ export default function LabTestsPage() {
                   {booking
                     ? (paymentType === "online" ? "Payment page pe ja rahe hain..." : "Booking ho rahi hai...")
                     : paymentType === "online"
-                      ? `💳 Pay Karein — ₹${getTotalAmount(selectedTest).toLocaleString()}`
-                      : `Book Karein — ₹${getTotalAmount(selectedTest).toLocaleString()}`
+                      ? `💳 Pay Karein — ₹${(promoData ? promoData.finalAmount : getTotalAmount(selectedTest)).toLocaleString()}`
+                      : `Book Karein — ₹${(promoData ? promoData.finalAmount : getTotalAmount(selectedTest)).toLocaleString()}`
                   }
                 </button>
               </div>

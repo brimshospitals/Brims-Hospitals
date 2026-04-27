@@ -154,6 +154,7 @@ brims-hospitals-app/
 │   ├── notifications/page.tsx      ← Notification inbox (mark-as-read)
 │   ├── services/page.tsx           ← All services overview
 │   ├── contact/page.tsx            ← Contact page
+│   ├── support/page.tsx            ← Customer Care — role-aware form, chat thread, My Tickets list
 │   ├── hospital-onboarding/        ← Hospital self-registration (3-step form)
 │   ├── doctor-register/page.tsx    ← Doctor self-registration
 │   ├── staff-login/page.tsx        ← Staff/Doctor/Hospital portal login
@@ -180,7 +181,8 @@ brims-hospitals-app/
 │   ├── FamilyCard.js
 │   ├── Transaction.js
 │   ├── Article.js
-│   └── Notification.js
+│   ├── Notification.js
+│   └── SupportTicket.js            ← TKT-XXXXX tickets with chat thread messages[]
 └── public/                         ← Static assets (logo.png etc.)
 ```
 
@@ -246,13 +248,37 @@ bookingId (auto "BH-OPD-xxxxx" / "BH-LAB-xxxxx" / "BH-SUR-xxxxx" / "BH-CON-xxxxx
 type: OPD|IPD|Lab|Surgery|Consultation,
 userId→User, doctorId→Doctor, hospitalId→Hospital,
 packageId→SurgeryPackage, labTestId→LabTest,
-appointmentDate, slot,
+appointmentDate, slot, roomType,
 status: pending|confirmed|completed|cancelled,
+statusStage (workflow stage string), statusHistory[{stage, label, timestamp, updatedBy, notes}],
 paymentStatus: pending|paid|refunded,
-amount, paymentMode,
+amount, paymentMode, paymentId, paymentMode,
+familyCardId→FamilyCard,
 notes (JSON string — always parse with try/catch):
   { patientName, patientMobile, patientAge, patientGender,
-    symptoms, paymentMode, isNewPatient }
+    symptoms, paymentMode, isNewPatient,
+    promoCode, promoDiscount, homeAddress,
+    insurancePolicyNo, insurerName, tpaName }
+
+// Commission (calculated at booking time)
+platformCommission (₹), commissionPct (%), hospitalPayable (amount − commission),
+coordinatorId→Coordinator, coordinatorName,
+coordinatorCommission (₹), coordinatorCommissionPct (%),
+coordinatorPaid (bool),
+
+// Partial / deposit (Surgery)
+isPartialBooking (bool), depositAmount, balanceAmount,
+
+// Partner payout tracking
+payoutStatus: "pending"|"paid"|"not_applicable" (default null),
+payoutUtr (UTR string after admin processes payout),
+payoutProcessedAt (Date),
+
+// Staff collection tracking
+collectedBy→User, collectedByName, collectedAt,
+
+// Reminder tracking
+reminderToday (bool), reminderTomorrow (bool)
 ```
 
 ### LabTest / SurgeryPackage
@@ -268,11 +294,55 @@ LabTest extras: turnaroundTime, homeCollection (bool), fastingRequired (bool)
 
 ### Transaction
 ```
-userId→User, type: credit|debit,
-amount, description, referenceId,
+userId→User, familyCardId→FamilyCard (optional),
+type: credit|debit,
+amount, description, referenceId, paymentId,
+bookingId→Booking (optional),
+category:
+  // Platform Income (money IN to platform)
+  card_activation_payment   ← ₹249 card activation via PhonePe
+  booking_payment           ← full booking payment online/wallet
+  booking_advance           ← advance/deposit for surgery/IPD
+  platform_charge           ← periodic charge from hospital/lab/doctor
+  wallet_topup              ← user wallet top-up
+
+  // Platform Expenses (money OUT from platform)
+  coordinator_commission    ← coordinator commission (card or booking)
+  referral_cashback         ← ₹50 cashback to referrer/referee
+  pickup_charge             ← home sample collection charge
+  expense                   ← admin-recorded miscellaneous expense
+  wallet_refund             ← booking cancellation refund to wallet
+  withdrawal                ← coordinator withdrawal (processed with UTR)
+  hospital_payout           ← platform paying hospital after completed booking
+  lab_payout                ← platform paying lab after completed test
+  doctor_payout             ← platform paying doctor after consultation
+  ambulance_payout          ← platform paying ambulance provider
+
+  // Legacy (backward compat only)
+  wallet | card_activation | booking_commission | referral | other
+
 status: success|pending|failed,
 createdAt
 ```
+> **Income categories (INCOME_CATEGORIES):** card_activation_payment, booking_payment, booking_advance, platform_charge, wallet_topup
+> **Expense categories (EXPENSE_CATEGORIES):** coordinator_commission, referral_cashback, pickup_charge, expense, wallet_refund, withdrawal, hospital_payout, lab_payout, doctor_payout, ambulance_payout
+> **Payout flow:** When admin enters UTR in Partner Payouts section → booking.payoutStatus="paid" + Transaction(category: hospital_payout/lab_payout/doctor_payout) created
+
+### SupportTicket
+```
+ticketId (unique, auto "TKT-00001"),
+userId→User (required),
+bookingRef: String (optional — bookingId string, not ObjectId),
+category: enum ["booking","payment","cancellation","service","home_collection","report","account","other"],
+subject (required), description (required),
+status: enum ["open","in_progress","resolved","closed"] default "open",
+priority: enum ["low","medium","high","urgent"] default "medium",
+messages: [{ senderId→User, senderName, senderRole, message, createdAt }],
+assignedTo→User, assignedName, resolvedAt, createdAt
+```
+> First message = initial ticket description (auto-appended at creation)
+> Admin first reply auto-moves status from "open" → "in_progress"
+> Context prefix auto-injected: coordinatorId, hospitalId, selected member, booking/transaction IDs
 
 ### Article
 ```
@@ -348,12 +418,24 @@ diseaseTags[], isPublished, views
 | `/api/hospital/doctors` | GET/POST/PATCH/DELETE | Manage hospital's doctors |
 | `/api/hospital/lab-tests` | GET/POST/PATCH/DELETE | Manage lab tests |
 | `/api/hospital/surgery-packages` | GET/POST/PATCH/DELETE | Manage surgery packages |
+| `/api/hospital/earnings` | GET | Hospital earnings — summary (pending from platform, commission due, received, this month) + paginated booking ledger with per-booking commission breakdown + payout history; ?view=bookings\|payouts&type=&dateFrom=&dateTo=&page= |
 | `/api/hospital-onboarding` | POST | Hospital self-registration → `isVerified: false` |
 
 ### Staff Dashboard
 | Route | Method | Purpose |
 |-------|--------|---------|
 | `/api/staff/bookings` | GET/PATCH | All bookings with search + filters + status update |
+
+### Support / Customer Care
+| Route | Method | Purpose |
+|-------|--------|---------|
+| `/api/support/context` | GET | Role-specific context (no auth required — guests get `{ loggedIn: false }`); user/member: bookings+transactions+familyMembers; coordinator: referred bookings+transactions; hospital: doctors/labTests/surgeryPackages+bookings; doctor: appointments+transactions |
+| `/api/support` | POST | Create support ticket — auto-generates TKT-XXXXX ID, appends first message, notifies all admins |
+| `/api/support` | GET | User's own tickets (paginated, messages excluded) |
+| `/api/support/[ticketId]` | GET | Full ticket with messages thread (users see own only; admin/staff see all) |
+| `/api/support/[ticketId]` | PATCH | Add reply (user or admin/staff); optional status/priority update; auto in_progress on first admin reply; sends notification to other party |
+| `/api/admin/support` | GET | All tickets with filters (status, category, priority, search) + stats by status |
+| `/api/admin/support` | PATCH | Admin reply + status/priority/assign update + user notification |
 
 ### Admin Panel
 | Route | Method | Purpose |
@@ -372,6 +454,12 @@ diseaseTags[], isPublished, views
 | `/api/admin/labtests` | GET/POST/PATCH/DELETE | Lab tests management |
 | `/api/admin/staff` | GET/POST/PATCH | Staff management |
 | `/api/admin/patient` | GET | Full patient detail (profile + card + booking history) |
+| `/api/admin/ledger` | GET | Master Ledger — booking stats + financial stats; ?view=all\|income\|expenses\|pending-payouts\|paid-out\|coordinator\|staff\|wallet\|bookings-all\|bookings-pending\|bookings-confirmed\|bookings-completed\|booking-txns |
+| `/api/admin/ledger` | POST | Add manual expense/platform-charge entry |
+| `/api/admin/coordinators` | GET | List coordinators with earnings stats |
+| `/api/admin/coordinators` | PATCH | process-withdraw action (enter UTR → mark withdrawal success) |
+| `/api/admin/payouts` | GET | Partner payouts list; ?entity=hospital\|lab\|doctor\|ambulance &status=pending\|paid\|all |
+| `/api/admin/payouts` | PATCH | Process partner payout — body: {bookingId, utr, entity} → booking.payoutStatus="paid" + Transaction created |
 
 ---
 
@@ -462,6 +550,11 @@ API Route Protection:
 | 51 | Push Notifications / FCM (Firebase Cloud Messaging — doctor + hospital alert on new booking) | ✅ Done |
 | 52 | Multi-language Hindi/English (LangProvider + `lib/i18n.ts` + toggle on dashboard) | ✅ Done |
 | 53 | AI Chatbot — Brims Assistant (Claude Haiku, booking help + health info, floating widget all pages) | ✅ Done |
+| 54 | Coordinator Earnings System — card activation ₹100 commission, booking commission (%), withdrawal flow with UTR | ✅ Done |
+| 55 | Master Ledger (Admin) — 8 clickable stat cards (bookings + finance), income vs expense accounting, net balance, booking detail drawer with transaction history, live 30s auto-refresh, manual expense entry | ✅ Done |
+| 56 | Partner Payouts System — 🏦 Partner Payouts section in Master Ledger; 4 entity tabs (🏥 Hospital / 🧪 Lab / 🩺 Doctor / 🚑 Ambulance); pending amount banner; UTR entry + process per booking; `/api/admin/payouts` GET+PATCH; `payoutStatus/payoutUtr/payoutProcessedAt` on Booking model; `hospital_payout/lab_payout/doctor_payout/ambulance_payout` Transaction categories | ✅ Done |
+| 58 | Hospital Earnings & Accounting Tab — `💰 Earnings` tab in hospital dashboard; 4 summary cards (Platform Ko Dena Hai / Platform Se Milna Hai / Platform Se Mila / Is Maah); booking ledger with per-row commission%, platformCommission, hospitalPayable, paymentMode, payoutStatus; Payout History sub-view; commission rates readonly display; backward-compat on-the-fly commission calc for old bookings; `/api/hospital/earnings` GET; Admin HospitalDrawer commission slab editor (editable per-service-type rates, save via `/api/admin/commission-slabs` POST, loaded on drawer open); `/api/admin/commission-slabs` GET extended with `?hospitalId=` single-slab lookup | ✅ Done |
+| 57 | Customer Care / Support Ticket System — `/support` page (role-aware form for all 6 roles); SupportTicket model (TKT-XXXXX auto ID); 8 categories; chat-style conversation thread; auto-context prefix injection (coordinatorId/hospitalId/memberId/bookingId/txnId); `IdentitySection` per role (guest/user/coordinator/hospital/doctor/staff); smart `ReferenceSection` dropdowns; BookingDropdown+TransactionDropdown detail cards; Admin 🎧 Customer Care tab with status filter + reply panel + sidebar badge; `/api/support/context` single-call role data fetch; `/api/support` + `/api/support/[ticketId]` + `/api/admin/support` routes; `openSupportTickets` badge on admin sidebar | ✅ Done |
 
 ---
 
@@ -624,10 +717,11 @@ import ImageCropper from "@/app/components/ImageCropper";
 
 ### Admin Panel Structure
 ```
-Sidebar: Overview → Members → Hospitals → Doctors → Surgery Packages → Lab Tests → Bookings → Staff
+Sidebar: Overview → Members → Hospitals → Doctors → Surgery Packages → Lab Tests → Bookings → Staff → 🎧 Customer Care
 Each tab: independent fetch on mount, mutations refresh local list (no page reload)
-Badges: amber = actionable (pendingHospitals, pendingDoctors, pending bookings)
+Badges: amber = actionable (pendingHospitals, pendingDoctors, pending bookings, openSupportTickets)
 Drawers: PatientDrawer (right slide-in) + HospitalDrawer (right slide-in)
+Customer Care: ticket list (filter by status/category/priority/search) + right-side detail panel (chat thread + admin reply + status/priority dropdowns)
 ```
 
 ---
@@ -644,6 +738,13 @@ Drawers: PatientDrawer (right slide-in) + HospitalDrawer (right slide-in)
 8. **Cloudinary** — free tier 25 credits/month. For scale: upgrade or use Supabase Storage.
 9. **PhonePe callbacks** — only work on deployed URL, not localhost. Use ngrok for local testing.
 10. **MongoDB SRV** — some ISPs in Bihar block SRV DNS. Use direct shard connection string if `mongodb+srv://` fails.
+11. **Master Ledger income tracking** — Only NEW card activations (after this update) will have `card_activation_payment` Transaction records. Old activations are not backfilled. Booking payments (online/PhonePe) must also be tagged at `/api/bookings` and `/api/lab-payment-callback` to appear in income totals.
+12. **Transaction `userId` for platform income** — `card_activation_payment` uses the paying user's `_id` as `userId`. Manual expense entries use the first admin user's `_id`. This is intentional — it allows tracing who paid/triggered each transaction.
+13. **Partner Payouts** — `payoutStatus` on Booking is `null` by default (not "pending"). Queries for pending payouts must use `$or: [{payoutStatus: null}, {payoutStatus: "pending"}]`. Only bookings with `paymentMode in [online, wallet, insurance]` are eligible — counter/cash bookings do not create payout obligations.
+14. **Health Card PDF** — uses Canvas `toDataURL()` to pre-convert all Cloudinary photos + logo to base64 before injecting into print HTML. `print-color-adjust: exact !important` required on all elements for colors to appear in PDF/print.
+15. **Booking Detail Drawer** — clicking any booking in LedgerTab (bookings-all/pending/confirmed/completed view) opens a right-side drawer with patient info, payment details, and per-booking transaction history fetched via `?view=booking-txns&bookingId=...&bookingRef=...`.
+16. **Support context API** — `/api/support/context` uses graceful auth (no 401 for guests). It returns role-specific data in one call. For `user/member` it returns all bookings by `userId` (not per family member — family member context is added as a prefix note only). Guest users see the full form but are redirected to `/login?redirect=/support` on submit.
+17. **Admin support tab** — `openSupportTickets` badge comes from `SupportTicket.countDocuments({status:{$in:["open","in_progress"]}})` in `/api/admin` GET. Badge updates on each tab switch (stats refresh).
 
 ---
 
@@ -691,16 +792,21 @@ git push origin master
 
 ---
 
-*Last Updated: April 2026 (21 Apr)*  
-*Status: Web App **~97% Complete** ✅ | AI Chatbot added | WhatsApp OTP pending | Flutter — future phase*
+*Last Updated: April 2026 (27 Apr)*  
+*Status: Web App **~99% Complete** ✅ | Hospital Earnings Tab + Partner Payouts + Customer Care System + Master Ledger fully done | WhatsApp OTP pending | Flutter — future phase*
 
-### What's fully done (52 features):
+### What's fully done (58 features):
 - Full patient flow: register → family card → OPD/Lab/Surgery/IPD/Teleconsult booking → reports → cancellation
 - Hospital & Doctor management: onboarding, admin verification, dashboards, profile edit
 - Staff dashboard: bookings, walk-in, collections, hospital management (permission-based)
-- Admin panel: 8+ tabs, analytics, revenue reports, ambulance, referral, promo codes, SEO pages
+- Admin panel: 9+ tabs including 🎧 Customer Care, analytics, revenue reports, ambulance, referral, promo codes, SEO pages
 - Auth: JWT cookie, OTP (SMS+Email), FCM push, multi-role, `requireHospitalAccess` guard
-- Patient Health Card (print-ready), Booking Reminders (Vercel cron), Insurance mode, Multi-language
+- Patient Health Card (print-ready, canvas-based PDF), Booking Reminders (Vercel cron), Insurance mode, Multi-language
+- **Master Ledger**: 8 clickable stat cards, booking detail drawer, transaction history per booking, 30s live refresh
+- **Partner Payouts**: Hospital/Lab/Doctor/Ambulance entity tabs, UTR-based payout processing, full Transaction audit trail
+- **Coordinator Accounting**: card commission, booking commission, withdrawal with UTR
+- **Customer Care**: SupportTicket model, role-aware `/support` page, chat thread, auto-context injection, 8 categories, Admin 🎧 tab with reply + status management, sidebar badge
+- **Hospital Earnings Tab**: 💰 tab in hospital dashboard — platform pending/received/counter-commission summary, full booking ledger with commission breakdown, payout history, commission rate editor in admin hospital drawer
 
 ### Only genuinely pending:
 - **WhatsApp OTP** (P14) — 360Dialog/WATI (Medium priority)

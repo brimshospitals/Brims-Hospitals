@@ -30,6 +30,12 @@ export default function SurgeryPackagesPage() {
   const [prevReportUrl, setPrevReportUrl] = useState("");
   const [reportUploading, setReportUploading] = useState(false);
 
+  // Promo code
+  const [promoInput, setPromoInput]     = useState("");
+  const [promoData, setPromoData]       = useState<any>(null);
+  const [promoLoading, setPromoLoading] = useState(false);
+  const [promoError, setPromoError]     = useState("");
+
   useEffect(() => {
     fetchPackages();
     fetchUserData();
@@ -91,6 +97,23 @@ export default function SurgeryPackagesPage() {
     setReportUploading(false);
   }
 
+  async function applyPromo() {
+    if (!promoInput.trim() || !selectedPackage) return;
+    setPromoLoading(true); setPromoError(""); setPromoData(null);
+    try {
+      const baseAmount = getPrice(selectedPackage) + getRoomPrice(selectedPackage);
+      const res = await fetch("/api/promo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: promoInput.trim(), amount: baseAmount, bookingType: "Surgery" }),
+      });
+      const data = await res.json();
+      if (data.success) setPromoData(data);
+      else setPromoError(data.message);
+    } catch { setPromoError("Network error. Dobara try karein."); }
+    setPromoLoading(false);
+  }
+
   async function handleBooking() {
     if (!selectedPackage) return;
     if (!selectedPatient) { setMessage("❌ Patient select karein"); return; }
@@ -98,6 +121,8 @@ export default function SurgeryPackagesPage() {
     try {
       const userId = localStorage.getItem("userId");
       const familyCardId = localStorage.getItem("familyCardId") || null;
+      const baseAmount  = getPrice(selectedPackage) + getRoomPrice(selectedPackage);
+      const finalAmount = promoData ? promoData.finalAmount : baseAmount;
       const res = await fetch("/api/bookings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -116,16 +141,23 @@ export default function SurgeryPackagesPage() {
           symptoms: selectedPatient.symptoms,
           isNewPatient: selectedPatient.isNewPatient,
           paymentMode: "counter",
-          amount: getPrice(selectedPackage) + getRoomPrice(selectedPackage),
+          amount: finalAmount,
           familyCardId,
           isPartialBooking,
           depositAmount: isPartialBooking ? 1000 : undefined,
           previousReportUrl: prevReportUrl || undefined,
+          ...(promoData && { promoCode: promoData.code, promoDiscount: promoData.discount }),
         }),
       });
       const data = await res.json();
       if (data.success) {
-        setMessage(`✅ Booking request submit ho gayi! Booking ID: ${data.booking.bookingId}. Hamari team 24 hours mein contact karegi.`);
+        const savedVsMrp = (selectedPackage.mrp || 0) - finalAmount;
+        const couldSave  = !hasMembership && selectedPackage.membershipPrice
+          ? selectedPackage.offerPrice - selectedPackage.membershipPrice : 0;
+        let successMsg = `✅ Booking confirm! ID: ${data.booking.bookingId}. Team 24h mein contact karegi.`;
+        if (savedVsMrp > 0) successMsg += ` MRP se ₹${savedVsMrp.toLocaleString("en-IN")} bachaye!`;
+        if (couldSave  > 0) successMsg += ` 💳 Card activate karo aur ₹${couldSave.toLocaleString("en-IN")} aur bachao!`;
+        setMessage(successMsg);
         setSelectedPackage(null);
         setSelectedPatient(null);
         setPrevReportUrl("");
@@ -186,14 +218,17 @@ export default function SurgeryPackagesPage() {
 
         {/* Membership Banner */}
         {!hasMembership && (
-          <div className="bg-gradient-to-r from-teal-600 to-teal-700 rounded-2xl p-4 text-white mb-6 flex justify-between items-center">
-            <div>
-              <p className="font-bold">💳 Family Card se extra discount!</p>
-              <p className="text-sm text-teal-100">Card members ko 8-20% extra discount milta hai</p>
+          <div className="bg-gradient-to-r from-teal-600 to-teal-700 rounded-2xl p-4 text-white mb-6">
+            <div className="flex justify-between items-center">
+              <div>
+                <p className="font-bold">💳 Family Card se badi bachat!</p>
+                <p className="text-sm text-teal-100">Surgery packages par Member Price milega — hazaron bacho</p>
+              </div>
+              <a href="/dashboard" className="bg-white text-teal-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-teal-50 flex-shrink-0">
+                ₹249/yr →
+              </a>
             </div>
-            <a href="/dashboard" className="bg-white text-teal-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-teal-50">
-              Activate
-            </a>
+            <p className="text-xs text-teal-200 mt-2">👇 Neeche diye price tags mein green 💳 Member Price dekho — kitna bachega!</p>
           </div>
         )}
 
@@ -222,13 +257,31 @@ export default function SurgeryPackagesPage() {
                       {pkg.address?.district && <p className="text-xs text-gray-400">📍 {pkg.address.district}</p>}
                     </div>
                     {/* Price */}
-                    <div className="text-right ml-4">
-                      <p className="text-xs text-gray-400 line-through">₹{pkg.mrp.toLocaleString()}</p>
-                      <p className="text-xl font-bold text-teal-600">₹{getPrice(pkg).toLocaleString()}</p>
-                      {hasMembership && pkg.membershipDiscount > 0 && (
-                        <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
-                          {pkg.membershipDiscount}% Member Discount
-                        </span>
+                    <div className="ml-4 flex-shrink-0 text-right min-w-[88px] flex flex-col items-end">
+                      <p className="text-[11px] text-gray-400 line-through leading-none mb-1">MRP ₹{pkg.mrp.toLocaleString()}</p>
+                      {hasMembership ? (
+                        <>
+                          {pkg.membershipPrice && pkg.membershipPrice < pkg.offerPrice && (
+                            <p className="text-[11px] text-gray-400 line-through leading-none mb-0.5">₹{pkg.offerPrice.toLocaleString()}</p>
+                          )}
+                          <p className="text-xl font-black text-teal-600 leading-none">₹{getPrice(pkg).toLocaleString()}</p>
+                          {pkg.mrp > getPrice(pkg) && (
+                            <span className="inline-block mt-1.5 bg-green-100 text-green-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                              ✓ ₹{(pkg.mrp - getPrice(pkg)).toLocaleString()} saved
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-xl font-black text-teal-700 leading-none">₹{pkg.offerPrice.toLocaleString()}</p>
+                          {pkg.membershipPrice && pkg.membershipPrice < pkg.offerPrice && (
+                            <div className="mt-1.5 bg-green-50 border border-green-200 rounded-lg px-2 py-1 text-right">
+                              <p className="text-[10px] text-gray-500 leading-none mb-0.5">💳 Member</p>
+                              <p className="text-sm font-black text-green-600 leading-none">₹{pkg.membershipPrice.toLocaleString()}</p>
+                              <p className="text-[10px] text-amber-600 font-semibold leading-none mt-0.5">₹{(pkg.offerPrice - pkg.membershipPrice).toLocaleString()} extra off</p>
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>
@@ -269,7 +322,7 @@ export default function SurgeryPackagesPage() {
                     </div>
                   </div>
 
-                  <button onClick={() => { setSelectedPackage(pkg); setSelectedRoom(pkg.roomType); setMessage(""); setSelectedPatient(null); setIsPartialBooking(false); }}
+                  <button onClick={() => { setSelectedPackage(pkg); setSelectedRoom(pkg.roomType); setMessage(""); setSelectedPatient(null); setIsPartialBooking(false); setPromoInput(""); setPromoData(null); setPromoError(""); }}
                     className="w-full bg-teal-600 hover:bg-teal-700 text-white font-semibold py-3 rounded-lg transition text-sm">
                     Details Dekhein & Book Karein
                   </button>
@@ -424,35 +477,135 @@ export default function SurgeryPackagesPage() {
                   <p className="text-[10px] text-blue-400 mt-1">Image ya PDF · Max 10MB</p>
                 </div>
 
-                {/* Total Price */}
-                <div className="bg-teal-50 rounded-xl p-4 mb-4">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <p className="text-sm text-gray-600">Package Price</p>
-                      <p className="text-xs text-gray-400 line-through">MRP: ₹{selectedPackage.mrp.toLocaleString()}</p>
+                {/* Promo Code */}
+                <div className="mb-4">
+                  <p className="text-sm font-medium text-gray-700 mb-2">🏷️ Promo Code (Optional)</p>
+                  <div className="flex gap-2">
+                    <input
+                      value={promoInput}
+                      onChange={(e) => { setPromoInput(e.target.value.toUpperCase()); setPromoData(null); setPromoError(""); }}
+                      placeholder="Code enter karein"
+                      className="flex-1 border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 font-mono uppercase"
+                    />
+                    <button
+                      type="button"
+                      onClick={applyPromo}
+                      disabled={promoLoading || !promoInput.trim()}
+                      className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold rounded-xl transition disabled:opacity-50"
+                    >
+                      {promoLoading ? "..." : "Apply"}
+                    </button>
+                  </div>
+                  {promoData && (
+                    <div className="mt-2 flex items-center justify-between p-2.5 bg-green-50 border border-green-200 rounded-xl">
+                      <div className="flex items-center gap-2">
+                        <span className="text-green-600 text-base">✅</span>
+                        <div>
+                          <p className="text-xs font-bold text-green-700">{promoData.code} applied!</p>
+                          <p className="text-[11px] text-green-600">₹{promoData.discount.toLocaleString("en-IN")} discount mila</p>
+                        </div>
+                      </div>
+                      <button type="button" onClick={() => { setPromoData(null); setPromoInput(""); }} className="text-gray-400 hover:text-red-500 text-sm">✕</button>
                     </div>
-                    <p className="text-2xl font-bold text-teal-700">
-                      ₹{(getPrice(selectedPackage) + getRoomPrice(selectedPackage)).toLocaleString()}
+                  )}
+                  {promoError && <p className="mt-1.5 text-xs text-red-500">{promoError}</p>}
+                </div>
+
+                {/* Card activation nudge for non-members */}
+                {!hasMembership && selectedPackage.membershipPrice && selectedPackage.membershipPrice < selectedPackage.offerPrice && (
+                  <div className="rounded-2xl overflow-hidden border border-amber-200 mb-3">
+                    <div className="bg-gradient-to-r from-amber-500 to-orange-400 px-4 py-2 flex items-center gap-2">
+                      <span className="text-white text-lg">💳</span>
+                      <p className="text-white text-xs font-bold flex-1">Family Card activate karein — sirf ₹249/year</p>
+                      <a href="/dashboard" className="bg-white text-amber-600 text-xs font-black px-3 py-1 rounded-full whitespace-nowrap">Activate →</a>
+                    </div>
+                    <div className="bg-amber-50 px-4 py-2 flex items-center justify-between">
+                      <span className="text-xs text-amber-700">Is package par aur kitna bachega:</span>
+                      <span className="text-sm font-black text-amber-700">₹{(selectedPackage.offerPrice - selectedPackage.membershipPrice).toLocaleString("en-IN")} extra savings</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Total Price — receipt-style breakdown */}
+                <div className="rounded-2xl overflow-hidden border border-gray-200 mb-4">
+                  <div className="bg-gray-50 px-4 pt-3 pb-2 space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-gray-400">MRP</span>
+                      <span className="text-xs text-gray-400 line-through font-medium">₹{selectedPackage.mrp.toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-gray-500 flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-gray-400 inline-block" />
+                        Offer Price
+                      </span>
+                      <span className={`text-xs font-semibold ${hasMembership && selectedPackage.membershipPrice && selectedPackage.membershipPrice < selectedPackage.offerPrice ? "text-gray-400 line-through" : "text-gray-700"}`}>
+                        ₹{selectedPackage.offerPrice.toLocaleString()}
+                      </span>
+                    </div>
+                    {selectedPackage.membershipPrice && (
+                      <div className="flex justify-between items-center">
+                        <span className={`text-xs flex items-center gap-1.5 ${hasMembership ? "text-teal-600 font-semibold" : "text-gray-400"}`}>
+                          <span className="text-sm leading-none">💳</span>
+                          Member Price
+                          {!hasMembership && (
+                            <span className="text-[10px] bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded-full">Card chahiye</span>
+                          )}
+                        </span>
+                        <span className={`text-xs font-bold ${hasMembership ? "text-teal-600" : "text-gray-400"}`}>
+                          ₹{selectedPackage.membershipPrice.toLocaleString()}
+                        </span>
+                      </div>
+                    )}
+                    {getRoomPrice(selectedPackage) > 0 && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-gray-500 flex items-center gap-1.5">
+                          <span className="text-sm leading-none">🏠</span>
+                          Room upgrade
+                        </span>
+                        <span className="text-xs font-semibold text-gray-600">+₹{getRoomPrice(selectedPackage).toLocaleString()}</span>
+                      </div>
+                    )}
+                    {/* Promo discount */}
+                    {promoData && (
+                      <div className="flex justify-between items-center pt-1 border-t border-gray-200">
+                        <span className="text-xs text-green-600 font-semibold flex items-center gap-1.5">
+                          <span className="text-sm leading-none">🏷️</span>
+                          Promo ({promoData.code})
+                        </span>
+                        <span className="text-xs font-bold text-green-600">−₹{promoData.discount.toLocaleString("en-IN")}</span>
+                      </div>
+                    )}
+                    {isPartialBooking && (
+                      <div className="pt-1.5 border-t border-gray-200 space-y-1.5">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-amber-600 font-semibold flex items-center gap-1.5">
+                            <span className="text-sm leading-none">💰</span>
+                            Advance (abhi)
+                          </span>
+                          <span className="text-xs font-bold text-amber-600">₹1,000</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-gray-400">Balance (surgery ke din)</span>
+                          <span className="text-xs text-gray-400">₹{((promoData ? promoData.finalAmount : getPrice(selectedPackage) + getRoomPrice(selectedPackage)) - 1000).toLocaleString()}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div className="bg-teal-600 px-4 py-3 flex justify-between items-center">
+                    <div>
+                      <p className="text-teal-100 text-[11px] font-medium uppercase tracking-wide">
+                        {isPartialBooking ? "Abhi Pay Karein" : "Aap Pay Karein"}
+                      </p>
+                      {selectedPackage.mrp > (promoData ? promoData.finalAmount : getPrice(selectedPackage)) && (
+                        <p className="text-teal-200 text-[10px] mt-0.5">
+                          MRP se ₹{(selectedPackage.mrp - (promoData ? promoData.finalAmount : getPrice(selectedPackage))).toLocaleString("en-IN")} ki bachat
+                        </p>
+                      )}
+                    </div>
+                    <p className="text-white text-2xl font-black">
+                      ₹{isPartialBooking ? (1000).toLocaleString() : (promoData ? promoData.finalAmount : getPrice(selectedPackage) + getRoomPrice(selectedPackage)).toLocaleString()}
                     </p>
                   </div>
-                  {hasMembership && selectedPackage.membershipDiscount > 0 && (
-                    <p className="text-xs text-green-600 mt-1">✅ {selectedPackage.membershipDiscount}% membership discount applied!</p>
-                  )}
-                  {getRoomPrice(selectedPackage) > 0 && (
-                    <p className="text-xs text-gray-500 mt-1">Room upgrade charge: +₹{getRoomPrice(selectedPackage).toLocaleString()}</p>
-                  )}
-                  {isPartialBooking && (
-                    <div className="mt-2 pt-2 border-t border-teal-200">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-amber-700 font-semibold">Abhi pay karein (Advance)</span>
-                        <span className="text-amber-700 font-black">₹1,000</span>
-                      </div>
-                      <div className="flex justify-between text-xs text-gray-500 mt-0.5">
-                        <span>Balance (surgery ke din)</span>
-                        <span>₹{(getPrice(selectedPackage) + getRoomPrice(selectedPackage) - 1000).toLocaleString()}</span>
-                      </div>
-                    </div>
-                  )}
                 </div>
 
                 {message && (
@@ -463,7 +616,7 @@ export default function SurgeryPackagesPage() {
 
                 <button onClick={handleBooking} disabled={booking}
                   className={`w-full font-semibold py-3 rounded-lg transition disabled:opacity-50 text-white ${isPartialBooking ? "bg-amber-500 hover:bg-amber-600" : "bg-teal-600 hover:bg-teal-700"}`}>
-                  {booking ? "Booking ho rahi hai..." : isPartialBooking ? "Partial Book Karein — ₹1,000 Advance" : `Book Karein — ₹${(getPrice(selectedPackage) + getRoomPrice(selectedPackage)).toLocaleString()}`}
+                  {booking ? "Booking ho rahi hai..." : isPartialBooking ? "Partial Book Karein — ₹1,000 Advance" : `Book Karein — ₹${(promoData ? promoData.finalAmount : getPrice(selectedPackage) + getRoomPrice(selectedPackage)).toLocaleString()}`}
                 </button>
 
                 <p className="text-xs text-gray-400 text-center mt-3">

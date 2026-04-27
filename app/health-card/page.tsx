@@ -138,17 +138,17 @@ function CardFront({
         padding: "10px 12px 0",
         gap: "12px",
       }}>
-        {/* Photo circle with gold ring */}
+        {/* Photo circle with gold ring — 10% larger: 66→72px */}
         <div style={{ flexShrink: 0, position: "relative" }}>
           <div style={{
-            width: "66px", height: "66px",
+            width: "72px", height: "72px",
             borderRadius: "50%",
             background: "linear-gradient(135deg, #FFB800, #e6a800)",
-            padding: "2px",
+            padding: "2.5px",
             display: "flex", alignItems: "center", justifyContent: "center",
           }}>
             <div style={{
-              width: "62px", height: "62px",
+              width: "67px", height: "67px",
               borderRadius: "50%",
               overflow: "hidden",
               background: "rgba(255,255,255,0.2)",
@@ -156,7 +156,7 @@ function CardFront({
             }}>
               {m.photo
                 ? <img src={m.photo} alt={m.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                : <span style={{ fontSize: "24px", fontWeight: "900", color: "#FFB800" }}>
+                : <span style={{ fontSize: "26px", fontWeight: "900", color: "#FFB800" }}>
                     {m.name.charAt(0).toUpperCase()}
                   </span>
               }
@@ -166,10 +166,10 @@ function CardFront({
           <div style={{
             position: "absolute", bottom: "-2px", left: "50%", transform: "translateX(-50%)",
             background: "#FFB800", borderRadius: "4px",
-            padding: "1px 5px",
+            padding: "1.5px 5px",
             whiteSpace: "nowrap",
           }}>
-            <p style={{ fontSize: "5.5px", fontWeight: "800", color: "#3d2200", margin: 0, letterSpacing: "0.3px" }}>
+            <p style={{ fontSize: "6px", fontWeight: "800", color: "#3d2200", margin: 0, letterSpacing: "0.3px" }}>
               {rel.toUpperCase()}
             </p>
           </div>
@@ -177,7 +177,7 @@ function CardFront({
 
         {/* Details table */}
         <div style={{ flex: 1 }}>
-          <p style={{ color: "#fff", fontWeight: "900", fontSize: "13px", margin: "0 0 6px", lineHeight: 1.1 }}>
+          <p style={{ color: "#fff", fontWeight: "900", fontSize: "15px", margin: "0 0 6px", lineHeight: 1.1, textShadow: "0 1px 3px rgba(0,0,0,0.3)" }}>
             {m.name}
           </p>
           <table style={{ borderCollapse: "collapse", width: "100%" }}>
@@ -189,9 +189,9 @@ function CardFront({
               ].map(([label, value]) => (
                 <tr key={label}>
                   <td style={{
-                    color: "rgba(255,220,100,0.9)",
-                    fontSize: "7.5px",
-                    fontWeight: "700",
+                    color: "rgba(255,230,100,1)",
+                    fontSize: "8.5px",
+                    fontWeight: "800",
                     paddingRight: "5px",
                     paddingBottom: "4px",
                     whiteSpace: "nowrap",
@@ -201,11 +201,12 @@ function CardFront({
                   </td>
                   <td style={{
                     color: "#fff",
-                    fontSize: "8px",
-                    fontWeight: label === "Member ID" ? "700" : "600",
+                    fontSize: "9.5px",
+                    fontWeight: label === "Member ID" ? "800" : "700",
                     paddingBottom: "4px",
                     fontFamily: label === "Member ID" ? "monospace" : "Arial, sans-serif",
-                    letterSpacing: label === "Member ID" ? "0.5px" : "0",
+                    letterSpacing: label === "Member ID" ? "0.8px" : "0",
+                    textShadow: "0 1px 2px rgba(0,0,0,0.2)",
                   }}>
                     {value}
                   </td>
@@ -419,24 +420,24 @@ function buildPrintHtml(members: Member[], mobile: string, logoUrl: string): str
         </div>
         <!-- Body -->
         <div style="position:relative;z-index:1;display:flex;align-items:center;padding:6px 8px 0;gap:8px;">
-          <!-- Photo -->
+          <!-- Photo: 10% larger: 46→50px -->
           <div style="flex-shrink:0;position:relative;">
-            <div style="width:46px;height:46px;border-radius:50%;background:linear-gradient(135deg,#FFB800,#e6a800);padding:2px;display:flex;align-items:center;justify-content:center;">
-              <div style="width:42px;height:42px;border-radius:50%;overflow:hidden;background:rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;">
+            <div style="width:50px;height:50px;border-radius:50%;background:linear-gradient(135deg,#FFB800,#e6a800);padding:2px;display:flex;align-items:center;justify-content:center;">
+              <div style="width:46px;height:46px;border-radius:50%;overflow:hidden;background:rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;">
                 ${photoHtml}
               </div>
             </div>
             <div style="position:absolute;bottom:-1px;left:50%;transform:translateX(-50%);background:#FFB800;border-radius:3px;padding:1px 4px;white-space:nowrap;">
-              <p style="font-size:4.5px;font-weight:800;color:#3d2200;margin:0;letter-spacing:0.3px;">${rel.toUpperCase()}</p>
+              <p style="font-size:5px;font-weight:800;color:#3d2200;margin:0;letter-spacing:0.3px;">${rel.toUpperCase()}</p>
             </div>
           </div>
           <!-- Details -->
           <div style="flex:1;">
-            <p style="color:#fff;font-weight:900;font-size:9.5px;margin:0 0 4px;line-height:1.1;">${m.name}</p>
+            <p style="color:#fff;font-weight:900;font-size:11px;margin:0 0 4px;line-height:1.1;text-shadow:0 1px 2px rgba(0,0,0,0.3);">${m.name}</p>
             <table style="border-collapse:collapse;width:100%;">
-              <tr><td style="color:rgba(255,220,100,0.9);font-size:5.5px;font-weight:700;padding-right:4px;padding-bottom:3px;white-space:nowrap;">Age / Sex :</td><td style="color:#fff;font-size:6px;font-weight:600;padding-bottom:3px;">${m.age} Yrs / ${sex}</td></tr>
-              <tr><td style="color:rgba(255,220,100,0.9);font-size:5.5px;font-weight:700;padding-right:4px;padding-bottom:3px;white-space:nowrap;">Mobile No. :</td><td style="color:#fff;font-size:6px;font-weight:600;padding-bottom:3px;">+91 ${mobile}</td></tr>
-              <tr><td style="color:rgba(255,220,100,0.9);font-size:5.5px;font-weight:700;padding-right:4px;white-space:nowrap;">Member ID :</td><td style="color:#fff;font-size:6px;font-weight:700;font-family:monospace;letter-spacing:0.5px;">${m.memberId}</td></tr>
+              <tr><td style="color:rgba(255,230,100,1);font-size:6.5px;font-weight:800;padding-right:4px;padding-bottom:3px;white-space:nowrap;">Age / Sex :</td><td style="color:#fff;font-size:7.5px;font-weight:700;padding-bottom:3px;">${m.age} Yrs / ${sex}</td></tr>
+              <tr><td style="color:rgba(255,230,100,1);font-size:6.5px;font-weight:800;padding-right:4px;padding-bottom:3px;white-space:nowrap;">Mobile No. :</td><td style="color:#fff;font-size:7.5px;font-weight:700;padding-bottom:3px;">+91 ${mobile}</td></tr>
+              <tr><td style="color:rgba(255,230,100,1);font-size:6.5px;font-weight:800;padding-right:4px;white-space:nowrap;">Member ID :</td><td style="color:#fff;font-size:7px;font-weight:800;font-family:monospace;letter-spacing:0.8px;">${m.memberId}</td></tr>
             </table>
           </div>
         </div>
@@ -501,8 +502,18 @@ function buildPrintHtml(members: Member[], mobile: string, logoUrl: string): str
     <title>Brims Health Cards</title>
     <meta charset="UTF-8"/>
     <style>
-      * { box-sizing: border-box; margin: 0; padding: 0; }
-      body { font-family: Arial, sans-serif; background: #e5e5e5; padding: 12mm; }
+      /* Force browser to print all background colors, gradients and images */
+      * {
+        box-sizing: border-box; margin: 0; padding: 0;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        color-adjust: exact !important;
+      }
+      body {
+        font-family: Arial, sans-serif; background: #e5e5e5; padding: 12mm;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
       .card-row {
         display: flex;
         gap: 8mm;
@@ -512,8 +523,9 @@ function buildPrintHtml(members: Member[], mobile: string, logoUrl: string): str
       }
       .card-wrap { display: flex; flex-direction: column; gap: 2mm; align-items: center; }
       .card-label { font-size: 8px; color: #666; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; }
+      img { display: block; }
       @media print {
-        body { background: white; padding: 8mm; }
+        body { background: #e5e5e5; padding: 8mm; }
         .no-print { display: none !important; }
         @page { size: A4 landscape; margin: 8mm; }
       }
@@ -568,15 +580,48 @@ export default function HealthCardPage() {
     })();
   }, []);
 
-  function downloadCard(singleMember?: Member | Member[]) {
+  // Convert any image URL (Cloudinary, absolute, relative) to base64 data URL
+  // so it embeds directly in the print HTML — fixes "photo missing in PDF"
+  async function imgToDataUrl(src: string): Promise<string> {
+    return new Promise((resolve) => {
+      const img = new window.Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        try {
+          const canvas = document.createElement("canvas");
+          canvas.width  = img.naturalWidth  || 200;
+          canvas.height = img.naturalHeight || 200;
+          canvas.getContext("2d")?.drawImage(img, 0, 0);
+          resolve(canvas.toDataURL("image/jpeg", 0.92));
+        } catch {
+          resolve(src); // fallback to original if canvas fails (tainted)
+        }
+      };
+      img.onerror = () => resolve(src);
+      // Append cache-buster for Cloudinary to allow CORS
+      img.src = src.includes("cloudinary.com") ? src + (src.includes("?") ? "&" : "?") + "cb=" + Date.now() : src;
+    });
+  }
+
+  async function downloadCard(singleMember?: Member | Member[]) {
     if (!profile) return;
     const logoUrl = window.location.origin + "/logo.png";
-    const members = Array.isArray(singleMember)
+    const rawMembers = Array.isArray(singleMember)
       ? singleMember
       : singleMember
         ? [singleMember]
         : allMembers.filter(m => m.isPrimary || paidMembers.has(m.memberId));
-    const html = buildPrintHtml(members, profile.mobile, logoUrl);
+
+    // Pre-convert all photos + logo to base64 so they render in the print window
+    const [logoDataUrl, ...convertedMembers] = await Promise.all([
+      imgToDataUrl(logoUrl),
+      ...rawMembers.map(async (m) => ({
+        ...m,
+        photo: m.photo ? await imgToDataUrl(m.photo) : undefined,
+      })),
+    ]);
+
+    const html = buildPrintHtml(convertedMembers, profile.mobile, logoDataUrl);
     const w = window.open("", "_blank", "width=1100,height=700");
     if (!w) return;
     w.document.write(html);

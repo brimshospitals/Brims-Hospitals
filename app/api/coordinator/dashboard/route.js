@@ -37,9 +37,13 @@ export async function GET(request) {
     const todayBookings  = bookings.filter(b => new Date(b.createdAt) >= today);
     const monthBookings  = bookings.filter(b => new Date(b.createdAt) >= thisMonth);
 
-    const totalEarned   = bookings.reduce((s, b) => s + (b.coordinatorCommission || 0), 0);
-    const pendingEarned = bookings.filter(b => !b.coordinatorPaid).reduce((s, b) => s + (b.coordinatorCommission || 0), 0);
-    const paidEarned    = bookings.filter(b => b.coordinatorPaid).reduce((s, b) => s + (b.coordinatorCommission || 0), 0);
+    // Pending = commission on bookings not yet "completed"
+    // Available = commission on completed bookings, not yet paid out
+    // Paid = already transferred to coordinator
+    const pendingEarned   = bookings.filter(b => !b.coordinatorPaid && b.status !== "completed").reduce((s, b) => s + (b.coordinatorCommission || 0), 0);
+    const availableEarned = bookings.filter(b => !b.coordinatorPaid && b.status === "completed").reduce((s, b) => s + (b.coordinatorCommission || 0), 0);
+    const paidEarned      = bookings.filter(b => b.coordinatorPaid).reduce((s, b) => s + (b.coordinatorCommission || 0), 0);
+    const totalEarned     = availableEarned + paidEarned;
 
     // Unique clients
     const clientMobiles = new Set();
@@ -84,6 +88,7 @@ export async function GET(request) {
         totalClients:   clientMobiles.size,
         totalEarned,
         pendingEarned,
+        availableEarned,
         paidEarned,
         monthEarned:    monthBookings.reduce((s, b) => s + (b.coordinatorCommission || 0), 0),
       },

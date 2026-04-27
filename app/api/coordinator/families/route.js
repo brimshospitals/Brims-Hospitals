@@ -46,7 +46,7 @@ export async function POST(request) {
       return NextResponse.json({ success: false, message: "Valid 10-digit mobile zaruri hai" }, { status: 400 });
     }
     const existing = await User.findOne({ mobile })
-      .select("_id name age gender memberId familyCardId familyMembers")
+      .select("_id name age gender mobile memberId familyCardId familyMembers")
       .populate("familyCardId", "status cardNumber expiryDate")
       .lean();
     if (existing) {
@@ -92,7 +92,11 @@ export async function POST(request) {
   // ── action: verify-register ───────────────────────────────────────────────
   // Verify OTP and complete primary registration (no session cookie set)
   if (action === "verify-register") {
-    const { mobile, otp, name, age, gender, district, preExistingDiseases, idType, idNumber } = body;
+    const {
+      mobile, otp, name, age, gender,
+      district, prakhand, maritalStatus, isPregnant, lmp,
+      preExistingDiseases, idType, idNumber, height, weight, photo,
+    } = body;
     if (!mobile || !otp || !name || !age || !gender) {
       return NextResponse.json({ success: false, message: "Naam, umar, ling aur OTP zaruri hai" }, { status: 400 });
     }
@@ -109,14 +113,20 @@ export async function POST(request) {
     const prefix = name.trim().substring(0, 3).toUpperCase();
     const suffix = mobile.substring(7, 10);
 
+    const districtVal = district || coord.district || "";
     user.name     = name.trim();
     user.age      = parseInt(age);
     user.gender   = gender;
-    user.district = district || coord.district || "";
-    user.address  = { state: "Bihar", district: district || coord.district || "" };
+    user.address  = { state: "Bihar", district: districtVal, prakhand: prakhand || "" };
     user.preExistingDiseases = preExistingDiseases || [];
-    if (idType)   user.idType   = idType;
-    if (idNumber) user.idNumber = idNumber;
+    if (idType)        user.idType        = idType;
+    if (idNumber)      user.idNumber      = idNumber;
+    if (maritalStatus) user.maritalStatus = maritalStatus;
+    if (isPregnant !== undefined) user.isPregnant = Boolean(isPregnant);
+    if (lmp)           user.lmp           = new Date(lmp);
+    if (height)        user.height        = parseInt(height);
+    if (weight)        user.weight        = parseInt(weight);
+    if (photo)         user.photo         = photo;
     user.referralCode             = `BRIMS-${prefix}${suffix}`;
     user.otp                      = undefined;
     user.otpExpiry                = undefined;

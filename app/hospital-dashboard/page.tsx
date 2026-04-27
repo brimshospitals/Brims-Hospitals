@@ -7,7 +7,7 @@ import { BIHAR_DISTRICTS } from "@/lib/biharDistricts";
 import { MEDICAL_DEPARTMENTS, SURGERY_DEPARTMENTS, SURGERIES_BY_DEPARTMENT } from "@/lib/medicalDepartments";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type Tab = "overview" | "bookings" | "doctors" | "lab" | "surgery" | "reports" | "labManage";
+type Tab = "overview" | "bookings" | "doctors" | "lab" | "surgery" | "reports" | "labManage" | "earnings";
 
 type Hospital = {
   _id: string; name: string; type?: string;
@@ -504,20 +504,21 @@ function ProfileEditModal({ hospital, onClose, onSaved }: { hospital: Hospital; 
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ── BOOKINGS TAB ──────────────────────────────────────────────────────────────
-function BookingsTab({ hospitalId }: { hospitalId: string }) {
+function BookingsTab({ hospitalId, initialSearch = "", initialType = "all", initialDoctorId = "", filterLabel = "" }: { hospitalId: string; initialSearch?: string; initialType?: string; initialDoctorId?: string; filterLabel?: string }) {
   type BookingSubTab = "today" | "pending" | "all" | "accounting";
-  const [subTab,    setSubTab]    = useState<BookingSubTab>("today");
+  const [subTab,    setSubTab]    = useState<BookingSubTab>("all");
   const [bookings,  setBookings]  = useState<Booking[]>([]);
   const [loading,   setLoading]   = useState(true);
   const [accounting, setAccounting] = useState<any>({});
-  const [search,    setSearch]    = useState("");
+  const [search,    setSearch]    = useState(initialSearch);
   const [statusF,   setStatusF]   = useState("all");
-  const [typeF,     setTypeF]     = useState("all");
+  const [typeF,     setTypeF]     = useState(initialType);
   const [page,      setPage]      = useState(1);
   const [totalPages,setTotalPages]= useState(1);
   const [total,     setTotal]     = useState(0);
   const [updating,  setUpdating]  = useState<string | null>(null);
   const [toast,     setToast]     = useState<{ msg: string; ok: boolean } | null>(null);
+  const [expanded,  setExpanded]  = useState<string | null>(null);
 
   function showToast(msg: string, ok = true) { setToast({ msg, ok }); setTimeout(() => setToast(null), 3500); }
 
@@ -528,8 +529,9 @@ function BookingsTab({ hospitalId }: { hospitalId: string }) {
       if (subTab === "today")   params.set("date", "today");
       if (subTab === "pending") { params.set("status", "pending"); }
       else if (statusF !== "all") params.set("status", statusF);
-      if (typeF !== "all") params.set("type", typeF);
-      if (search.trim()) params.set("search", search.trim());
+      if (typeF !== "all")        params.set("type", typeF);
+      if (search.trim())          params.set("search", search.trim());
+      if (initialDoctorId)        params.set("doctorId", initialDoctorId);
       const res  = await fetch(`/api/hospital/bookings?${params}`);
       const data = await res.json();
       if (data.success) {
@@ -566,9 +568,14 @@ function BookingsTab({ hospitalId }: { hospitalId: string }) {
   const BookingCard = ({ b }: { b: Booking }) => {
     const n = b.parsedNotes || {};
     const isUpdating = updating === b._id;
+    const isOpen = expanded === b._id;
+    const PM_LABEL: Record<string, string> = { counter: "Counter/Cash", online: "Online/UPI", wallet: "Brims Wallet", insurance: "Insurance" };
+    const PAYOUT_LABEL: Record<string, string> = { paid: "✅ Paid", pending: "⏳ Pending", not_applicable: "N/A" };
     return (
-      <div className={`bg-white rounded-2xl border p-4 shadow-sm transition ${b.status === "cancelled" ? "opacity-60 border-gray-200" : "border-gray-100"}`}>
-        <div className="flex items-start justify-between gap-3">
+      <div className={`bg-white rounded-2xl border shadow-sm transition ${b.status === "cancelled" ? "opacity-60 border-gray-200" : isOpen ? "border-purple-200 ring-1 ring-purple-100" : "border-gray-100"}`}>
+        {/* ── Header row (always visible) — click to expand ── */}
+        <div className="flex items-start justify-between gap-3 p-4 cursor-pointer select-none"
+          onClick={() => setExpanded(isOpen ? null : b._id)}>
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-600 flex items-center justify-center text-lg flex-shrink-0">
               {TYPE_ICON[b.type] || "📋"}
@@ -579,7 +586,7 @@ function BookingsTab({ hospitalId }: { hospitalId: string }) {
                 <span className="text-xs text-gray-400">·</span>
                 <span className="text-xs text-gray-500">{b.bookingId}</span>
               </div>
-              <p className="text-xs text-gray-500">{b.type} {b.doctorId?.name ? `· Dr. ${b.doctorId.name}` : ""} {n.patientMobile ? `· ${n.patientMobile}` : ""}</p>
+              <p className="text-xs text-gray-500">{b.type}{b.doctorId?.name ? ` · Dr. ${b.doctorId.name}` : ""}{n.patientMobile ? ` · ${n.patientMobile}` : ""}</p>
               <p className="text-xs text-gray-400">{fmtDate(b.appointmentDate)}{b.slot ? ` · ${b.slot}` : ""}</p>
             </div>
           </div>
@@ -587,31 +594,116 @@ function BookingsTab({ hospitalId }: { hospitalId: string }) {
             <span className={`text-xs px-2 py-0.5 rounded-full font-semibold border ${STATUS_COLORS[b.status] || "bg-gray-100 text-gray-600"}`}>{b.status}</span>
             {b.amount ? <span className="text-xs font-bold text-teal-700">₹{b.amount.toLocaleString()}</span> : null}
             <span className={`text-xs px-1.5 py-0.5 rounded-md ${b.paymentStatus === "paid" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>{b.paymentStatus}</span>
+            <span className="text-[10px] text-gray-400">{isOpen ? "▲ Close" : "▼ Details"}</span>
           </div>
         </div>
-        {/* Action buttons */}
-        {b.status === "pending" && (
-          <div className="flex gap-2 mt-3 pt-3 border-t border-gray-50">
-            <button onClick={() => updateStatus(b._id, "confirmed")} disabled={isUpdating}
-              className="flex-1 text-xs bg-green-600 hover:bg-green-700 text-white py-2 rounded-xl font-semibold transition disabled:opacity-50">
-              {isUpdating ? "..." : "✓ Confirm"}
-            </button>
-            <button onClick={() => updateStatus(b._id, "cancelled")} disabled={isUpdating}
-              className="flex-1 text-xs bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 py-2 rounded-xl font-semibold transition disabled:opacity-50">
-              ✗ Decline
-            </button>
+
+        {/* ── Expanded detail panel ── */}
+        {isOpen && (
+          <div className="px-4 pb-4 space-y-3 border-t border-gray-50">
+            {/* Patient info */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-3">
+              {[
+                ["👤 Patient",   n.patientName   || "—"],
+                ["📱 Mobile",    n.patientMobile || "—"],
+                ["🎂 Age",       n.patientAge    || "—"],
+                ["⚥ Gender",     n.patientGender || "—"],
+              ].map(([k, v]) => (
+                <div key={String(k)} className="bg-gray-50 rounded-xl p-2.5">
+                  <p className="text-[10px] text-gray-400">{k}</p>
+                  <p className="text-xs font-semibold text-gray-700 mt-0.5">{v}</p>
+                </div>
+              ))}
+            </div>
+            {/* Symptoms / reason */}
+            {n.symptoms && (
+              <div className="bg-blue-50 rounded-xl p-3">
+                <p className="text-[10px] text-blue-400 mb-0.5">🩺 Symptoms / Reason</p>
+                <p className="text-xs text-blue-800">{n.symptoms}</p>
+              </div>
+            )}
+            {/* Payment + commission */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {[
+                ["💳 Payment Mode",    PM_LABEL[n.paymentMode || b.paymentMode || ""] || b.paymentMode || "—"],
+                ["💰 Amount",          `₹${(b.amount || 0).toLocaleString()}`],
+                ["🏢 Commission",      b.platformCommission != null ? `₹${b.platformCommission} (${b.commissionPct ?? "?"}%)` : "—"],
+                ["🏥 Hospital Gets",   b.hospitalPayable != null ? `₹${b.hospitalPayable.toLocaleString()}` : "—"],
+              ].map(([k, v]) => (
+                <div key={String(k)} className="bg-gray-50 rounded-xl p-2.5">
+                  <p className="text-[10px] text-gray-400">{k}</p>
+                  <p className="text-xs font-semibold text-gray-700 mt-0.5">{v}</p>
+                </div>
+              ))}
+            </div>
+            {/* Online payout status */}
+            {(b.paymentMode === "online" || b.paymentMode === "wallet" || b.paymentMode === "insurance") && (
+              <div className={`flex items-center justify-between rounded-xl px-3 py-2.5 text-xs font-semibold ${(b as any).payoutStatus === "paid" ? "bg-green-50 text-green-700 border border-green-200" : "bg-amber-50 text-amber-700 border border-amber-200"}`}>
+                <span>Platform Payout Status</span>
+                <span>{PAYOUT_LABEL[(b as any).payoutStatus || "pending"] || "Pending"}{(b as any).payoutUtr ? ` · UTR: ${(b as any).payoutUtr}` : ""}</span>
+              </div>
+            )}
+            {/* Counter commission due */}
+            {b.paymentMode === "counter" && b.platformCommission != null && b.platformCommission > 0 && (
+              <div className="flex items-center justify-between rounded-xl px-3 py-2.5 text-xs font-semibold bg-red-50 text-red-700 border border-red-200">
+                <span>⚠️ Platform Commission Due</span>
+                <span>₹{b.platformCommission.toLocaleString()} — admin ko dena hoga</span>
+              </div>
+            )}
+            {/* Insurance details */}
+            {n.insurancePolicyNo && (
+              <div className="bg-sky-50 rounded-xl p-3 text-xs space-y-1">
+                <p className="text-sky-700 font-semibold">🛡️ Insurance</p>
+                <p className="text-gray-600">Policy: {n.insurancePolicyNo}</p>
+                {n.insurerName && <p className="text-gray-600">Company: {n.insurerName}</p>}
+                {n.tpaName     && <p className="text-gray-600">TPA: {n.tpaName}</p>}
+              </div>
+            )}
+            {/* Home address */}
+            {n.homeAddress && (
+              <div className="bg-emerald-50 rounded-xl p-3 text-xs">
+                <p className="text-emerald-700 font-semibold mb-1">🏠 Home Collection Address</p>
+                <p className="text-gray-600">{typeof n.homeAddress === "string" ? n.homeAddress : [n.homeAddress.flat, n.homeAddress.street, n.homeAddress.landmark, n.homeAddress.district, n.homeAddress.pin].filter(Boolean).join(", ")}</p>
+              </div>
+            )}
+            {/* Doctor info */}
+            {b.doctorId && (
+              <div className="bg-blue-50 rounded-xl p-3 text-xs">
+                <p className="text-blue-700 font-semibold">👨‍⚕️ Doctor: Dr. {b.doctorId.name}</p>
+                {b.doctorId.department && <p className="text-gray-500 mt-0.5">{b.doctorId.department}</p>}
+              </div>
+            )}
+            {/* Booking meta */}
+            <div className="flex items-center justify-between text-[10px] text-gray-400 pt-1">
+              <span>Booking ID: {b.bookingId}</span>
+              <span>Created: {fmtDate(b.createdAt)}</span>
+            </div>
           </div>
         )}
-        {b.status === "confirmed" && (
-          <div className="flex gap-2 mt-3 pt-3 border-t border-gray-50">
-            <button onClick={() => updateStatus(b._id, "completed")} disabled={isUpdating}
-              className="flex-1 text-xs bg-teal-600 hover:bg-teal-700 text-white py-2 rounded-xl font-semibold transition disabled:opacity-50">
-              {isUpdating ? "..." : "✓ Mark Completed"}
-            </button>
-            <button onClick={() => updateStatus(b._id, "cancelled")} disabled={isUpdating}
-              className="text-xs bg-gray-50 hover:bg-gray-100 text-gray-600 border border-gray-200 px-3 py-2 rounded-xl font-semibold transition disabled:opacity-50">
-              Cancel
-            </button>
+
+        {/* ── Action buttons ── */}
+        {(b.status === "pending" || b.status === "confirmed") && (
+          <div className={`flex gap-2 px-4 pb-4 ${isOpen ? "" : "pt-0"}`} onClick={(e) => e.stopPropagation()}>
+            {b.status === "pending" && <>
+              <button onClick={() => updateStatus(b._id, "confirmed")} disabled={isUpdating}
+                className="flex-1 text-xs bg-green-600 hover:bg-green-700 text-white py-2 rounded-xl font-semibold transition disabled:opacity-50">
+                {isUpdating ? "..." : "✓ Confirm"}
+              </button>
+              <button onClick={() => updateStatus(b._id, "cancelled")} disabled={isUpdating}
+                className="flex-1 text-xs bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 py-2 rounded-xl font-semibold transition disabled:opacity-50">
+                ✗ Decline
+              </button>
+            </>}
+            {b.status === "confirmed" && <>
+              <button onClick={() => updateStatus(b._id, "completed")} disabled={isUpdating}
+                className="flex-1 text-xs bg-teal-600 hover:bg-teal-700 text-white py-2 rounded-xl font-semibold transition disabled:opacity-50">
+                {isUpdating ? "..." : "✓ Mark Completed"}
+              </button>
+              <button onClick={() => updateStatus(b._id, "cancelled")} disabled={isUpdating}
+                className="text-xs bg-gray-50 hover:bg-gray-100 text-gray-600 border border-gray-200 px-3 py-2 rounded-xl font-semibold transition disabled:opacity-50">
+                Cancel
+              </button>
+            </>}
           </div>
         )}
       </div>
@@ -621,6 +713,14 @@ function BookingsTab({ hospitalId }: { hospitalId: string }) {
   return (
     <div className="space-y-4">
       {toast && <Toast msg={toast.msg} ok={toast.ok} />}
+
+      {/* Active filter banner */}
+      {filterLabel && (
+        <div className="flex items-center gap-2 bg-teal-50 border border-teal-200 rounded-xl px-4 py-2.5 text-sm text-teal-800 font-semibold">
+          <span>🔍 Filtered: {filterLabel}</span>
+          <span className="text-teal-400 text-xs">(showing all bookings for this filter)</span>
+        </div>
+      )}
 
       {/* Sub-tabs */}
       <div className="flex gap-2 overflow-x-auto pb-1">
@@ -702,6 +802,197 @@ function BookingsTab({ hospitalId }: { hospitalId: string }) {
             </div>
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ── EARNINGS TAB ──────────────────────────────────────────────────────────────
+function EarningsTab({ hospitalId }: { hospitalId: string }) {
+  type EView = "bookings" | "payouts";
+  const [eView,    setEView]    = useState<EView>("bookings");
+  const [data,     setData]     = useState<any>(null);
+  const [loading,  setLoading]  = useState(true);
+  const [page,     setPage]     = useState(1);
+  const [typeF,    setTypeF]    = useState("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo,   setDateTo]   = useState("");
+
+  const fetchEarnings = useCallback(async () => {
+    setLoading(true);
+    try {
+      const p = new URLSearchParams({ hospitalId, page: String(page), view: eView });
+      if (typeF !== "all") p.set("type", typeF);
+      if (dateFrom) p.set("dateFrom", dateFrom);
+      if (dateTo)   p.set("dateTo",   dateTo);
+      const res  = await fetch(`/api/hospital/earnings?${p}`);
+      const json = await res.json();
+      if (json.success) setData(json);
+    } finally { setLoading(false); }
+  }, [hospitalId, page, eView, typeF, dateFrom, dateTo]);
+
+  useEffect(() => { fetchEarnings(); }, [fetchEarnings]);
+  useEffect(() => { setPage(1); }, [typeF, dateFrom, dateTo, eView]);
+
+  const s   = data?.summary || {};
+  const rates = data?.commissionRates || {};
+  const pag = data?.pagination || {};
+
+  const SERVICE_TYPES = ["OPD", "Lab", "Surgery", "Consultation", "IPD"];
+  const TYPE_COLORS: Record<string, string> = {
+    OPD: "bg-blue-100 text-blue-700", Lab: "bg-orange-100 text-orange-700",
+    Surgery: "bg-purple-100 text-purple-700", Consultation: "bg-teal-100 text-teal-700",
+    IPD: "bg-rose-100 text-rose-700",
+  };
+  const MODE_COLORS: Record<string, string> = {
+    online: "bg-green-100 text-green-700", counter: "bg-amber-100 text-amber-700",
+    wallet: "bg-indigo-100 text-indigo-700", insurance: "bg-sky-100 text-sky-700",
+  };
+  const PAYOUT_COLORS: Record<string, string> = {
+    paid: "bg-green-100 text-green-700 border-green-200",
+    pending: "bg-amber-100 text-amber-700 border-amber-200",
+    not_applicable: "bg-gray-100 text-gray-500 border-gray-200",
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* ── Summary Cards ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: "Platform Ko Dena Hai\n(Counter Commission)", value: `₹${(s.counterCommissionDue || 0).toLocaleString("en-IN")}`, icon: "🔴", sub: `${s.counterCount || 0} bookings`, color: "from-red-500 to-rose-400" },
+          { label: "Platform Se Milna Hai\n(Online Pending)", value: `₹${(s.pendingFromPlatform || 0).toLocaleString("en-IN")}`, icon: "⏳", sub: `${s.pendingFromPlatformCount || 0} bookings`, color: "from-amber-500 to-orange-400" },
+          { label: "Platform Se Mila\n(Paid Out)", value: `₹${(s.receivedFromPlatform || 0).toLocaleString("en-IN")}`, icon: "✅", sub: `${s.receivedFromPlatformCount || 0} payouts`, color: "from-green-500 to-emerald-400" },
+          { label: "Is Maah Ki Kamai", value: `₹${(s.thisMonthEarnings || 0).toLocaleString("en-IN")}`, icon: "📅", sub: new Date().toLocaleString("en-IN", { month: "long", year: "numeric" }), color: "from-purple-500 to-violet-400" },
+        ].map((c) => (
+          <div key={c.label} className={`bg-gradient-to-br ${c.color} rounded-2xl p-4 text-white shadow-sm`}>
+            <p className="text-2xl mb-1">{c.icon}</p>
+            <p className="text-xl font-bold leading-tight">{c.value}</p>
+            <p className="text-[11px] opacity-80 mt-1 whitespace-pre-line leading-tight">{c.label}</p>
+            <p className="text-[10px] opacity-70 mt-0.5">{c.sub}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Commission Rates Card ── */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+        <p className="text-sm font-bold text-gray-700 mb-3">📊 Platform Commission Rates (Admin Dwara Set)</p>
+        <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+          {SERVICE_TYPES.map((t) => (
+            <div key={t} className="text-center bg-gray-50 rounded-xl p-2.5 border border-gray-100">
+              <p className="text-xs text-gray-500 mb-1">{t}</p>
+              <p className="text-lg font-bold text-purple-700">{rates[t] ?? "—"}%</p>
+            </div>
+          ))}
+        </div>
+        <p className="text-xs text-gray-400 mt-2.5">* Counter payment pe ye commission admin ko dena hoga. Online payment pe platform ye kat ke baaki aapko deta hai.</p>
+      </div>
+
+      {/* ── View Toggle + Filters ── */}
+      <div className="flex flex-wrap gap-2 items-center justify-between">
+        <div className="flex gap-2">
+          {([["bookings","📋 Bookings"], ["payouts","💸 Payout History"]] as [EView, string][]).map(([v, label]) => (
+            <button key={v} onClick={() => setEView(v)}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${eView === v ? "bg-purple-600 text-white" : "bg-white border border-gray-200 text-gray-600 hover:border-purple-300"}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {eView === "bookings" && (
+          <div className="flex flex-wrap gap-2 items-center">
+            <select value={typeF} onChange={(e) => setTypeF(e.target.value)} className="border border-gray-200 rounded-xl px-3 py-2 text-xs bg-white focus:outline-none">
+              {["all","OPD","Lab","Surgery","Consultation","IPD"].map((t) => <option key={t}>{t === "all" ? "All Types" : t}</option>)}
+            </select>
+            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="border border-gray-200 rounded-xl px-3 py-2 text-xs bg-white focus:outline-none" />
+            <span className="text-xs text-gray-400">to</span>
+            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="border border-gray-200 rounded-xl px-3 py-2 text-xs bg-white focus:outline-none" />
+            {(dateFrom || dateTo) && <button onClick={() => { setDateFrom(""); setDateTo(""); }} className="text-xs text-red-500 hover:text-red-700">✕ Clear</button>}
+          </div>
+        )}
+      </div>
+
+      {/* ── Bookings List ── */}
+      {eView === "bookings" && (
+        loading ? <Spinner color="purple" /> : !(data?.bookings?.length) ? (
+          <EmptyCard icon="📊" msg="Koi booking record nahi mila" />
+        ) : (
+          <div className="space-y-3">
+            {/* Table header (desktop) */}
+            <div className="hidden sm:grid grid-cols-[1fr_80px_80px_80px_80px_80px_90px] gap-2 px-4 py-2 text-xs text-gray-400 font-semibold bg-gray-50 rounded-xl">
+              <span>Booking / Patient</span><span className="text-center">Type</span><span className="text-right">Amount</span>
+              <span className="text-right">Commission</span><span className="text-right">Hospital Gets</span>
+              <span className="text-center">Mode</span><span className="text-center">Payout</span>
+            </div>
+            {(data.bookings as any[]).map((b: any) => {
+              const n = b.parsedNotes || {};
+              const payoutKey = b.paymentMode === "counter" ? "not_applicable" : (b.payoutStatus || "pending");
+              const payoutLabel = b.paymentMode === "counter"
+                ? "Counter (Cash)"
+                : b.payoutStatus === "paid"
+                  ? `Paid ✓${b.payoutUtr ? ` · ${b.payoutUtr}` : ""}`
+                  : "Awaiting";
+              return (
+                <div key={b._id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+                  <div className="sm:grid sm:grid-cols-[1fr_80px_80px_80px_80px_80px_90px] sm:gap-2 sm:items-center">
+                    {/* Booking info */}
+                    <div className="min-w-0 mb-2 sm:mb-0">
+                      <p className="text-sm font-semibold text-gray-800">{n.patientName || "Patient"}</p>
+                      <p className="text-xs text-gray-400">{b.bookingId} · {fmtDate(b.createdAt)}</p>
+                      <span className={`inline-flex text-[10px] px-1.5 py-0.5 rounded-md font-semibold mt-0.5 ${STATUS_COLORS[b.status] || "bg-gray-100 text-gray-600"}`}>{b.status}</span>
+                    </div>
+                    {/* Mobile: inline grid */}
+                    <div className="grid grid-cols-3 sm:contents gap-2 text-xs">
+                      <div className="sm:text-center"><span className={`inline-flex px-2 py-0.5 rounded-full font-semibold text-[10px] ${TYPE_COLORS[b.type] || "bg-gray-100 text-gray-600"}`}>{b.type}</span></div>
+                      <div className="sm:text-right font-bold text-gray-800">₹{(b.amount || 0).toLocaleString("en-IN")}</div>
+                      <div className="sm:text-right text-red-600 font-semibold">-₹{(b.platformCommission || 0).toLocaleString("en-IN")}<span className="text-gray-400 ml-0.5">({b.commissionPct}%)</span></div>
+                      <div className="sm:text-right font-bold text-green-700 col-span-1">₹{(b.hospitalPayable || 0).toLocaleString("en-IN")}</div>
+                      <div className="sm:text-center"><span className={`inline-flex px-1.5 py-0.5 rounded-md font-semibold text-[10px] ${MODE_COLORS[b.paymentMode] || "bg-gray-100 text-gray-600"}`}>{b.paymentMode}</span></div>
+                      <div className="sm:text-center"><span className={`inline-flex px-2 py-0.5 rounded-full font-semibold text-[10px] border ${PAYOUT_COLORS[payoutKey] || "bg-gray-100 text-gray-500 border-gray-200"}`}>{payoutLabel}</span></div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            {/* Pagination */}
+            {pag.pages > 1 && (
+              <div className="flex items-center justify-between pt-2">
+                <button onClick={() => setPage((p) => Math.max(1,p-1))} disabled={page===1} className="px-4 py-2 rounded-xl border border-gray-200 text-sm disabled:opacity-40 hover:bg-gray-50">← Pehle</button>
+                <span className="text-sm text-gray-500">Page {page} / {pag.pages} · {pag.total} total</span>
+                <button onClick={() => setPage((p) => Math.min(pag.pages,p+1))} disabled={page===pag.pages} className="px-4 py-2 rounded-xl border border-gray-200 text-sm disabled:opacity-40 hover:bg-gray-50">Aage →</button>
+              </div>
+            )}
+          </div>
+        )
+      )}
+
+      {/* ── Payout History ── */}
+      {eView === "payouts" && (
+        loading ? <Spinner color="purple" /> : !(data?.payouts?.length) ? (
+          <EmptyCard icon="💸" msg="Koi payout record nahi mila. Admin se contact karein." />
+        ) : (
+          <div className="space-y-3">
+            <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 text-sm text-blue-800">
+              💡 Ye records un bookings ke hain jinka payout admin ne process kar diya hai (UTR ke saath).
+            </div>
+            {(data.payouts as any[]).map((b: any) => {
+              const n = b.parsedNotes || {};
+              return (
+                <div key={b._id} className="bg-white rounded-2xl border border-green-100 shadow-sm p-4 flex items-center gap-4">
+                  <div className="w-10 h-10 bg-green-100 text-green-700 rounded-xl flex items-center justify-center text-lg flex-shrink-0">✅</div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-800">{n.patientName || "Patient"} · {b.bookingId}</p>
+                    <p className="text-xs text-gray-500">{b.type} · {fmtDate(b.payoutProcessedAt || b.createdAt)}</p>
+                    {b.payoutUtr && <p className="text-xs text-gray-400">UTR: {b.payoutUtr}</p>}
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <p className="font-bold text-green-700 text-sm">₹{(b.hospitalPayable || 0).toLocaleString("en-IN")}</p>
+                    <p className="text-[10px] text-gray-400">of ₹{(b.amount || 0).toLocaleString("en-IN")}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )
       )}
     </div>
   );
@@ -1569,6 +1860,12 @@ export default function HospitalDashboard() {
   const [loading,    setLoading]    = useState(true);
   const [deleting,   setDeleting]   = useState<string | null>(null);
   const [toast,      setToast]      = useState<{ msg: string; ok: boolean } | null>(null);
+  const [bFilter,    setBFilter]    = useState<{ search?: string; type?: string; doctorId?: string; label?: string }>({});
+
+  function viewBookings(opts: { search?: string; type?: string; doctorId?: string; label?: string }) {
+    setBFilter(opts);
+    setTab("bookings");
+  }
 
   // Modal states
   const [doctorModal,  setDoctorModal]  = useState<{ mode: "add" | "edit"; item?: Doctor } | null>(null);
@@ -1615,12 +1912,13 @@ export default function HospitalDashboard() {
   }
 
   const TABS = [
-    { key:"overview",  label:"Overview",  icon:"🏥" },
-    { key:"bookings",  label:"Bookings",  icon:"📋" },
-    { key:"doctors",   label:"Doctors",   icon:"👨‍⚕️" },
-    { key:"lab",       label:"Lab Tests", icon:"🧪" },
-    { key:"surgery",   label:"Surgery",   icon:"🔬" },
-    { key:"reports",   label:"Reports",   icon:"🗂️" },
+    { key:"overview",  label:"Overview",    icon:"🏥" },
+    { key:"bookings",  label:"Bookings",    icon:"📋" },
+    { key:"earnings",  label:"Earnings",    icon:"💰" },
+    { key:"doctors",   label:"Doctors",     icon:"👨‍⚕️" },
+    { key:"lab",       label:"Lab Tests",   icon:"🧪" },
+    { key:"surgery",   label:"Surgery",     icon:"🔬" },
+    { key:"reports",   label:"Reports",     icon:"🗂️" },
     { key:"labManage", label:"Lab Reports", icon:"📊" },
   ] as const;
 
@@ -1755,12 +2053,13 @@ export default function HospitalDashboard() {
             </div>
 
             {/* Quick action buttons */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
               {[
-                { label:"Doctor Jodein",  icon:"👨‍⚕️", color:"bg-blue-600 hover:bg-blue-700",   action: () => setDoctorModal({ mode:"add" }) },
+                { label:"Doctor Jodein",  icon:"👨‍⚕️", color:"bg-blue-600 hover:bg-blue-700",     action: () => setDoctorModal({ mode:"add" }) },
                 { label:"Lab Test Jodein",icon:"🧪",   color:"bg-orange-500 hover:bg-orange-600", action: () => setLabModal({ mode:"add" }) },
                 { label:"Surgery Package",icon:"🔬",   color:"bg-purple-600 hover:bg-purple-700", action: () => setSurgeryModal({ mode:"add" }) },
                 { label:"Aaj ki Bookings",icon:"📅",   color:"bg-teal-600 hover:bg-teal-700",     action: () => setTab("bookings") },
+                { label:"Earnings & Ledger",icon:"💰", color:"bg-emerald-600 hover:bg-emerald-700", action: () => setTab("earnings") },
               ].map((a) => (
                 <button key={a.label} onClick={a.action}
                   className={`${a.color} text-white rounded-2xl p-4 text-left shadow-sm transition`}>
@@ -1773,7 +2072,10 @@ export default function HospitalDashboard() {
         )}
 
         {/* ── Bookings Tab ── */}
-        {tab === "bookings" && <BookingsTab hospitalId={hospitalId} />}
+        {tab === "bookings" && <BookingsTab key={`${bFilter.search}|${bFilter.type}|${bFilter.doctorId}`} hospitalId={hospitalId} initialSearch={bFilter.search || ""} initialType={bFilter.type || "all"} initialDoctorId={bFilter.doctorId || ""} filterLabel={bFilter.label || ""} />}
+
+        {/* ── Earnings Tab ── */}
+        {tab === "earnings" && <EarningsTab hospitalId={hospitalId} />}
 
         {/* ── Doctors Tab ── */}
         {tab === "doctors" && (
@@ -1802,6 +2104,7 @@ export default function HospitalDashboard() {
                       </div>
                     </div>
                     <div className="flex gap-2 mt-3 pt-3 border-t border-gray-50">
+                      <button onClick={() => viewBookings({ doctorId: d._id, label: `Dr. ${d.name}` })} className="flex-1 text-xs text-teal-600 hover:bg-teal-50 py-2 rounded-xl transition border border-teal-100 font-semibold">📋 Bookings</button>
                       <button onClick={() => setDoctorModal({ mode:"edit", item: d })} className="flex-1 text-xs text-blue-600 hover:bg-blue-50 py-2 rounded-xl transition border border-blue-100 font-semibold">✏️ Edit</button>
                       <button onClick={() => deleteItem("doctor", d._id)} disabled={deleting === d._id} className="text-xs text-red-500 hover:bg-red-50 px-3 py-2 rounded-xl transition disabled:opacity-50">🗑</button>
                     </div>
@@ -1841,6 +2144,7 @@ export default function HospitalDashboard() {
                       </div>
                     </div>
                     <div className="flex gap-2 mt-3 pt-3 border-t border-gray-50">
+                      <button onClick={() => viewBookings({ type: "Lab", label: "Lab Bookings" })} className="flex-1 text-xs text-teal-600 hover:bg-teal-50 py-2 rounded-xl transition border border-teal-100 font-semibold">📋 Bookings</button>
                       <button onClick={() => setLabModal({ mode:"edit", item: t })} className="flex-1 text-xs text-orange-600 hover:bg-orange-50 py-2 rounded-xl transition border border-orange-100 font-semibold">✏️ Edit</button>
                       <button onClick={() => deleteItem("lab", t._id)} disabled={deleting === t._id} className="text-xs text-red-500 hover:bg-red-50 px-3 py-2 rounded-xl transition disabled:opacity-50">🗑</button>
                     </div>
@@ -1881,6 +2185,7 @@ export default function HospitalDashboard() {
                       </div>
                     </div>
                     <div className="flex gap-2 mt-3 pt-3 border-t border-gray-50">
+                      <button onClick={() => viewBookings({ type: "Surgery", label: "Surgery Bookings" })} className="flex-1 text-xs text-teal-600 hover:bg-teal-50 py-2 rounded-xl transition border border-teal-100 font-semibold">📋 Bookings</button>
                       <button onClick={() => setSurgeryModal({ mode:"edit", item: s })} className="flex-1 text-xs text-purple-600 hover:bg-purple-50 py-2 rounded-xl transition border border-purple-100 font-semibold">✏️ Edit</button>
                       <button onClick={() => deleteItem("surgery", s._id)} disabled={deleting === s._id} className="text-xs text-red-500 hover:bg-red-50 px-3 py-2 rounded-xl transition disabled:opacity-50">🗑</button>
                     </div>

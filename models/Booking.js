@@ -66,6 +66,11 @@ const bookingSchema = new mongoose.Schema(
     depositAmount:     { type: Number,  default: 0 },   // amount paid upfront
     balanceAmount:     { type: Number,  default: 0 },   // remaining to pay at hospital
 
+    // Partner payout tracking (hospital / doctor / lab)
+    payoutStatus:       { type: String, enum: ["pending", "paid", "not_applicable"], default: null },
+    payoutUtr:          { type: String, default: null },
+    payoutProcessedAt:  { type: Date },
+
     // Reminder tracking (avoid duplicate SMS)
     reminderToday:     { type: Boolean, default: false },
     reminderTomorrow:  { type: Boolean, default: false },

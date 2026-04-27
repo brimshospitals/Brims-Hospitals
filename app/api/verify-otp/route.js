@@ -86,12 +86,7 @@ export async function POST(request) {
 
     const role      = user.role || "user";
     const isNewUser = role === "user" && (user.age === 0 || user.name === "New User");
-
-    // Member who is also a coordinator → coordinator dashboard
-    let redirect = ROLE_REDIRECT[role] || "/dashboard";
-    if ((role === "member" || role === "user") && user.coordinatorId) {
-      redirect = "/coordinator-dashboard";
-    }
+    const redirect  = ROLE_REDIRECT[role] || "/dashboard";
 
     // ── Fetch linked entity data ──────────────────────────────────────────────
     let extraData = {};

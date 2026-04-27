@@ -3,6 +3,7 @@ import connectDB from "../../../../lib/mongodb";
 import Coordinator from "../../../../models/Coordinator";
 import User from "../../../../models/User";
 import Booking from "../../../../models/Booking";
+import Transaction from "../../../../models/Transaction";
 import { requireAuth } from "../../../../lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -33,9 +34,22 @@ export async function GET(request) {
 
       // Fetch their bookings
       const bookings = await Booking.find({ coordinatorId: coord._id })
-        .sort({ createdAt: -1 }).limit(50).lean();
+        .sort({ createdAt: -1 }).limit(100).lean();
 
-      return NextResponse.json({ success: true, coordinator: coord, bookings });
+      // Fetch transaction ledger (card activations, withdrawals, etc.)
+      const transactions = coord.userId
+        ? await Transaction.find({ userId: coord.userId }).sort({ createdAt: -1 }).limit(100).lean()
+        : [];
+
+      // Compute availableEarned dynamically (completed but not yet paid)
+      const availableEarned = bookings
+        .filter(b => !b.coordinatorPaid && b.status === "completed")
+        .reduce((s, b) => s + (b.coordinatorCommission || 0), 0);
+
+      // Pending withdrawal requests
+      const pendingWithdrawals = transactions.filter(t => t.type === "debit" && t.status === "pending");
+
+      return NextResponse.json({ success: true, coordinator: coord, bookings, transactions, availableEarned, pendingWithdrawals });
     }
 
     const coordinators = await Coordinator.find({}).sort({ createdAt: -1 }).lean();
@@ -122,17 +136,44 @@ export async function POST(request) {
   }
 }
 
-// PATCH — update coordinator
+// PATCH — update coordinator OR process withdrawal
 export async function PATCH(request) {
   const { error } = await requireAuth(request, ["admin"]);
   if (error) return error;
 
   try {
     const body = await request.json();
+
+    await connectDB();
+
+    // ── Process withdrawal (admin marks payment done with UTR) ──────────────
+    if (body.action === "process-withdraw") {
+      const { txnId, utr, coordinatorId } = body;
+      if (!txnId || !utr) {
+        return NextResponse.json({ success: false, message: "txnId aur UTR zaruri hai" }, { status: 400 });
+      }
+
+      const txn = await Transaction.findById(txnId);
+      if (!txn) return NextResponse.json({ success: false, message: "Transaction nahi mila" }, { status: 404 });
+      if (txn.status === "success") {
+        return NextResponse.json({ success: false, message: "Ye transaction already processed hai" }, { status: 409 });
+      }
+
+      txn.status = "success";
+      txn.paymentId = utr;
+      txn.description = txn.description + ` | UTR: ${utr}`;
+      await txn.save();
+
+      return NextResponse.json({
+        success: true,
+        message: `₹${txn.amount.toLocaleString("en-IN")} withdrawal processed. UTR: ${utr}`,
+      });
+    }
+
+    // ── Standard field update ───────────────────────────────────────────────
     const docId = body.id || body.coordinatorId;
     if (!docId) return NextResponse.json({ success: false, message: "id zaruri hai" }, { status: 400 });
 
-    await connectDB();
     const allowed = ["name","email","district","area","type","commissionRates","isActive"];
     const update = {};
     allowed.forEach(k => { if (body[k] !== undefined) update[k] = body[k]; });

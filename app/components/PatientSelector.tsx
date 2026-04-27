@@ -24,6 +24,18 @@ export default function PatientSelector({ onSelect, primaryUser, familyMembers =
   const [newForm, setNewForm] = useState({ name: "", mobile: "", age: "", gender: "", symptoms: "" });
   const [formError, setFormError] = useState("");
 
+  useEffect(() => {
+    const raw = localStorage.getItem("coordinator_client_prefill");
+    if (raw) {
+      try {
+        const p = JSON.parse(raw);
+        setNewForm({ name: p.name || "", mobile: p.mobile || "", age: String(p.age || ""), gender: p.gender || "male", symptoms: "" });
+        setSelected("new");
+      } catch {}
+      localStorage.removeItem("coordinator_client_prefill");
+    }
+  }, []);
+
   function handleMemberSelect(id: string) {
     setSelected(id);
     setFormError("");

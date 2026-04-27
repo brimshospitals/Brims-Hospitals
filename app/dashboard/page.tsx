@@ -2,8 +2,13 @@
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Header from "../components/header";
+import ImageCropper from "@/app/components/ImageCropper";
 import { useLang } from "@/app/providers/LangProvider";
 import { t } from "@/lib/i18n";
+import biharDistricts from "@/lib/biharDistricts";
+
+const diseases = ["HTN", "Diabetes", "CVD", "CKD", "Thyroid Disorder", "Joint Pain"];
+const AUTO_MARRIED = ["spouse", "parent", "inlaw"];
 
 /* ── SVG Icons ── */
 function IconOPD() {
@@ -240,6 +245,20 @@ const services = [
     border: "border-cyan-100",
     badge: "",
   },
+  {
+    href: "/support",
+    tileKey: "tile.support",
+    subKey: "tile.support.sub",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6" stroke="currentColor" strokeWidth={1.8}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 5.636a9 9 0 010 12.728M15.536 8.464a5 5 0 010 7.072M6.343 17.657a9 9 0 010-12.728M9.172 15.536a5 5 0 010-7.072M12 13a1 1 0 100-2 1 1 0 000 2z" />
+      </svg>
+    ),
+    bg: "bg-violet-50",
+    color: "text-violet-600",
+    border: "border-violet-100",
+    badge: "Help",
+  },
 ];
 
 function DashboardContent() {
@@ -248,6 +267,7 @@ function DashboardContent() {
   const cardNumber    = searchParams.get("cardNumber");
   const renewal       = searchParams.get("renewal");
   const renewalExpiry = searchParams.get("expiry");
+  const fromParam     = searchParams.get("from");
   const { lang }      = useLang();
 
   const [user, setUser]               = useState<any>(null);
@@ -260,6 +280,43 @@ function DashboardContent() {
   const [activeMemberId, setActiveMemberId]   = useState<string | null>(null);
   const [profileModal, setProfileModal]       = useState<any | null>(null);
 
+  // ── Coordinator / Families ──────────────────────────────────────────────────
+  const [showFamilies, setShowFamilies]       = useState(false);
+  const [families, setFamilies]               = useState<any[]>([]);
+  const [familiesLoading, setFamiliesLoading] = useState(false);
+  const [familySearch, setFamilySearch]       = useState("");
+  const [familiesView, setFamiliesView]       = useState<"list" | "register" | "add-member">("list");
+  const [fReg, setFReg] = useState({
+    mobile: "", otp: "", otpHint: "", otpSent: false, otpLoading: false, userId: "",
+    name: "", age: "", gender: "male",
+    district: "", prakhand: "",
+    maritalStatus: "", isPregnant: false, lmp: "",
+    preExistingDiseases: [] as string[],
+    idType: "", idNumber: "",
+    height: "", weight: "",
+    photo: "",
+  });
+  const [fRegCropper, setFRegCropper]           = useState(false);
+  const [fRegPhotoPreview, setFRegPhotoPreview] = useState("");
+  const [fRegPhotoUploading, setFRegPhotoUploading] = useState(false);
+  const [fMember, setFMember] = useState({
+    primaryMobile: "", name: "", age: "", gender: "male",
+    relationship: "spouse", loading: false, targetFamily: null as any,
+    alternateMobile: "",
+    maritalStatus: "", isPregnant: false, lmp: "",
+    preExistingDiseases: [] as string[],
+    height: "", weight: "",
+  });
+  const [panelTab, setPanelTab]             = useState<"families" | "earnings" | "book">("families");
+  const [earnings, setEarnings]             = useState<any>(null);
+  const [earningsLoading, setEarningsLoading]   = useState(false);
+  const [withdrawLoading, setWithdrawLoading]   = useState(false);
+  const [transactions, setTransactions]         = useState<any[]>([]);
+  const [txnLoading, setTxnLoading]             = useState(false);
+  const [bookService, setBookService]           = useState<string | null>(null);
+  const [bookClient, setBookClient]             = useState<any>(null);
+  const [clientCardLoading, setClientCardLoading] = useState<string | null>(null); // holds clientUserId while loading
+
   useEffect(() => {
     if (payment === "success") showToast(`🎉 Family Card activate ho gayi! Card: ${cardNumber}`, true);
     else if (payment === "failed") showToast("❌ Payment fail ho gayi. Dobara try karein.", false);
@@ -267,6 +324,14 @@ function DashboardContent() {
     else if (renewal === "failed") showToast("❌ Renewal payment fail. Dobara try karein.", false);
     setActiveMemberId(localStorage.getItem("activeMemberId"));
     fetchProfile();
+    // Auto-open coordinator panel: returning from booking page OR from card activation payment
+    const autoOpen = localStorage.getItem("coordinator_auto_open");
+    if (autoOpen) {
+      localStorage.removeItem("coordinator_auto_open");
+      setTimeout(() => { setShowFamilies(true); setPanelTab("book"); fetchFamilies(); }, 600);
+    } else if (fromParam === "coordinator") {
+      setTimeout(() => { setShowFamilies(true); setPanelTab("families"); fetchFamilies(); }, 600);
+    }
   }, []);
 
   function showToast(msg: string, ok: boolean) {
@@ -287,6 +352,209 @@ function DashboardContent() {
       }
     } catch {}
     setLoading(false);
+  }
+
+  // ── Coordinator families functions ─────────────────────────────────────────
+  async function fetchFamilies() {
+    setFamiliesLoading(true);
+    try {
+      const res  = await fetch("/api/coordinator/families");
+      const data = await res.json();
+      if (data.success) setFamilies(data.families || []);
+    } finally { setFamiliesLoading(false); }
+  }
+
+  async function fetchEarnings() {
+    setEarningsLoading(true);
+    try {
+      const [dashRes, txnRes] = await Promise.all([
+        fetch("/api/coordinator/dashboard"),
+        fetch("/api/coordinator/withdraw"),
+      ]);
+      const [dashData, txnData] = await Promise.all([dashRes.json(), txnRes.json()]);
+      if (dashData.success) setEarnings(dashData);
+      if (txnData.success) setTransactions(txnData.transactions || []);
+    } finally { setEarningsLoading(false); }
+  }
+
+  async function activateClientCard(clientUserId: string) {
+    setClientCardLoading(clientUserId);
+    try {
+      const res  = await fetch("/api/coordinator/create-client-order", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientUserId }),
+      });
+      const data = await res.json();
+      if (data.success && data.redirectUrl) {
+        window.location.href = data.redirectUrl;
+      } else {
+        showToast(data.message || "Payment error", false);
+        setClientCardLoading(null);
+      }
+    } catch {
+      showToast("Network error", false);
+      setClientCardLoading(null);
+    }
+  }
+
+  async function freeActivateClientCard(clientUserId: string) {
+    setClientCardLoading(clientUserId + "-free");
+    try {
+      const res  = await fetch("/api/coordinator/free-activate-client", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientUserId }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(data.message, true);
+        fetchFamilies();
+      } else {
+        showToast(data.message || "Error", false);
+      }
+    } finally { setClientCardLoading(null); }
+  }
+
+  async function handleWithdraw() {
+    if (!window.confirm("Withdraw request bhejein? Admin 24–48h mein process karega.")) return;
+    setWithdrawLoading(true);
+    try {
+      const res  = await fetch("/api/coordinator/withdraw", { method: "POST" });
+      const data = await res.json();
+      if (data.success) {
+        showToast(data.message, true);
+        fetchEarnings();
+      } else {
+        showToast(data.message || "Error", false);
+      }
+    } finally { setWithdrawLoading(false); }
+  }
+
+  async function famSendOtp() {
+    if (!/^\d{10}$/.test(fReg.mobile)) { showToast("Valid 10-digit mobile daalo", false); return; }
+    setFReg(f => ({ ...f, otpLoading: true }));
+    try {
+      const lkRes = await fetch("/api/coordinator/families", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "lookup", mobile: fReg.mobile }),
+      });
+      const lkData = await lkRes.json();
+      if (lkData.exists) {
+        showToast(`${lkData.user?.name || "User"} already registered — member add kar sakte hain`, true);
+        setFMember(m => ({ ...m, primaryMobile: fReg.mobile, targetFamily: lkData.user }));
+        setFamiliesView("add-member");
+        setFReg(f => ({ ...f, otpLoading: false }));
+        return;
+      }
+      const otpRes = await fetch("/api/coordinator/families", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "send-otp", mobile: fReg.mobile }),
+      });
+      const otpData = await otpRes.json();
+      if (otpData.success) {
+        setFReg(f => ({ ...f, otpSent: true, userId: otpData.userId, otpHint: otpData.otp || "", otpLoading: false }));
+        showToast(otpData.otp ? `OTP: ${otpData.otp} (Test Mode)` : "OTP bheja gaya 📱", true);
+      } else {
+        showToast(otpData.message || "OTP failed", false);
+        setFReg(f => ({ ...f, otpLoading: false }));
+      }
+    } catch {
+      showToast("Network error", false);
+      setFReg(f => ({ ...f, otpLoading: false }));
+    }
+  }
+
+  async function handleFRegCropped(blob: Blob) {
+    setFRegCropper(false);
+    setFRegPhotoUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("photo", blob, "profile.jpg");
+      const res  = await fetch("/api/upload-photo", { method: "POST", body: fd });
+      const data = await res.json();
+      if (data.success) {
+        setFReg(f => ({ ...f, photo: data.url }));
+        setFRegPhotoPreview(data.url);
+      } else {
+        showToast("Photo upload fail: " + data.message, false);
+      }
+    } catch {
+      showToast("Photo upload error", false);
+    }
+    setFRegPhotoUploading(false);
+  }
+
+  async function famVerifyRegister() {
+    if (fReg.otp.length < 4) { showToast("OTP daalo", false); return; }
+    if (!fReg.name.trim() || !fReg.age) { showToast("Naam aur age zaruri hai", false); return; }
+    setFReg(f => ({ ...f, otpLoading: true }));
+    try {
+      const res = await fetch("/api/coordinator/families", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "verify-register", mobile: fReg.mobile, otp: fReg.otp,
+          name: fReg.name, age: fReg.age, gender: fReg.gender,
+          district: fReg.district, prakhand: fReg.prakhand || undefined,
+          maritalStatus: fReg.maritalStatus || undefined,
+          isPregnant: fReg.isPregnant,
+          lmp: fReg.lmp || undefined,
+          preExistingDiseases: fReg.preExistingDiseases,
+          idType: fReg.idType || undefined, idNumber: fReg.idNumber || undefined,
+          height: fReg.height || undefined, weight: fReg.weight || undefined,
+          photo: fReg.photo || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(data.message || "Register ho gaya!", true);
+        fetchFamilies();
+        setFReg({ mobile: "", otp: "", otpHint: "", otpSent: false, otpLoading: false, userId: "", name: "", age: "", gender: "male", district: "", prakhand: "", maritalStatus: "", isPregnant: false, lmp: "", preExistingDiseases: [], idType: "", idNumber: "", height: "", weight: "", photo: "" });
+        setFRegPhotoPreview("");
+        setFamiliesView("list");
+      } else {
+        showToast(data.message || "Registration failed", false);
+        setFReg(f => ({ ...f, otpLoading: false }));
+      }
+    } catch {
+      showToast("Network error", false);
+      setFReg(f => ({ ...f, otpLoading: false }));
+    }
+  }
+
+  async function famAddMember() {
+    if (!fMember.name.trim() || !fMember.age || !fMember.relationship) {
+      showToast("Naam, age aur rishta zaruri hai", false); return;
+    }
+    const primary = fMember.targetFamily?.mobile || fMember.primaryMobile;
+    if (!primary) { showToast("Primary member mobile zaruri hai", false); return; }
+    setFMember(m => ({ ...m, loading: true }));
+    try {
+      const res = await fetch("/api/coordinator/families", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "add-member", primaryMobile: primary,
+          name: fMember.name, age: fMember.age, gender: fMember.gender,
+          relationship: fMember.relationship,
+          alternateMobile: fMember.alternateMobile || undefined,
+          maritalStatus: fMember.maritalStatus || undefined,
+          preExistingDiseases: fMember.preExistingDiseases,
+          height: fMember.height || undefined,
+          weight: fMember.weight || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(data.message || "Member add ho gaya!", true);
+        fetchFamilies();
+        setFMember({ primaryMobile: "", name: "", age: "", gender: "male", relationship: "spouse", loading: false, targetFamily: null, alternateMobile: "", maritalStatus: "", isPregnant: false, lmp: "", preExistingDiseases: [], height: "", weight: "" });
+        setFamiliesView("list");
+      } else {
+        showToast(data.message || "Failed", false);
+        setFMember(m => ({ ...m, loading: false }));
+      }
+    } catch {
+      showToast("Network error", false);
+      setFMember(m => ({ ...m, loading: false }));
+    }
   }
 
   async function handleActivateCard() {
@@ -860,11 +1128,747 @@ function DashboardContent() {
             </button>
           )}
 
+          {/* Families tab — only for coordinators */}
+          {user?.coordinatorId && (
+            <>
+              <div className="w-px bg-gray-100 my-3" />
+              <button
+                onClick={() => { setShowFamilies(true); fetchFamilies(); setFamiliesView("list"); }}
+                className="flex-1 flex flex-col items-center justify-center gap-0.5 text-green-600 hover:bg-green-50 transition"
+              >
+                <span className="text-xl leading-none">👨‍👩‍👧</span>
+                <span className="text-[10px] font-semibold">Families</span>
+              </button>
+            </>
+          )}
+
         </div>
 
         {/* Safe area for iPhone home indicator */}
         <div className="h-safe-area-inset-bottom" />
       </div>
+
+      {/* ── Coordinator Panel (Families / Earnings / Book) ── */}
+      {showFamilies && user?.coordinatorId && (
+        <div className="fixed inset-0 z-50 bg-gray-50 flex flex-col">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-green-700 to-emerald-600 text-white px-4 pt-safe flex-shrink-0">
+            <div className="flex items-center gap-3 py-4">
+              <button
+                onClick={() => { setShowFamilies(false); setFamiliesView("list"); setPanelTab("families"); }}
+                className="text-white/80 hover:text-white text-xl leading-none"
+              >←</button>
+              <div className="flex-1">
+                <p className="text-green-200 text-[11px] font-semibold uppercase tracking-wide">Health Coordinator</p>
+                <h2 className="font-bold text-lg leading-tight">
+                  {panelTab === "earnings" ? "My Earnings" : panelTab === "book" ? "Book Service" :
+                    familiesView === "register" ? "Register New Family" : familiesView === "add-member" ? "Add Family Member" : "My Families"}
+                </h2>
+              </div>
+              {panelTab === "families" && familiesView === "list" && (
+                <button
+                  onClick={() => { setFReg({ mobile: "", otp: "", otpHint: "", otpSent: false, otpLoading: false, userId: "", name: "", age: "", gender: "male", district: "", prakhand: "", maritalStatus: "", isPregnant: false, lmp: "", preExistingDiseases: [], idType: "", idNumber: "", height: "", weight: "", photo: "" }); setFRegPhotoPreview(""); setFamiliesView("register"); }}
+                  className="bg-white/20 hover:bg-white/30 text-white text-sm font-bold px-4 py-2 rounded-xl transition"
+                >
+                  + Register
+                </button>
+              )}
+            </div>
+            {/* Tab bar */}
+            <div className="flex border-t border-white/20 -mx-4">
+              {([["families","👨‍👩‍👧","Families"],["earnings","💰","Earnings"],["book","📅","Book"]] as const).map(([tab, icon, label]) => (
+                <button key={tab} onClick={() => {
+                  setPanelTab(tab);
+                  if (tab === "families") { fetchFamilies(); setFamiliesView("list"); }
+                  if (tab === "earnings") fetchEarnings();
+                  if (tab === "book") { fetchFamilies(); setBookService(null); setBookClient(null); }
+                }}
+                  className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 text-xs font-semibold transition border-b-2 ${panelTab === tab ? "border-white text-white" : "border-transparent text-white/60 hover:text-white/80"}`}>
+                  <span className="text-base leading-none">{icon}</span>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Scrollable content */}
+          <div className="flex-1 overflow-y-auto">
+            <div className="max-w-2xl mx-auto px-4 py-4 space-y-3">
+
+              {/* ══ FAMILIES TAB ══ */}
+              {panelTab === "families" && (
+              <>
+
+              {/* ─ List view ─ */}
+              {familiesView === "list" && (
+                <>
+                  <div className="flex items-center bg-white border border-gray-200 rounded-xl px-3 py-2.5 gap-2 focus-within:border-green-400 transition">
+                    <span className="text-gray-400 text-sm">🔍</span>
+                    <input value={familySearch} onChange={e => setFamilySearch(e.target.value)}
+                      placeholder="Naam ya mobile..." className="flex-1 text-sm outline-none bg-transparent" />
+                  </div>
+
+                  {familiesLoading ? (
+                    <div className="flex justify-center py-16">
+                      <div className="w-8 h-8 border-4 border-green-200 border-t-green-600 rounded-full animate-spin" />
+                    </div>
+                  ) : families.length === 0 ? (
+                    <div className="bg-white rounded-2xl border border-gray-100 py-16 text-center text-gray-400">
+                      <p className="text-4xl mb-3">👨‍👩‍👧</p>
+                      <p className="font-semibold text-gray-500 text-sm">Koi registered family nahi hai</p>
+                      <p className="text-xs mt-1">Register button se naya family add karein</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <p className="text-xs text-gray-400 px-1">
+                        {families.filter(f => !familySearch || f.name.toLowerCase().includes(familySearch.toLowerCase()) || f.mobile.includes(familySearch)).length} families
+                      </p>
+                      {families
+                        .filter(f => !familySearch || f.name.toLowerCase().includes(familySearch.toLowerCase()) || f.mobile.includes(familySearch))
+                        .map((fam: any) => {
+                          const card = fam.familyCardId;
+                          const isActive = card?.status === "active";
+                          const memberCount = (fam.familyMembers || []).length;
+                          return (
+                            <div key={fam._id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <div className="w-11 h-11 rounded-full bg-green-100 flex items-center justify-center text-green-700 font-bold text-lg flex-shrink-0">
+                                    {fam.name.charAt(0).toUpperCase()}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="font-semibold text-gray-800 text-sm">{fam.name}</p>
+                                    <p className="text-xs text-gray-400 mt-0.5">📱 {fam.mobile}{fam.age ? ` · ${fam.age}y` : ""}</p>
+                                    {fam.memberId && <p className="text-[10px] text-gray-400 font-mono">{fam.memberId}</p>}
+                                  </div>
+                                </div>
+                                <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                                  {isActive ? (
+                                    <>
+                                      <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold border bg-green-100 text-green-700 border-green-200">✓ Card Active</span>
+                                      <span className="text-[9px] text-green-600 font-medium">₹100 commission ✓</span>
+                                    </>
+                                  ) : (
+                                    <button
+                                      onClick={() => activateClientCard(fam._id)}
+                                      disabled={clientCardLoading === fam._id || clientCardLoading === fam._id + "-free"}
+                                      className="text-[11px] font-bold px-3 py-1.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white disabled:opacity-50 transition whitespace-nowrap"
+                                    >
+                                      {clientCardLoading === fam._id ? "..." : "💳 Activate ₹249"}
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Test-mode free activation */}
+                              {!isActive && process.env.NEXT_PUBLIC_SHOW_OTP === "true" && (
+                                <div className="mt-2">
+                                  <button
+                                    onClick={() => freeActivateClientCard(fam._id)}
+                                    disabled={clientCardLoading === fam._id + "-free" || clientCardLoading === fam._id}
+                                    className="w-full text-[11px] font-semibold px-3 py-1.5 rounded-xl border border-dashed border-amber-400 bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-50 transition"
+                                  >
+                                    {clientCardLoading === fam._id + "-free" ? "Activating..." : "🧪 Free Activate (Test Mode)"}
+                                  </button>
+                                </div>
+                              )}
+
+                              {memberCount > 0 && (
+                                <div className="mt-2.5 pt-2.5 border-t border-gray-50 flex flex-wrap gap-1.5">
+                                  {(fam.familyMembers || []).map((m: any) => (
+                                    <span key={m._id} className="text-[10px] bg-gray-50 border border-gray-200 rounded-full px-2 py-0.5 text-gray-600">
+                                      {m.name} ({m.relationship})
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                              <div className="mt-3 flex gap-2">
+                                <a href={`tel:${fam.mobile}`} className="flex-1 flex items-center justify-center gap-1 py-2 bg-gray-50 text-gray-600 text-xs font-semibold rounded-xl">📞 Call</a>
+                                <a href={`https://wa.me/91${fam.mobile}`} target="_blank" rel="noreferrer" className="flex-1 flex items-center justify-center gap-1 py-2 bg-emerald-50 text-emerald-700 text-xs font-semibold rounded-xl">💬 WhatsApp</a>
+                                {memberCount < 5 && (
+                                  <button onClick={() => { setFMember(m => ({ ...m, primaryMobile: fam.mobile, targetFamily: fam, name: "", age: "", gender: "male", relationship: "spouse" })); setFamiliesView("add-member"); }}
+                                    className="flex-1 flex items-center justify-center gap-1 py-2 bg-blue-50 text-blue-700 text-xs font-semibold rounded-xl">+ Member</button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* ─ Register new family ─ */}
+              {familiesView === "register" && (
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
+                  {!fReg.otpSent ? (
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 mb-1 block">Mobile Number *</label>
+                      <div className="flex gap-2">
+                        <div className="flex-1 flex items-center border border-gray-200 rounded-xl overflow-hidden focus-within:border-green-400 transition">
+                          <span className="px-3 py-2.5 bg-gray-50 text-gray-400 text-sm border-r border-gray-200">+91</span>
+                          <input type="tel" maxLength={10} value={fReg.mobile}
+                            onChange={e => setFReg(f => ({ ...f, mobile: e.target.value.replace(/\D/g, "") }))}
+                            placeholder="9876543210" className="flex-1 px-3 py-2.5 text-sm focus:outline-none" />
+                        </div>
+                        <button onClick={famSendOtp} disabled={fReg.otpLoading || fReg.mobile.length < 10}
+                          className="px-4 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-xl disabled:opacity-50">
+                          {fReg.otpLoading ? "..." : "Check"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    (() => {
+                      const rAge = parseInt(fReg.age) || 0;
+                      const rFemale = fReg.gender === "female";
+                      const rAutoMarried = AUTO_MARRIED.includes("self");
+                      const rShowMarital = rFemale && rAge >= 18;
+                      const rMarried = fReg.maritalStatus === "married";
+                      const rShowPreg = rFemale && rMarried && rAge >= 17 && rAge <= 50;
+                      return (
+                        <div className="space-y-3">
+                          <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-2.5 text-sm text-green-700 font-medium">📱 {fReg.mobile} — OTP bheja gaya</div>
+                          {/* OTP + inline Verify button */}
+                          <div>
+                            <label className="text-xs font-semibold text-gray-500 mb-1 block">OTP *</label>
+                            <div className="flex gap-2">
+                              <input type="text" maxLength={6} inputMode="numeric" value={fReg.otp}
+                                onChange={e => setFReg(f => ({ ...f, otp: e.target.value.replace(/\D/g, "") }))}
+                                placeholder="6-digit OTP"
+                                className="flex-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-green-400 focus:ring-2 focus:ring-green-100" />
+                              <button onClick={famVerifyRegister} disabled={fReg.otpLoading || fRegPhotoUploading}
+                                className="px-4 bg-green-600 hover:bg-green-700 text-white text-sm font-bold rounded-xl disabled:opacity-50 whitespace-nowrap transition">
+                                {fReg.otpLoading ? "..." : "✓ Verify & Register"}
+                              </button>
+                            </div>
+                            {fReg.otpHint && (
+                              <div className="mt-1.5 flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
+                                <span className="text-amber-600 text-sm">🔑</span>
+                                <span className="text-xs text-amber-800 font-medium">Test OTP: </span>
+                                <span className="text-sm font-mono font-bold text-amber-700 tracking-widest">{fReg.otpHint}</span>
+                              </div>
+                            )}
+                          </div>
+                          {/* Photo */}
+                          <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                            {fRegPhotoPreview ? (
+                              <img src={fRegPhotoPreview} alt="photo" className="w-14 h-14 rounded-full object-cover border-2 border-green-400" />
+                            ) : (
+                              <div className="w-14 h-14 rounded-full bg-gray-200 flex items-center justify-center text-2xl">👤</div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-semibold text-gray-600">Photo (Optional)</p>
+                              <p className="text-xs text-gray-400">Profile photo add karo</p>
+                            </div>
+                            <button type="button" onClick={() => setFRegCropper(true)} disabled={fRegPhotoUploading}
+                              className="text-xs px-3 py-1.5 bg-green-600 text-white rounded-lg font-semibold disabled:opacity-50">
+                              {fRegPhotoUploading ? "..." : fRegPhotoPreview ? "Change" : "📷 Add"}
+                            </button>
+                          </div>
+                          {/* Name */}
+                          <div>
+                            <label className="text-xs font-semibold text-gray-500 mb-1 block">Poora Naam *</label>
+                            <input value={fReg.name} onChange={e => setFReg(f => ({ ...f, name: e.target.value }))} placeholder="Ramesh Kumar"
+                              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-green-400 focus:ring-2 focus:ring-green-100" />
+                          </div>
+                          {/* Age + Gender */}
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-xs font-semibold text-gray-500 mb-1 block">Age *</label>
+                              <input type="number" min={1} max={120} value={fReg.age} onChange={e => setFReg(f => ({ ...f, age: e.target.value }))} placeholder="35"
+                                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-green-400" />
+                            </div>
+                            <div>
+                              <label className="text-xs font-semibold text-gray-500 mb-1 block">Gender *</label>
+                              <select value={fReg.gender} onChange={e => setFReg(f => ({ ...f, gender: e.target.value }))}
+                                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none bg-white">
+                                <option value="male">Male</option>
+                                <option value="female">Female</option>
+                              </select>
+                            </div>
+                          </div>
+                          {/* Marital status */}
+                          {rShowMarital && (
+                            <div>
+                              <label className="text-xs font-semibold text-gray-500 mb-1 block">Vaivahik Sthiti</label>
+                              <select value={fReg.maritalStatus} onChange={e => setFReg(f => ({ ...f, maritalStatus: e.target.value }))}
+                                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none bg-white">
+                                <option value="">Select</option>
+                                <option value="unmarried">Avivahit (Unmarried)</option>
+                                <option value="married">Vivahit (Married)</option>
+                              </select>
+                            </div>
+                          )}
+                          {/* Pregnancy */}
+                          {rShowPreg && (
+                            <div className="p-3 bg-pink-50 rounded-xl border border-pink-200">
+                              <label className="flex items-center gap-3 cursor-pointer">
+                                <input type="checkbox" checked={fReg.isPregnant} onChange={e => setFReg(f => ({ ...f, isPregnant: e.target.checked }))} className="w-4 h-4 accent-teal-600" />
+                                <span className="text-sm font-medium text-gray-700">🤰 Pregnant hain?</span>
+                              </label>
+                              {fReg.isPregnant && (
+                                <div className="mt-2">
+                                  <label className="text-xs font-semibold text-gray-500 mb-1 block">LMP Date</label>
+                                  <input type="date" value={fReg.lmp} onChange={e => setFReg(f => ({ ...f, lmp: e.target.value }))}
+                                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none" />
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          {/* District + Prakhand */}
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-xs font-semibold text-gray-500 mb-1 block">District</label>
+                              <select value={fReg.district} onChange={e => setFReg(f => ({ ...f, district: e.target.value, prakhand: "" }))}
+                                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none bg-white">
+                                <option value="">Select</option>
+                                {Object.keys(biharDistricts).sort().map(d => <option key={d} value={d}>{d}</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="text-xs font-semibold text-gray-500 mb-1 block">Prakhand</label>
+                              <select value={fReg.prakhand} onChange={e => setFReg(f => ({ ...f, prakhand: e.target.value }))} disabled={!fReg.district}
+                                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none bg-white disabled:opacity-40">
+                                <option value="">Select</option>
+                                {(biharDistricts[fReg.district] || []).map((p: string) => <option key={p} value={p}>{p}</option>)}
+                              </select>
+                            </div>
+                          </div>
+                          {/* Diseases */}
+                          <div>
+                            <label className="text-xs font-semibold text-gray-500 mb-2 block">Pahle se Bimari</label>
+                            <div className="grid grid-cols-2 gap-1.5">
+                              {diseases.map(d => (
+                                <label key={d} className="flex items-center gap-2 cursor-pointer p-2 rounded-lg border border-gray-100 hover:bg-gray-50 text-xs">
+                                  <input type="checkbox" checked={fReg.preExistingDiseases.includes(d)}
+                                    onChange={() => setFReg(f => ({ ...f, preExistingDiseases: f.preExistingDiseases.includes(d) ? f.preExistingDiseases.filter(x => x !== d) : [...f.preExistingDiseases, d] }))}
+                                    className="w-3.5 h-3.5 accent-green-600" />
+                                  {d}
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                          {/* Height + Weight */}
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-xs font-semibold text-gray-500 mb-1 block">Height (cm)</label>
+                              <input type="number" value={fReg.height} onChange={e => setFReg(f => ({ ...f, height: e.target.value }))} placeholder="165"
+                                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none" />
+                            </div>
+                            <div>
+                              <label className="text-xs font-semibold text-gray-500 mb-1 block">Weight (kg)</label>
+                              <input type="number" value={fReg.weight} onChange={e => setFReg(f => ({ ...f, weight: e.target.value }))} placeholder="70"
+                                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none" />
+                            </div>
+                          </div>
+                          {/* ID */}
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-xs font-semibold text-gray-500 mb-1 block">ID Type</label>
+                              <select value={fReg.idType} onChange={e => setFReg(f => ({ ...f, idType: e.target.value }))}
+                                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none bg-white">
+                                <option value="">None</option>
+                                <option value="Aadhaar">Aadhaar</option>
+                                <option value="Voter ID">Voter ID</option>
+                                <option value="PAN">PAN</option>
+                                <option value="Driving Licence">Driving Licence</option>
+                                <option value="Passport">Passport</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="text-xs font-semibold text-gray-500 mb-1 block">ID Number</label>
+                              <input value={fReg.idNumber} onChange={e => setFReg(f => ({ ...f, idNumber: e.target.value }))} placeholder="XXXX XXXX XXXX"
+                                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none" />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()
+                  )}
+                </div>
+              )}
+
+              {/* ─ Add member ─ */}
+              {familiesView === "add-member" && (() => {
+                const mAge = parseInt(fMember.age) || 0;
+                const mFemale = fMember.gender === "female";
+                const mAutoMarried = AUTO_MARRIED.includes(fMember.relationship);
+                const mShowMarital = mFemale && mAge >= 18 && !mAutoMarried;
+                const mMarried = fMember.maritalStatus === "married" || mAutoMarried;
+                const mShowPreg = mFemale && mMarried && mAge >= 17 && mAge <= 50;
+                return (
+                  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-3">
+                    {/* Primary family info */}
+                    {fMember.targetFamily ? (
+                      <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 text-sm text-blue-800 flex items-center gap-2">
+                        👨‍👩‍👧 <strong>{fMember.targetFamily.name}</strong> · {fMember.targetFamily.mobile} · {(fMember.targetFamily.familyMembers || []).length}/5 slots
+                      </div>
+                    ) : (
+                      <div>
+                        <label className="text-xs font-semibold text-gray-500 mb-1 block">Primary Member Mobile *</label>
+                        <input type="tel" maxLength={10} value={fMember.primaryMobile}
+                          onChange={e => setFMember(m => ({ ...m, primaryMobile: e.target.value.replace(/\D/g, "") }))}
+                          placeholder="9876543210"
+                          className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400" />
+                      </div>
+                    )}
+                    {/* Relationship */}
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 mb-1 block">Rishta (Relationship) *</label>
+                      <select value={fMember.relationship} onChange={e => setFMember(m => ({ ...m, relationship: e.target.value, maritalStatus: AUTO_MARRIED.includes(e.target.value) ? "married" : m.maritalStatus }))}
+                        className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none bg-white">
+                        <option value="spouse">Pati / Patni (Spouse)</option>
+                        <option value="child">Bachcha (Child)</option>
+                        <option value="parent">Mata / Pita (Parent)</option>
+                        <option value="inlaw">Sasur / Saas (In-Laws)</option>
+                        <option value="sibling">Bhai / Behen (Sibling)</option>
+                        <option value="other">Anya (Other)</option>
+                      </select>
+                      {mAutoMarried && <p className="text-xs text-teal-600 mt-1">✓ Is rishte ke liye married automatically set hai</p>}
+                    </div>
+                    {/* Name */}
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 mb-1 block">Poora Naam *</label>
+                      <input value={fMember.name} onChange={e => setFMember(m => ({ ...m, name: e.target.value }))} placeholder="Sunita Devi"
+                        className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400" />
+                    </div>
+                    {/* Alternate Mobile */}
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 mb-1 block">Alternate Mobile (Optional)</label>
+                      <input type="tel" maxLength={10} value={fMember.alternateMobile} onChange={e => setFMember(m => ({ ...m, alternateMobile: e.target.value.replace(/\D/g, "") }))} placeholder="Is member ka alag mobile"
+                        className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none" />
+                    </div>
+                    {/* Age + Gender */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-semibold text-gray-500 mb-1 block">Age *</label>
+                        <input type="number" min={0} max={120} value={fMember.age} onChange={e => setFMember(m => ({ ...m, age: e.target.value }))} placeholder="28"
+                          className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none" />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-500 mb-1 block">Gender *</label>
+                        <select value={fMember.gender} onChange={e => setFMember(m => ({ ...m, gender: e.target.value }))}
+                          className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none bg-white">
+                          <option value="male">Male</option>
+                          <option value="female">Female</option>
+                        </select>
+                      </div>
+                    </div>
+                    {/* Marital status */}
+                    {mShowMarital && (
+                      <div>
+                        <label className="text-xs font-semibold text-gray-500 mb-1 block">Vaivahik Sthiti</label>
+                        <select value={fMember.maritalStatus} onChange={e => setFMember(m => ({ ...m, maritalStatus: e.target.value }))}
+                          className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none bg-white">
+                          <option value="">Select</option>
+                          <option value="unmarried">Avivahit (Unmarried)</option>
+                          <option value="married">Vivahit (Married)</option>
+                        </select>
+                      </div>
+                    )}
+                    {/* Pregnancy */}
+                    {mShowPreg && (
+                      <div className="p-3 bg-pink-50 rounded-xl border border-pink-200">
+                        <label className="flex items-center gap-3 cursor-pointer">
+                          <input type="checkbox" checked={fMember.isPregnant} onChange={e => setFMember(m => ({ ...m, isPregnant: e.target.checked }))} className="w-4 h-4 accent-teal-600" />
+                          <span className="text-sm font-medium text-gray-700">🤰 Pregnant hain?</span>
+                        </label>
+                        {fMember.isPregnant && (
+                          <div className="mt-2">
+                            <label className="text-xs font-semibold text-gray-500 mb-1 block">LMP Date</label>
+                            <input type="date" value={fMember.lmp} onChange={e => setFMember(m => ({ ...m, lmp: e.target.value }))}
+                              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none" />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {/* Diseases */}
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 mb-2 block">Pahle se Bimari</label>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {diseases.map(d => (
+                          <label key={d} className="flex items-center gap-2 cursor-pointer p-2 rounded-lg border border-gray-100 hover:bg-gray-50 text-xs">
+                            <input type="checkbox" checked={fMember.preExistingDiseases.includes(d)}
+                              onChange={() => setFMember(m => ({ ...m, preExistingDiseases: m.preExistingDiseases.includes(d) ? m.preExistingDiseases.filter(x => x !== d) : [...m.preExistingDiseases, d] }))}
+                              className="w-3.5 h-3.5 accent-blue-600" />
+                            {d}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    {/* Height + Weight */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-semibold text-gray-500 mb-1 block">Height (cm)</label>
+                        <input type="number" value={fMember.height} onChange={e => setFMember(m => ({ ...m, height: e.target.value }))} placeholder="165"
+                          className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none" />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-500 mb-1 block">Weight (kg)</label>
+                        <input type="number" value={fMember.weight} onChange={e => setFMember(m => ({ ...m, weight: e.target.value }))} placeholder="70"
+                          className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none" />
+                      </div>
+                    </div>
+                    <button onClick={famAddMember} disabled={fMember.loading}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl text-sm font-bold disabled:opacity-50">
+                      {fMember.loading ? "Add ho raha hai..." : "✓ Add Member"}
+                    </button>
+                  </div>
+                );
+              })()}
+
+              </> /* end families tab */
+              )}
+
+              {/* ══ EARNINGS TAB ══ */}
+              {panelTab === "earnings" && (
+                <>
+                  {earningsLoading ? (
+                    <div className="flex justify-center py-16">
+                      <div className="w-8 h-8 border-4 border-green-200 border-t-green-600 rounded-full animate-spin" />
+                    </div>
+                  ) : !earnings ? (
+                    <div className="bg-white rounded-2xl border border-gray-100 py-12 text-center text-gray-400 text-sm">No data</div>
+                  ) : (
+                    <>
+                      {/* 4 stats */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="rounded-2xl border bg-amber-50 border-amber-200 p-4">
+                          <p className="text-xs text-gray-500 mb-1">Pending (Service incomplete)</p>
+                          <p className="text-xl font-bold text-amber-700">₹{(earnings.stats?.pendingEarned || 0).toLocaleString("en-IN")}</p>
+                          <p className="text-[10px] text-amber-600 mt-0.5">Service complete hone par milega</p>
+                        </div>
+                        <div className="rounded-2xl border bg-green-50 border-green-200 p-4">
+                          <p className="text-xs text-gray-500 mb-1">Available to Withdraw</p>
+                          <p className="text-xl font-bold text-green-700">₹{(earnings.stats?.availableEarned || 0).toLocaleString("en-IN")}</p>
+                          <p className="text-[10px] text-green-600 mt-0.5">Service complete — withdraw karein</p>
+                        </div>
+                        <div className="rounded-2xl border bg-blue-50 border-blue-200 p-4">
+                          <p className="text-xs text-gray-500 mb-1">Total Paid Out</p>
+                          <p className="text-xl font-bold text-blue-700">₹{(earnings.stats?.paidEarned || 0).toLocaleString("en-IN")}</p>
+                        </div>
+                        <div className="rounded-2xl border bg-purple-50 border-purple-200 p-4">
+                          <p className="text-xs text-gray-500 mb-1">This Month</p>
+                          <p className="text-xl font-bold text-purple-700">₹{(earnings.stats?.monthEarned || 0).toLocaleString("en-IN")}</p>
+                        </div>
+                      </div>
+
+                      {/* Withdraw button */}
+                      {(earnings.stats?.availableEarned || 0) > 0 && (
+                        <button onClick={handleWithdraw} disabled={withdrawLoading}
+                          className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white py-3.5 rounded-2xl font-bold text-sm flex items-center justify-center gap-2">
+                          {withdrawLoading ? (
+                            <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Processing...</>
+                          ) : (
+                            <>💸 Withdraw ₹{(earnings.stats.availableEarned).toLocaleString("en-IN")}</>
+                          )}
+                        </button>
+                      )}
+
+                      {/* Commission ledger */}
+                      <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                        <div className="px-4 py-3 border-b border-gray-50 flex items-center justify-between">
+                          <p className="font-bold text-gray-700 text-sm">Commission Ledger</p>
+                          <span className="text-xs text-gray-400">{(earnings.bookings || []).length} entries</span>
+                        </div>
+                        {(earnings.bookings || []).length === 0 ? (
+                          <p className="text-center text-gray-400 text-sm py-8">Abhi koi booking nahi hai</p>
+                        ) : (
+                          <div className="divide-y divide-gray-50">
+                            {(earnings.bookings || []).slice(0, 30).map((b: any) => {
+                              let n: any = {};
+                              try { n = JSON.parse(b.notes || "{}"); } catch {}
+                              const svc = b.packageId?.name || b.labTestId?.name || b.doctorId?.name || b.type || "—";
+                              const commission = b.coordinatorCommission || 0;
+                              const isCompleted = b.status === "completed";
+                              const isPaid = b.coordinatorPaid;
+                              const statusLabel = isPaid ? "Paid" : isCompleted ? "Ready" : "Pending";
+                              const statusColor = isPaid ? "text-green-600" : isCompleted ? "text-blue-600" : "text-amber-600";
+                              return (
+                                <div key={b._id} className="px-4 py-3 flex items-start gap-3">
+                                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5 ${isPaid ? "bg-green-100 text-green-700" : isCompleted ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"}`}>
+                                    {isPaid ? "✓" : isCompleted ? "★" : "⏳"}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-semibold text-gray-800 truncate">{n.patientName || "—"}</p>
+                                    <p className="text-xs text-gray-400 truncate">{svc}</p>
+                                    <p className="text-xs text-gray-400">{new Date(b.createdAt).toLocaleDateString("en-IN")}</p>
+                                  </div>
+                                  <div className="text-right flex-shrink-0">
+                                    <p className={`text-sm font-bold ${commission > 0 ? "text-gray-700" : "text-gray-400"}`}>
+                                      {commission > 0 ? `₹${commission}` : "—"}
+                                    </p>
+                                    <p className={`text-[10px] font-semibold ${statusColor}`}>{statusLabel}</p>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Transaction history */}
+                      <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                        <div className="px-4 py-3 border-b border-gray-50 flex items-center justify-between">
+                          <p className="font-bold text-gray-700 text-sm">Transaction History</p>
+                          {txnLoading && <div className="w-4 h-4 border-2 border-gray-200 border-t-gray-500 rounded-full animate-spin" />}
+                        </div>
+                        {transactions.length === 0 ? (
+                          <p className="text-center text-gray-400 text-sm py-6">Koi transaction nahi hai</p>
+                        ) : (
+                          <div className="divide-y divide-gray-50">
+                            {transactions.map((txn: any) => (
+                              <div key={txn._id} className="px-4 py-3 flex items-center gap-3">
+                                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${txn.type === "credit" ? "bg-green-100 text-green-700" : "bg-orange-100 text-orange-700"}`}>
+                                  {txn.type === "credit" ? "↓" : "↑"}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs text-gray-700 truncate">{txn.description}</p>
+                                  <p className="text-[10px] text-gray-400">{new Date(txn.createdAt).toLocaleDateString("en-IN")}</p>
+                                </div>
+                                <div className="text-right flex-shrink-0">
+                                  <p className={`text-sm font-bold ${txn.type === "credit" ? "text-green-600" : "text-orange-600"}`}>
+                                    {txn.type === "credit" ? "+" : "-"}₹{(txn.amount || 0).toLocaleString("en-IN")}
+                                  </p>
+                                  <p className={`text-[10px] font-semibold ${txn.status === "success" ? "text-green-500" : txn.status === "pending" ? "text-amber-500" : "text-red-500"}`}>
+                                    {txn.status}
+                                  </p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+
+              {/* ══ BOOK TAB ══ */}
+              {panelTab === "book" && (
+                <>
+                  {!bookService ? (
+                    /* Step 1 — pick service */
+                    <>
+                      <p className="text-xs text-gray-500 px-1 font-semibold uppercase tracking-wide">Service Type chunein</p>
+                      <div className="grid grid-cols-2 gap-3">
+                        {[
+                          { key: "opd",     label: "OPD / Doctor",      icon: "🩺", href: "/opd-booking",        color: "border-blue-200 bg-blue-50 text-blue-700" },
+                          { key: "lab",     label: "Lab Tests",          icon: "🔬", href: "/lab-tests",          color: "border-orange-200 bg-orange-50 text-orange-700" },
+                          { key: "surgery", label: "Surgery Package",    icon: "💊", href: "/surgery-packages",   color: "border-rose-200 bg-rose-50 text-rose-700" },
+                          { key: "ipd",     label: "IPD / Admission",    icon: "🏥", href: "/ipd-booking",        color: "border-purple-200 bg-purple-50 text-purple-700" },
+                          { key: "tele",    label: "Teleconsultation",   icon: "📱", href: "/teleconsultation",   color: "border-teal-200 bg-teal-50 text-teal-700" },
+                          { key: "ambulance", label: "Ambulance",        icon: "🚑", href: "/ambulance",          color: "border-red-200 bg-red-50 text-red-700" },
+                        ].map(svc => (
+                          <button key={svc.key} onClick={() => { setBookService(svc.key); setBookClient(null); }}
+                            className={`rounded-2xl border-2 p-4 flex flex-col items-start gap-2 text-left transition hover:shadow-md ${svc.color}`}>
+                            <span className="text-2xl">{svc.icon}</span>
+                            <span className="text-sm font-bold">{svc.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  ) : !bookClient ? (
+                    /* Step 2 — pick client */
+                    <>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => setBookService(null)} className="text-gray-400 hover:text-gray-600 text-lg">←</button>
+                        <p className="text-sm font-bold text-gray-700">Client chunein</p>
+                      </div>
+                      {familiesLoading ? (
+                        <div className="flex justify-center py-10">
+                          <div className="w-7 h-7 border-4 border-green-200 border-t-green-600 rounded-full animate-spin" />
+                        </div>
+                      ) : families.length === 0 ? (
+                        <div className="bg-white rounded-2xl border border-gray-100 py-10 text-center text-gray-400 text-sm">
+                          Koi registered family nahi — pehle Families tab mein register karein
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {families.map((fam: any) => (
+                            <button key={fam._id} onClick={() => setBookClient(fam)}
+                              className="w-full bg-white rounded-2xl border border-gray-100 p-4 flex items-center gap-3 text-left hover:border-green-400 hover:shadow-sm transition">
+                              <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center text-green-700 font-bold flex-shrink-0">
+                                {fam.name.charAt(0).toUpperCase()}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="font-semibold text-gray-800 text-sm">{fam.name}</p>
+                                <p className="text-xs text-gray-400">📱 {fam.mobile}{fam.age ? ` · ${fam.age}y` : ""}</p>
+                              </div>
+                              <span className="text-green-500 text-lg">›</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    /* Step 3 — confirm + go */
+                    <>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => setBookClient(null)} className="text-gray-400 hover:text-gray-600 text-lg">←</button>
+                        <p className="text-sm font-bold text-gray-700">Confirm karein</p>
+                      </div>
+                      <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
+                        <div className="flex items-center gap-3 p-3 bg-green-50 rounded-xl border border-green-200">
+                          <div className="w-10 h-10 rounded-full bg-green-200 flex items-center justify-center text-green-800 font-bold">
+                            {bookClient.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div>
+                            <p className="font-bold text-gray-800 text-sm">{bookClient.name}</p>
+                            <p className="text-xs text-gray-500">{bookClient.mobile} · {bookClient.age}y · {bookClient.gender}</p>
+                          </div>
+                        </div>
+                        {/* Pick which family member */}
+                        {(bookClient.familyMembers || []).length > 0 && (
+                          <div>
+                            <p className="text-xs font-semibold text-gray-500 mb-2">Kaun sa member? (optional)</p>
+                            <div className="space-y-1.5">
+                              {[{ ...bookClient, relationship: "self (primary)" }, ...(bookClient.familyMembers || [])].map((m: any, i: number) => (
+                                <label key={i} className="flex items-center gap-3 p-2.5 rounded-xl border border-gray-100 cursor-pointer hover:border-green-300 text-sm">
+                                  <input type="radio" name="bookMember" value={i} defaultChecked={i === 0} className="accent-green-600" />
+                                  <span className="font-medium text-gray-700">{m.name}</span>
+                                  <span className="text-gray-400 text-xs ml-auto">{m.age}y · {m.gender}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        <button
+                          onClick={() => {
+                            const selected = (document.querySelector('input[name="bookMember"]:checked') as HTMLInputElement);
+                            const idx = selected ? parseInt(selected.value) : 0;
+                            const all = [bookClient, ...(bookClient.familyMembers || [])];
+                            const m = all[idx] || bookClient;
+                            const mobile = idx === 0 ? bookClient.mobile : (bookClient.mobile || "");
+                            localStorage.setItem("coordinator_client_prefill", JSON.stringify({
+                              name: m.name, mobile, age: m.age || bookClient.age, gender: m.gender || bookClient.gender
+                            }));
+                            localStorage.setItem("coordinator_auto_open", "1");
+                            const hrefs: Record<string, string> = { opd: "/opd-booking", lab: "/lab-tests", surgery: "/surgery-packages", ipd: "/ipd-booking", tele: "/teleconsultation", ambulance: "/ambulance" };
+                            window.location.href = hrefs[bookService] || "/opd-booking";
+                          }}
+                          className="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl text-sm font-bold">
+                          📅 Booking Page Par Jayen →
+                        </button>
+                        <p className="text-xs text-gray-400 text-center">Booking page par client ki details auto-fill ho jayengi</p>
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ImageCropper for coordinator registration photo */}
+      {fRegCropper && (
+        <ImageCropper
+          onCropped={(blob, previewUrl) => { setFRegPhotoPreview(previewUrl); handleFRegCropped(blob); }}
+          onClose={() => setFRegCropper(false)}
+        />
+      )}
 
       {/* ── Member Profile Modal ── */}
       {profileModal && (
