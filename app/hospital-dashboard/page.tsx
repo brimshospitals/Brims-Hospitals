@@ -227,10 +227,10 @@ function SurgeryFormModal({ hospitalId, pkg, onClose, onSaved }: { hospitalId: s
   const [foodDetails, setFoodDetails] = useState(pkg?.foodDetails || "Light diet meals included");
   const [postCare,    setPostCare]    = useState(pkg?.postCareIncluded || false);
   const [followUp,    setFollowUp]    = useState(String(pkg?.followUpConsultations || "1"));
-  const [stayDays,    setStayDays]    = useState(String(pkg?.stayDays || "2"));
+  const [stayDays,    setStayDays]    = useState(pkg?.stayDays != null ? String(pkg.stayDays) : "2");
   const [mrp,         setMrp]         = useState(String(pkg?.mrp || ""));
   const [offerPrice,  setOfferPrice]  = useState(String(pkg?.offerPrice || ""));
-  const [memberPrice, setMemberPrice] = useState(String(pkg?.membershipPrice || ""));
+  const [memberPrice, setMemberPrice] = useState(pkg?.membershipPrice != null ? String(pkg.membershipPrice) : "");
   const [isActive,    setIsActive]    = useState(pkg?.isActive !== false);
   const [saving,      setSaving]      = useState(false);
   const [err,         setErr]         = useState("");
@@ -253,8 +253,8 @@ function SurgeryFormModal({ hospitalId, pkg, onClose, onSaved }: { hospitalId: s
         surgeonDegrees: surgeonDeg.split(",").map((s) => s.trim()).filter(Boolean),
         pickupFromHome: pickup, pickupCharge: pickup ? Number(pickupCharge) || 0 : 0, dropAvailable: drop,
         foodIncluded: food, foodDetails: food ? foodDetails : "", postCareIncluded: postCare,
-        followUpConsultations: Number(followUp) || 0, stayDays: Number(stayDays) || 1,
-        mrp: Number(mrp), offerPrice: Number(offerPrice), membershipPrice: Number(memberPrice) || Number(offerPrice), isActive,
+        followUpConsultations: Number(followUp) || 0, stayDays: stayDays !== "" ? Number(stayDays) : 1,
+        mrp: Number(mrp), offerPrice: Number(offerPrice), membershipPrice: memberPrice !== "" ? Number(memberPrice) : Number(offerPrice), isActive,
       };
       if (isEdit) payload.packageId = pkg!._id;
       const res  = await fetch("/api/hospital/surgery-packages", { method: isEdit ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });

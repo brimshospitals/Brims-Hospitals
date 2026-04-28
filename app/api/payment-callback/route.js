@@ -7,110 +7,152 @@ import Transaction from "../../../models/Transaction";
 
 export const dynamic = "force-dynamic";
 
-const SALT_KEY = process.env.PHONEPE_SALT_KEY;
+const SALT_KEY   = process.env.PHONEPE_SALT_KEY;
 const SALT_INDEX = process.env.PHONEPE_SALT_INDEX || "1";
 
-// Card number generate karna
 function generateCardNumber() {
-  const year = new Date().getFullYear();
+  const year   = new Date().getFullYear();
   const random = Math.floor(10000 + Math.random() * 90000);
   return `BRIMS-${year}-${random}`;
 }
 
+// Verify PhonePe callback signature
+// X-VERIFY = SHA256(base64Response + SALT_KEY) + "###" + saltIndex
+function verifyCallbackChecksum(encodedResponse, xVerifyHeader) {
+  if (!xVerifyHeader || !SALT_KEY) return false;
+  const expected =
+    crypto.createHash("sha256")
+      .update(encodedResponse + SALT_KEY)
+      .digest("hex") +
+    "###" + SALT_INDEX;
+  return xVerifyHeader === expected;
+}
+
 export async function POST(request) {
+  const BASE = process.env.NEXTAUTH_URL;
   try {
-    const body = await request.text();
+    const body  = await request.text();
     const params = new URLSearchParams(body);
     const encodedResponse = params.get("response");
 
     if (!encodedResponse) {
-      return NextResponse.redirect(
-        `${process.env.NEXTAUTH_URL}/dashboard?payment=failed`
-      );
+      return NextResponse.redirect(`${BASE}/dashboard?payment=failed`);
     }
 
-    // Decode response
+    // ── Checksum verification (security: prevent forged callbacks) ────────────
+    const xVerify = request.headers.get("x-verify") || request.headers.get("X-VERIFY");
+    if (!verifyCallbackChecksum(encodedResponse, xVerify)) {
+      console.error("PhonePe callback checksum mismatch — possible forged request");
+      return NextResponse.redirect(`${BASE}/dashboard?payment=failed`);
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     const decodedResponse = JSON.parse(
       Buffer.from(encodedResponse, "base64").toString("utf-8")
     );
-
     const { code, data } = decodedResponse;
 
-    // URL se userId, txnId aur from lo
-    const url  = new URL(request.url);
-    const userId = url.searchParams.get("userId");
-    const txnId  = url.searchParams.get("txnId");
-    const from   = url.searchParams.get("from"); // "coordinator" if coordinator initiated
+    const url      = new URL(request.url);
+    const userId   = url.searchParams.get("userId");
+    const txnId    = url.searchParams.get("txnId");
+    const from     = url.searchParams.get("from");
+    const returnUrl = url.searchParams.get("returnUrl");
 
-    // Payment success check
     if (code !== "PAYMENT_SUCCESS") {
-      return NextResponse.redirect(
-        `${process.env.NEXTAUTH_URL}/dashboard?payment=failed`
-      );
+      return NextResponse.redirect(`${BASE}/dashboard?payment=failed`);
     }
 
     await connectDB();
 
     const user = await User.findById(userId);
     if (!user) {
-      return NextResponse.redirect(
-        `${process.env.NEXTAUTH_URL}/dashboard?payment=failed`
-      );
+      return NextResponse.redirect(`${BASE}/dashboard?payment=failed`);
     }
 
-    // First-time activation only (not renewal — renewal uses /api/renew-card)
-    const isFirstActivation = !user.familyCardId;
+    // ── Idempotency: if user already has an active card, treat as success ─────
+    if (user.familyCardId) {
+      const existing = await FamilyCard.findById(user.familyCardId);
+      if (existing && existing.status === "active") {
+        let successUrl = `${BASE}/dashboard?payment=success&cardNumber=${existing.cardNumber}`;
+        if (from === "coordinator") successUrl += "&from=coordinator";
+        if (returnUrl?.startsWith("/")) {
+          successUrl = `${BASE}${returnUrl}?activated=1&cardNumber=${existing.cardNumber}`;
+        }
+        return NextResponse.redirect(successUrl);
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
-    // Family Card banana
-    const cardNumber = generateCardNumber();
+    // Create Family Card
+    const cardNumber     = generateCardNumber();
     const activationDate = new Date();
-    const expiryDate = new Date();
-    expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+    const expiryDate     = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000); // exact 365 days
+    const paidAmount     = data?.amount ? data.amount / 100 : 249;
 
     const familyCard = await FamilyCard.create({
       primaryMemberId: userId,
       cardNumber,
-      members: [userId],
-      membersCount: 1,
-      walletBalance: 0,
+      members:         [userId],
+      membersCount:    1,
+      walletBalance:   0,
       activationDate,
       expiryDate,
-      status: "active",
+      status:    "active",
       paymentId: data?.transactionId || txnId,
-      amountPaid: data?.amount ? data.amount / 100 : 249,
+      amountPaid: paidAmount,
     });
 
-    // User ko card link karo aur role upgrade
-    user.familyCardId = familyCard._id;
-    user.role = "member";
-    await user.save();
+    // ── Atomic: set familyCardId only if not already set ──────────────────────
+    // Prevents race condition where two concurrent callbacks both create a card
+    const updatedUser = await User.findOneAndUpdate(
+      { _id: userId, familyCardId: null },
+      {
+        $set: {
+          familyCardId: familyCard._id,
+          // Only upgrade user → member; preserve doctor/hospital/staff/admin roles
+          ...(user.role === "user" && { role: "member" }),
+        },
+      },
+      { new: true }
+    );
 
-    // Record platform income — ₹249 received via PhonePe
-    const paidAmount = data?.amount ? data.amount / 100 : 249;
+    if (!updatedUser) {
+      // Another callback already set familyCardId — delete the duplicate card
+      await FamilyCard.deleteOne({ _id: familyCard._id });
+      const existingCard = await FamilyCard.findById(user.familyCardId);
+      let successUrl = `${BASE}/dashboard?payment=success&cardNumber=${existingCard?.cardNumber || ""}`;
+      if (returnUrl?.startsWith("/")) {
+        successUrl = `${BASE}${returnUrl}?activated=1&cardNumber=${existingCard?.cardNumber || ""}`;
+      }
+      return NextResponse.redirect(successUrl);
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // Record platform income
     try {
       await Transaction.create({
         userId: user._id,
-        type: "credit",
+        type:   "credit",
         amount: paidAmount,
         description: `Card Activation Payment — ${user.name} (${user.mobile})`,
         referenceId: data?.transactionId || txnId,
-        category: "card_activation_payment",
-        status: "success",
+        category:    "card_activation_payment",
+        status:      "success",
       });
     } catch (txnErr) {
-      console.error("Failed to record activation payment transaction:", txnErr);
+      console.error("Activation payment transaction error:", txnErr.message);
     }
 
-    // Referral cashback — dono ko ₹50 jab pehli baar card activate ho
-    if (isFirstActivation && user.referredBy) {
+    // Referral cashback — only on first-ever activation
+    if (user.referredBy) {
       try {
         const referrer = await User.findOne({ referralCode: user.referredBy });
         if (referrer) {
-          user.walletBalance    = (user.walletBalance    || 0) + 50;
-          referrer.walletBalance = (referrer.walletBalance || 0) + 50;
-          await Promise.all([user.save(), referrer.save()]);
-          const { default: Transaction } = await import("../../../models/Transaction.js");
-          await Transaction.create([
+          await Promise.all([
+            User.findByIdAndUpdate(user._id,     { $inc: { walletBalance: 50 } }),
+            User.findByIdAndUpdate(referrer._id,  { $inc: { walletBalance: 50 } }),
+          ]);
+          await Transaction.insertMany([
             {
               userId:      user._id,
               type:        "credit",
@@ -132,13 +174,12 @@ export async function POST(request) {
           ]);
         }
       } catch (refErr) {
-        console.error("Referral cashback error:", refErr);
-        // Non-fatal — card activation should still succeed
+        console.error("Referral cashback error:", refErr.message);
       }
     }
 
-    // Coordinator activation commission — ₹100 jab registered client pehli baar card activate kare
-    if (isFirstActivation && user.registeredByCoordinator) {
+    // Coordinator activation commission — ₹100
+    if (user.registeredByCoordinator) {
       try {
         const { default: Coordinator } = await import("../../../models/Coordinator.js");
         const coord = await Coordinator.findByIdAndUpdate(
@@ -147,41 +188,40 @@ export async function POST(request) {
           { new: true }
         );
         if (coord) {
-          const { default: Transaction } = await import("../../../models/Transaction.js");
           await Transaction.create({
             userId:      coord.userId,
             type:        "credit",
             amount:      100,
-            description: `Card Activation Commission — ${user.name} (${user.mobile}) ne Family Card activate kiya`,
+            description: `Card Activation Commission — ${user.name} (${user.mobile})`,
             referenceId: user._id.toString(),
             category:    "card_activation",
             status:      "success",
           });
         }
       } catch (coordErr) {
-        console.error("Coordinator activation commission error:", coordErr);
+        console.error("Coordinator commission error:", coordErr.message);
       }
     }
 
-    const successUrl = from === "coordinator"
-      ? `${process.env.NEXTAUTH_URL}/dashboard?payment=success&cardNumber=${cardNumber}&from=coordinator`
-      : `${process.env.NEXTAUTH_URL}/dashboard?payment=success&cardNumber=${cardNumber}`;
+    let successUrl;
+    if (returnUrl?.startsWith("/")) {
+      successUrl = `${BASE}${returnUrl}?activated=1&cardNumber=${cardNumber}`;
+    } else if (from === "coordinator") {
+      successUrl = `${BASE}/dashboard?payment=success&cardNumber=${cardNumber}&from=coordinator`;
+    } else {
+      successUrl = `${BASE}/dashboard?payment=success&cardNumber=${cardNumber}`;
+    }
 
     return NextResponse.redirect(successUrl);
   } catch (error) {
     console.error("Payment Callback Error:", error);
-    return NextResponse.redirect(
-      `${process.env.NEXTAUTH_URL}/dashboard?payment=failed`
-    );
+    return NextResponse.redirect(`${BASE}/dashboard?payment=failed`);
   }
 }
 
-// GET request bhi handle karo
 export async function GET(request) {
   const url = new URL(request.url);
-  const payment = url.searchParams.get("payment");
-
   return NextResponse.redirect(
-    `${process.env.NEXTAUTH_URL}/dashboard?payment=${payment || "failed"}`
+    `${process.env.NEXTAUTH_URL}/dashboard?payment=${url.searchParams.get("payment") || "failed"}`
   );
 }

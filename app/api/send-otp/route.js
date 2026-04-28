@@ -194,6 +194,8 @@ export async function POST(request) {
       // New user detection — profile incomplete
       const isNewUser = user.age === 0 || user.name === "New User";
 
+      const displayName = (!isNewUser && user.name && user.name !== "New User") ? user.name : null;
+
       return NextResponse.json({
         success: true,
         message: via === "both"
@@ -203,6 +205,7 @@ export async function POST(request) {
         via,
         emailMasked,
         isNewUser,
+        userName: displayName,
         userId: user._id.toString(),
       });
     }

@@ -181,6 +181,11 @@ export async function PATCH(request) {
     const doc = await Doctor.findByIdAndUpdate(doctorId, { $set: update }, { new: true }).lean();
     if (!doc) return NextResponse.json({ success: false, message: "Doctor not found" }, { status: 404 });
 
+    // B3: Sync User.isActive when doctor activation status changes
+    if (fields.isActive !== undefined && doc.userId) {
+      await User.findByIdAndUpdate(doc.userId, { $set: { isActive: fields.isActive } });
+    }
+
     return NextResponse.json({ success: true, message: `${doc.name} updated`, doctor: doc });
   } catch (err) {
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });

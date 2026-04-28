@@ -497,6 +497,8 @@ function OverviewTab({ stats, onNavigate }: { stats: any; onNavigate: (tab: Tab)
   const [aLoading, setALoading]     = useState(true);
   const [trendDays, setTrendDays]   = useState(14);
   const [trendMode, setTrendMode]   = useState<"bookings"|"revenue">("bookings");
+  const [funnelData, setFunnelData] = useState<any>(null);
+  const [funnelLoading, setFunnelLoading] = useState(true);
 
   useEffect(() => {
     setALoading(true);
@@ -505,6 +507,13 @@ function OverviewTab({ stats, onNavigate }: { stats: any; onNavigate: (tab: Tab)
       .then((d) => { if (d.success) setAnalytics(d.analytics); })
       .finally(() => setALoading(false));
   }, [trendDays]);
+
+  useEffect(() => {
+    fetch("/api/admin/draft-analytics")
+      .then((r) => r.json())
+      .then((d) => { if (d.success) setFunnelData(d.data); })
+      .finally(() => setFunnelLoading(false));
+  }, []);
 
   const TYPE_COLORS: Record<string, string> = {
     OPD: "#2563eb", Lab: "#f59e0b", Surgery: "#7c3aed", Consultation: "#0d9488", IPD: "#dc2626",
@@ -818,6 +827,105 @@ function OverviewTab({ stats, onNavigate }: { stats: any; onNavigate: (tab: Tab)
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Booking Funnel Analytics ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+
+        {/* Funnel stages */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <p className="font-bold text-gray-800">🎯 Booking Funnel</p>
+              <p className="text-xs text-gray-400 mt-0.5">Kitne users kahan tak pahunche</p>
+            </div>
+            {funnelData && (
+              <div className="text-right">
+                <p className="text-xl font-bold text-teal-600">{funnelData.conversionRate}%</p>
+                <p className="text-xs text-gray-400">Conversion</p>
+              </div>
+            )}
+          </div>
+          {funnelLoading ? (
+            <div className="space-y-3">{[1,2,3,4].map(i => <div key={i} className="h-8 bg-gray-100 rounded-xl animate-pulse" />)}</div>
+          ) : !funnelData ? (
+            <p className="text-sm text-gray-400">No draft data yet</p>
+          ) : (
+            <div className="space-y-3">
+              {(funnelData.byStage || []).map((s: any) => (
+                <div key={s.stage}>
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-xs text-gray-600">Stage {s.stage}: {s.label}</span>
+                    <span className="text-xs font-semibold text-gray-700">{s.count} <span className="text-gray-400 font-normal">({s.pct}%)</span></span>
+                  </div>
+                  <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{
+                        width: `${s.pct}%`,
+                        backgroundColor: ["#0d9488","#2563eb","#7c3aed","#f59e0b"][s.stage - 1],
+                      }}
+                    />
+                  </div>
+                  {s.dropOff > 0 && (
+                    <p className="text-[10px] text-red-400 mt-0.5">↓ {s.dropOff} dropped before this stage</p>
+                  )}
+                </div>
+              ))}
+              <div className="pt-3 border-t border-gray-50 grid grid-cols-3 gap-3 text-center">
+                <div>
+                  <p className="text-sm font-bold text-teal-600">{funnelData.totalConverted}</p>
+                  <p className="text-[10px] text-gray-400">Converted</p>
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-amber-600">{funnelData.totalActive}</p>
+                  <p className="text-[10px] text-gray-400">Active Drafts</p>
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-red-500">{funnelData.abandonedToday}</p>
+                  <p className="text-[10px] text-gray-400">Abandoned Today</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* By type conversion */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+          <p className="font-bold text-gray-800 mb-4">📊 Funnel by Booking Type</p>
+          {funnelLoading ? (
+            <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-10 bg-gray-100 rounded-xl animate-pulse" />)}</div>
+          ) : !funnelData || (funnelData.byType || []).length === 0 ? (
+            <p className="text-sm text-gray-400">No draft data yet</p>
+          ) : (
+            <div className="space-y-2">
+              {(funnelData.byType || []).sort((a: any, b: any) => b.total - a.total).map((t: any) => {
+                const typeIcons: Record<string, string> = { OPD: "🩺", Lab: "🧪", Surgery: "🏥", IPD: "🛏️", Consultation: "💻" };
+                const typeColors: Record<string, string> = { OPD: "bg-blue-500", Lab: "bg-yellow-500", Surgery: "bg-purple-500", IPD: "bg-red-500", Consultation: "bg-teal-500" };
+                return (
+                  <div key={t.type} className="bg-gray-50 rounded-xl px-3 py-2.5">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-2">
+                        <span>{typeIcons[t.type] || "📋"}</span>
+                        <span className="text-sm font-semibold text-gray-800">{t.type}</span>
+                      </div>
+                      <div className="flex items-center gap-3 text-xs text-gray-500">
+                        <span>{t.total} total</span>
+                        <span className="font-bold text-teal-700">{t.conversionRate}% converted</span>
+                      </div>
+                    </div>
+                    <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full ${typeColors[t.type] || "bg-gray-400"}`} style={{ width: `${t.conversionRate}%` }} />
+                    </div>
+                    <div className="flex justify-between mt-1 text-[10px] text-gray-400">
+                      <span>✅ {t.converted} converted · ⏳ {t.active} active · ❌ {t.expired} expired</span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

@@ -26,6 +26,10 @@ export default function SurgeryPackagesPage() {
   const [hasMembership, setHasMembership] = useState(false);
   const [booking, setBooking] = useState(false);
   const [message, setMessage] = useState("");
+  const [activatingCard, setActivatingCard] = useState(false);
+  const [pendingBookings, setPendingBookings] = useState<any[]>([]);
+  const [localDraft, setLocalDraft] = useState<any>(null);
+  const [draftId, setDraftId] = useState<string | null>(null);
   const [isPartialBooking, setIsPartialBooking] = useState(false);
   const [prevReportUrl, setPrevReportUrl] = useState("");
   const [reportUploading, setReportUploading] = useState(false);
@@ -39,7 +43,74 @@ export default function SurgeryPackagesPage() {
   useEffect(() => {
     fetchPackages();
     fetchUserData();
+    fetchPendingBookings();
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("activated") === "1") {
+      setMessage("✅ Family Card activate ho gayi! Ab aap Member Price par book kar sakte hain.");
+      window.history.replaceState({}, "", "/surgery-packages");
+      const draftId = sessionStorage.getItem("surgeryDraftId");
+      if (draftId) {
+        sessionStorage.removeItem("surgeryDraftId");
+        sessionStorage.setItem("surgeryAutoOpen", draftId);
+      }
+    }
+
+    // Check localStorage draft
+    try {
+      const raw = localStorage.getItem("surgeryDraft");
+      if (raw) {
+        const d = JSON.parse(raw);
+        if (d.ts && Date.now() - d.ts < 2 * 60 * 60 * 1000) setLocalDraft(d);
+        else localStorage.removeItem("surgeryDraft");
+      }
+    } catch { localStorage.removeItem("surgeryDraft"); }
   }, []);
+
+  // ── BookingDraft auto-save ────────────────────────────────────────────────
+  async function saveDraft(stage: number, extra: Record<string, any> = {}, pkgOverride?: any) {
+    const pkg = pkgOverride || selectedPackage;
+    if (!pkg) return;
+    try {
+      const body: any = {
+        type: "Surgery", itemId: pkg._id, itemType: "SurgeryPackage",
+        itemName: pkg.name, hospitalName: pkg.hospitalName,
+        amount: pkg.offerPrice, stage, ...extra,
+      };
+      if (draftId) body.draftId = draftId;
+      const res  = await fetch("/api/booking-draft", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const data = await res.json();
+      if (data.success && data.draftId) setDraftId(data.draftId);
+    } catch {}
+  }
+
+  // Stage 1: package selected
+  useEffect(() => {
+    if (!selectedPackage) { setDraftId(null); return; }
+    saveDraft(1, {}, selectedPackage);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPackage?._id]);
+
+  // Stage 2: patient selected
+  useEffect(() => {
+    if (!selectedPackage || !selectedPatient || !draftId) return;
+    saveDraft(2, { patientInfo: { name: selectedPatient.name, mobile: selectedPatient.mobile, age: selectedPatient.age, gender: selectedPatient.gender } });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPatient?.name]);
+
+  // Stage 3: room type selected
+  useEffect(() => {
+    if (!selectedPackage || !draftId || !selectedRoom) return;
+    saveDraft(3, { slotInfo: { date: "", slot: selectedRoom } });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedRoom]);
+
+  // Stage 4: partial booking toggled
+  useEffect(() => {
+    if (!selectedPackage || !draftId) return;
+    saveDraft(4, { paymentMode: isPartialBooking ? "partial" : "counter" });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPartialBooking]);
 
   async function fetchPackages() {
     setLoading(true);
@@ -52,9 +123,51 @@ export default function SurgeryPackagesPage() {
 
       const res = await fetch(`/api/surgery-packages?${params}`);
       const data = await res.json();
-      if (data.success) setPackages(data.packages);
+      if (data.success) {
+        setPackages(data.packages);
+        const autoId = sessionStorage.getItem("surgeryAutoOpen");
+        if (autoId) {
+          sessionStorage.removeItem("surgeryAutoOpen");
+          const p = data.packages.find((p: any) => p._id === autoId);
+          if (p) setTimeout(() => { setSelectedPackage(p); setSelectedRoom(p.roomType); setMessage(""); setSelectedPatient(null); setIsPartialBooking(false); setPromoInput(""); setPromoData(null); setPromoError(""); }, 300);
+        }
+      }
     } catch (e) { console.error(e); }
     setLoading(false);
+  }
+
+  async function fetchPendingBookings() {
+    const userId = localStorage.getItem("userId");
+    if (!userId) return;
+    try {
+      const res  = await fetch(`/api/my-bookings?userId=${userId}&type=Surgery&status=pending`);
+      const data = await res.json();
+      if (data.success) setPendingBookings(data.bookings?.slice(0, 3) || []);
+    } catch {}
+  }
+
+  async function activateCard() {
+    const userId = localStorage.getItem("userId");
+    if (!userId) { setMessage("❌ Pehle login karein"); return; }
+    if (selectedPackage) sessionStorage.setItem("surgeryDraftId", selectedPackage._id);
+    setActivatingCard(true);
+    try {
+      const res = await fetch("/api/create-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, returnUrl: "/surgery-packages" }),
+      });
+      const data = await res.json();
+      if (data.success && data.redirectUrl) {
+        window.location.href = data.redirectUrl;
+      } else {
+        setMessage("❌ " + (data.message || "Payment shuru nahi ho saka"));
+        setActivatingCard(false);
+      }
+    } catch {
+      setMessage("❌ Network error");
+      setActivatingCard(false);
+    }
   }
 
   async function fetchUserData() {
@@ -151,6 +264,9 @@ export default function SurgeryPackagesPage() {
       });
       const data = await res.json();
       if (data.success) {
+        if (draftId) {
+          fetch("/api/booking-draft", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ draftId, status: "converted", convertedBookingId: data.booking?.bookingId }) }).catch(() => {});
+        }
         const savedVsMrp = (selectedPackage.mrp || 0) - finalAmount;
         const couldSave  = !hasMembership && selectedPackage.membershipPrice
           ? selectedPackage.offerPrice - selectedPackage.membershipPrice : 0;
@@ -158,6 +274,9 @@ export default function SurgeryPackagesPage() {
         if (savedVsMrp > 0) successMsg += ` MRP se ₹${savedVsMrp.toLocaleString("en-IN")} bachaye!`;
         if (couldSave  > 0) successMsg += ` 💳 Card activate karo aur ₹${couldSave.toLocaleString("en-IN")} aur bachao!`;
         setMessage(successMsg);
+        localStorage.removeItem("surgeryDraft");
+        setDraftId(null);
+        fetchPendingBookings();
         setSelectedPackage(null);
         setSelectedPatient(null);
         setPrevReportUrl("");
@@ -183,6 +302,28 @@ export default function SurgeryPackagesPage() {
             message.startsWith("✅") ? "bg-green-50 border border-green-200 text-green-700"
             : "bg-red-50 border border-red-200 text-red-700"
           }`}>{message}</div>
+        )}
+
+        {/* Draft resume banner */}
+        {localDraft && !selectedPackage && (
+          <div className="mb-4 bg-gradient-to-r from-teal-500 to-teal-600 rounded-2xl p-4 flex items-center gap-4">
+            <div className="flex-1 min-w-0">
+              <p className="text-white text-sm font-bold">↩️ Wahan se shuru karein jahan chode tha!</p>
+              <p className="text-teal-100 text-xs mt-0.5 truncate">"{localDraft.pkgName}" · {localDraft.hospitalName}</p>
+            </div>
+            <div className="flex gap-2 flex-shrink-0">
+              <button
+                onClick={() => {
+                  const p = packages.find((p: any) => p._id === localDraft.pkgId);
+                  if (p) { setSelectedPackage(p); setSelectedRoom(p.roomType); setMessage(""); setSelectedPatient(null); setIsPartialBooking(false); setPromoInput(""); setPromoData(null); setPromoError(""); }
+                }}
+                className="bg-white text-teal-700 text-xs font-bold px-3 py-2 rounded-xl hover:bg-teal-50">
+                Resume →
+              </button>
+              <button onClick={() => { setLocalDraft(null); localStorage.removeItem("surgeryDraft"); }}
+                className="text-teal-200 hover:text-white text-sm px-1">✕</button>
+            </div>
+          </div>
         )}
 
         {/* Search & Filters */}
@@ -216,6 +357,26 @@ export default function SurgeryPackagesPage() {
           </button>
         </div>
 
+        {/* In-progress bookings banner */}
+        {pendingBookings.length > 0 && (
+          <div className="bg-teal-50 border border-teal-200 rounded-2xl p-4 mb-5">
+            <p className="text-sm font-bold text-teal-700 mb-2">📋 Aapki pending Surgery bookings — hamaari team contact karegi:</p>
+            <div className="space-y-2">
+              {pendingBookings.map((b: any) => (
+                <div key={b._id} className="flex items-center justify-between bg-white rounded-xl px-3 py-2.5 border border-teal-100">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800">{b.packageName || "Surgery Package"}</p>
+                    <p className="text-xs text-gray-500">{b.patientName || ""} · {b.bookingId}</p>
+                  </div>
+                  <a href="/my-bookings" className="text-xs font-bold text-teal-600 bg-white border border-teal-300 px-3 py-1.5 rounded-lg whitespace-nowrap hover:bg-teal-50">
+                    Track →
+                  </a>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Membership Banner */}
         {!hasMembership && (
           <div className="bg-gradient-to-r from-teal-600 to-teal-700 rounded-2xl p-4 text-white mb-6">
@@ -224,9 +385,10 @@ export default function SurgeryPackagesPage() {
                 <p className="font-bold">💳 Family Card se badi bachat!</p>
                 <p className="text-sm text-teal-100">Surgery packages par Member Price milega — hazaron bacho</p>
               </div>
-              <a href="/dashboard" className="bg-white text-teal-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-teal-50 flex-shrink-0">
-                ₹249/yr →
-              </a>
+              <button onClick={activateCard} disabled={activatingCard}
+                className="bg-white text-teal-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-teal-50 flex-shrink-0 disabled:opacity-70">
+                {activatingCard ? "..." : "₹249/yr →"}
+              </button>
             </div>
             <p className="text-xs text-teal-200 mt-2">👇 Neeche diye price tags mein green 💳 Member Price dekho — kitna bachega!</p>
           </div>
@@ -322,7 +484,7 @@ export default function SurgeryPackagesPage() {
                     </div>
                   </div>
 
-                  <button onClick={() => { setSelectedPackage(pkg); setSelectedRoom(pkg.roomType); setMessage(""); setSelectedPatient(null); setIsPartialBooking(false); setPromoInput(""); setPromoData(null); setPromoError(""); }}
+                  <button onClick={() => { setSelectedPackage(pkg); setSelectedRoom(pkg.roomType); setMessage(""); setSelectedPatient(null); setIsPartialBooking(false); setPromoInput(""); setPromoData(null); setPromoError(""); localStorage.setItem("surgeryDraft", JSON.stringify({ pkgId: pkg._id, pkgName: pkg.name, hospitalName: pkg.hospitalName, amount: pkg.offerPrice, ts: Date.now() })); }}
                     className="w-full bg-teal-600 hover:bg-teal-700 text-white font-semibold py-3 rounded-lg transition text-sm">
                     Details Dekhein & Book Karein
                   </button>
@@ -517,7 +679,10 @@ export default function SurgeryPackagesPage() {
                     <div className="bg-gradient-to-r from-amber-500 to-orange-400 px-4 py-2 flex items-center gap-2">
                       <span className="text-white text-lg">💳</span>
                       <p className="text-white text-xs font-bold flex-1">Family Card activate karein — sirf ₹249/year</p>
-                      <a href="/dashboard" className="bg-white text-amber-600 text-xs font-black px-3 py-1 rounded-full whitespace-nowrap">Activate →</a>
+                      <button onClick={activateCard} disabled={activatingCard}
+                        className="bg-white text-amber-600 text-xs font-black px-3 py-1 rounded-full whitespace-nowrap disabled:opacity-70">
+                        {activatingCard ? "..." : "Abhi Activate →"}
+                      </button>
                     </div>
                     <div className="bg-amber-50 px-4 py-2 flex items-center justify-between">
                       <span className="text-xs text-amber-700">Is package par aur kitna bachega:</span>
@@ -619,7 +784,16 @@ export default function SurgeryPackagesPage() {
                   {booking ? "Booking ho rahi hai..." : isPartialBooking ? "Partial Book Karein — ₹1,000 Advance" : `Book Karein — ₹${(promoData ? promoData.finalAmount : getPrice(selectedPackage) + getRoomPrice(selectedPackage)).toLocaleString()}`}
                 </button>
 
-                <p className="text-xs text-gray-400 text-center mt-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-[11px] text-gray-400">🔒 Safe & Secure booking</p>
+                  <a href="tel:9876543210" className="text-[11px] text-teal-600 font-medium hover:underline">📞 Help: 9876543210</a>
+                </div>
+                <a href={`https://wa.me/919876543210?text=${encodeURIComponent(`Namaskar! Mujhe ${selectedPackage.name} surgery package ke baare mein jaankari chahiye.`)}`}
+                  target="_blank" rel="noreferrer"
+                  className="flex items-center justify-center gap-2 border border-green-200 text-green-700 text-xs font-semibold py-2.5 rounded-xl hover:bg-green-50 transition">
+                  💬 WhatsApp par puchein
+                </a>
+                <p className="text-xs text-gray-400 text-center">
                   Booking ke baad hamari team 24 hours mein contact karegi
                 </p>
               </div>

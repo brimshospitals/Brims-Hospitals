@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import connectDB from "../../../../lib/mongodb";
 import Booking from "../../../../models/Booking";
 import User    from "../../../../models/User";
+import Notification from "../../../../models/Notification";
 import { requireAuth, getSession } from "../../../../lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -123,6 +124,14 @@ export async function PATCH(request) {
 
     await connectDB();
 
+    // B7: Permission check — only staff with cancelBookings can cancel
+    if (session.role === "staff" && (status === "cancelled" || statusStage === "cancelled")) {
+      const staffUser = await User.findById(session.userId).select("staffPermissions").lean();
+      if (!staffUser?.staffPermissions?.cancelBookings) {
+        return NextResponse.json({ success: false, message: "Aapko booking cancel karne ki permission nahi hai" }, { status: 403 });
+      }
+    }
+
     const update = {};
     if (status)        update.status        = status;
     if (paymentStatus) update.paymentStatus = paymentStatus;
@@ -168,6 +177,22 @@ export async function PATCH(request) {
       return NextResponse.json({ success: true, booking: b2 });
     }
 
+    // B10: Notify patient on status change
+    const notifStatus = update.status || (statusStage === "confirmed" ? "confirmed" : statusStage === "completed" ? "completed" : statusStage === "cancelled" ? "cancelled" : null);
+    if (notifStatus && booking.userId) {
+      const labelMap = { confirmed: "Confirm", completed: "Complete", cancelled: "Cancel" };
+      if (labelMap[notifStatus]) {
+        try {
+          await Notification.create({
+            userId:  booking.userId,
+            type:    "booking",
+            title:   `Booking ${labelMap[notifStatus]} Ho Gayi`,
+            message: `Aapki booking #${booking.bookingId} ${notifStatus} ho gayi hai.`,
+          });
+        } catch {}
+      }
+    }
+
     return NextResponse.json({ success: true, booking });
   } catch (error) {
     return NextResponse.json({ success: false, message: "Server error: " + error.message }, { status: 500 });
@@ -196,12 +221,17 @@ export async function POST(request) {
     // Find or create guest user
     let user = await User.findOne({ mobile: patientMobile });
     if (!user) {
-      const count = await User.countDocuments();
+      const now  = new Date();
+      const YY   = String(now.getFullYear()).slice(-2);
+      const MM   = String(now.getMonth() + 1).padStart(2, "0");
+      const rand = String(Math.floor(10000 + Math.random() * 90000));
       user = await User.create({
         mobile:   patientMobile,
         name:     patientName,
+        age:      Number(patientAge) || 30,
+        gender:   patientGender    || "male",
         role:     "user",
-        memberId: `BRIMS-${String(count + 1).padStart(6, "0")}`,
+        memberId: `BRIMS${YY}${MM}${rand}0`,
       });
     }
 

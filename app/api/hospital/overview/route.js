@@ -45,10 +45,15 @@ export async function GET(request) {
       labTests,
       surgeryPackages,
       stats: {
-        doctorCount:  doctors.length,
-        labTestCount: labTests.length,
-        surgeryCount: surgeryPackages.length,
+        // active counts (for public-facing display)
+        doctorCount:  doctors.filter((d) => d.isActive !== false).length,
+        labTestCount: labTests.filter((t) => t.isActive !== false).length,
+        surgeryCount: surgeryPackages.filter((p) => p.isActive !== false).length,
         totalBookings,
+        // total counts including inactive (for management tabs)
+        totalDoctors:   doctors.length,
+        totalLabTests:  labTests.length,
+        totalSurgeries: surgeryPackages.length,
       },
     });
   } catch (error) {

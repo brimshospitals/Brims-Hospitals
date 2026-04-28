@@ -17,7 +17,8 @@ const hospitalSchema = new mongoose.Schema({
   email: { type: String },
   spocName: { type: String },
   spocContact: { type: String },
-  ownerName: { type: String },
+  ownerName:    { type: String },
+  ownerContact: { type: String },
   registrationNo: { type: String },
   rohiniNo: { type: String },
   coordinates: {

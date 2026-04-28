@@ -31,6 +31,7 @@ function LoginForm() {
   const [otpVia, setOtpVia]         = useState<"mobile" | "both">("mobile");
   const [maskedEmail, setMaskedEmail] = useState("");
   const [isNewUser, setIsNewUser]   = useState<boolean | null>(null);
+  const [existingUserName, setExistingUserName] = useState("");
   const [pendingUserId, setPendingUserId] = useState("");
 
   async function handleSendOTP() {
@@ -53,12 +54,12 @@ function LoginForm() {
         setOtpVia(data.via === "both" ? "both" : "mobile");
         setMaskedEmail(data.emailMasked || "");
         setIsNewUser(data.isNewUser ?? null);
+        setExistingUserName(data.userName || "");
         setPendingUserId(data.userId || "");
-        setSuccess(
-          data.via === "both"
-            ? `OTP +91 ${val} aur ${data.emailMasked} par bheja gaya!`
-            : `OTP +91 ${val} par bheja gaya!`
-        );
+        const otpSentMsg = data.via === "both"
+          ? `OTP +91 ${val} aur ${data.emailMasked} par bheja gaya!`
+          : `OTP +91 ${val} par bheja gaya!`;
+        setSuccess(data.userName ? `Namaskar ${data.userName}! ${otpSentMsg}` : otpSentMsg);
         setStep(2);
       } else {
         setError(data.message);
@@ -263,9 +264,11 @@ function LoginForm() {
                   )}
                   {isNewUser === false && (
                     <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center gap-3">
-                      <span className="text-2xl">✅</span>
+                      <span className="text-2xl">👋</span>
                       <div>
-                        <p className="text-sm font-semibold text-green-800">Account mil gaya!</p>
+                        <p className="text-sm font-semibold text-green-800">
+                          {existingUserName ? `Welcome back, ${existingUserName}!` : "Account mil gaya!"}
+                        </p>
                         <p className="text-xs text-green-600">OTP verify karo — dashboard pe redirect ho jaoge</p>
                       </div>
                     </div>

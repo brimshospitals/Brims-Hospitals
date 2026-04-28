@@ -77,8 +77,9 @@ export async function DELETE(request) {
     if (!labTestId) return NextResponse.json({ success: false, message: "id required" }, { status: 400 });
 
     await connectDB();
-    await LabTest.findByIdAndDelete(labTestId);
-    return NextResponse.json({ success: true, message: "Lab test deleted" });
+    // B9: Soft delete — consistent with hospital-side soft delete
+    await LabTest.findByIdAndUpdate(labTestId, { $set: { isActive: false, deactivatedAt: new Date() } });
+    return NextResponse.json({ success: true, message: "Lab test deactivated" });
   } catch (err) {
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });
   }

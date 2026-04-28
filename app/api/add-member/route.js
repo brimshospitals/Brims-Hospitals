@@ -1,16 +1,15 @@
 import { NextResponse } from "next/server";
 import connectDB from "../../../lib/mongodb";
 import User from "../../../models/User";
+import FamilyCard from "../../../models/FamilyCard";
+import { getSession } from "../../../lib/auth";
 
 export const dynamic = "force-dynamic";
 
-// Secondary member ID: same base as primary (BRIMSYYMMXXXXX), last digit = slot index 1–5
 function generateSecondaryMemberId(primaryMemberId, slotIndex) {
-  // New format: BRIMSYYMMXXXXX0 → strip last char, append slotIndex
   if (primaryMemberId && /^BRIMS\d{9}/.test(primaryMemberId)) {
     return primaryMemberId.slice(0, -1) + String(slotIndex);
   }
-  // Fallback for legacy IDs (BRIMS-XXXXXX format)
   const now  = new Date();
   const YY   = String(now.getFullYear()).slice(-2);
   const MM   = String(now.getMonth() + 1).padStart(2, "0");
@@ -20,6 +19,16 @@ function generateSecondaryMemberId(primaryMemberId, slotIndex) {
 
 export async function POST(request) {
   try {
+    // ── Auth ──────────────────────────────────────────────────────────────────
+    const session = await getSession(request);
+    if (!session) {
+      return NextResponse.json(
+        { success: false, message: "Login zaruri hai" },
+        { status: 401 }
+      );
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     const body = await request.json();
     const {
       primaryUserId, name, age, gender,
@@ -28,7 +37,18 @@ export async function POST(request) {
       height, weight, photo, alternateMobile,
     } = body;
 
-    if (!primaryUserId || !name || !age || !gender || !relationship) {
+    const resolvedPrimaryId = primaryUserId || session.userId;
+
+    // ── Ownership check ───────────────────────────────────────────────────────
+    if (session.userId.toString() !== resolvedPrimaryId.toString() && session.role !== "admin") {
+      return NextResponse.json(
+        { success: false, message: "Aap doosre user ke family members add nahi kar sakte" },
+        { status: 403 }
+      );
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
+    if (!name || !age || !gender || !relationship) {
       return NextResponse.json(
         { success: false, message: "Naam, umar, ling aur rishta zaruri hai" },
         { status: 400 }
@@ -37,7 +57,7 @@ export async function POST(request) {
 
     await connectDB();
 
-    const primaryUser = await User.findById(primaryUserId);
+    const primaryUser = await User.findById(resolvedPrimaryId);
     if (!primaryUser) {
       return NextResponse.json(
         { success: false, message: "Primary user nahi mila" },
@@ -45,7 +65,6 @@ export async function POST(request) {
       );
     }
 
-    // Card check
     if (!primaryUser.familyCardId) {
       return NextResponse.json(
         { success: false, message: "Pehle Family Card activate karein" },
@@ -53,56 +72,73 @@ export async function POST(request) {
       );
     }
 
-    // Max 5 secondary members (familyMembers[] stores secondary only)
-    if ((primaryUser.familyMembers || []).length >= 5) {
+    // ── Card validity check ───────────────────────────────────────────────────
+    const familyCard = await FamilyCard.findById(primaryUser.familyCardId).lean();
+    if (!familyCard) {
       return NextResponse.json(
-        { success: false, message: "Maximum 5 secondary members ki limit ho gayi hai" },
+        { success: false, message: "Family Card nahi mili. Support se contact karein." },
         { status: 400 }
       );
     }
+    if (familyCard.status !== "active" || new Date(familyCard.expiryDate) < new Date()) {
+      return NextResponse.json(
+        { success: false, message: "Family Card expired hai. Pehle renew karein." },
+        { status: 400 }
+      );
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
-    // Build the embedded member object
-    const ageNum = parseInt(age);
+    const ageNum   = parseInt(age);
     const isFemale = gender === "female";
     const effectiveMarital = maritalStatus || (
       ["spouse", "parent", "inlaw"].includes(relationship) ? "married" : undefined
     );
     const canBePregnant = isFemale && effectiveMarital === "married" && ageNum >= 17 && ageNum <= 50;
 
-    // Slot index = current count + 1 (1 for first secondary, up to 5)
-    const slotIndex = (primaryUser.familyMembers || []).length + 1;
+    const currentCount = (primaryUser.familyMembers || []).length;
     const newMember = {
-      memberId:             generateSecondaryMemberId(primaryUser.memberId, slotIndex),
-      name:                 name.trim(),
-      age:                  ageNum,
+      memberId:            generateSecondaryMemberId(primaryUser.memberId, currentCount + 1),
+      name:                name.trim(),
+      age:                 ageNum,
       gender,
-      maritalStatus:        isFemale && ageNum >= 18 ? effectiveMarital : undefined,
-      isPregnant:           canBePregnant ? !!isPregnant : false,
-      lmp:                  canBePregnant && isPregnant && lmp ? new Date(lmp) : undefined,
+      maritalStatus:       isFemale && ageNum >= 18 ? effectiveMarital : undefined,
+      isPregnant:          canBePregnant ? !!isPregnant : false,
+      lmp:                 canBePregnant && isPregnant && lmp ? new Date(lmp) : undefined,
       relationship,
-      preExistingDiseases:  preExistingDiseases || [],
-      height:               height ? parseInt(height) : undefined,
-      weight:               weight ? parseInt(weight) : undefined,
-      photo:                photo || "",
-      alternateMobile:      alternateMobile || null,
-      isActive:             true,
+      preExistingDiseases: preExistingDiseases || [],
+      height:              height ? parseInt(height) : undefined,
+      weight:              weight ? parseInt(weight) : undefined,
+      photo:               photo || "",
+      alternateMobile:     alternateMobile || null,
+      isActive:            true,
     };
 
-    // Push as embedded subdocument — no new User document created
-    primaryUser.familyMembers.push(newMember);
-    await primaryUser.save();
+    // ── Atomic push with size guard — race condition safe ─────────────────────
+    const updated = await User.findOneAndUpdate(
+      {
+        _id: resolvedPrimaryId,
+        $expr: { $lt: [{ $size: { $ifNull: ["$familyMembers", []] } }, 5] },
+      },
+      { $push: { familyMembers: newMember } },
+      { new: true }
+    );
 
-    // Return the memberId assigned by the schema default (may differ from generated above
-    // if schema also generates one — use the one actually saved)
-    const saved = primaryUser.familyMembers[primaryUser.familyMembers.length - 1];
+    if (!updated) {
+      return NextResponse.json(
+        { success: false, message: "Maximum 5 secondary members ki limit ho gayi hai" },
+        { status: 400 }
+      );
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
+    const saved = updated.familyMembers[updated.familyMembers.length - 1];
 
     return NextResponse.json({
-      success: true,
-      message: `${name} successfully add ho gaye!`,
-      memberId: saved.memberId || newMember.memberId,
-      totalMembers: primaryUser.familyMembers.length + 1, // +1 for primary
+      success:      true,
+      message:      `${name} successfully add ho gaye!`,
+      memberId:     saved.memberId || newMember.memberId,
+      totalMembers: updated.familyMembers.length + 1,
     });
-
   } catch (error) {
     console.error("Add Member Error:", error);
     return NextResponse.json(

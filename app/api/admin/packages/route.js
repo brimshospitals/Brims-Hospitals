@@ -78,8 +78,9 @@ export async function DELETE(request) {
     if (!packageId) return NextResponse.json({ success: false, message: "id required" }, { status: 400 });
 
     await connectDB();
-    await SurgeryPackage.findByIdAndDelete(packageId);
-    return NextResponse.json({ success: true, message: "Package deleted" });
+    // B8: Soft delete — consistent with hospital-side soft delete
+    await SurgeryPackage.findByIdAndUpdate(packageId, { $set: { isActive: false, deactivatedAt: new Date() } });
+    return NextResponse.json({ success: true, message: "Package deactivated" });
   } catch (err) {
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });
   }

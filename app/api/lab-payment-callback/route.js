@@ -32,8 +32,8 @@ export async function POST(request) {
     }
 
     if (code !== "PAYMENT_SUCCESS") {
-      booking.status = "cancelled";
-      await booking.save();
+      // Keep booking as "pending" so user can retry payment
+      // (Don't cancel — user can see it in in-progress banner and pay again)
       return NextResponse.redirect(`${base}/lab-tests?payment=failed`);
     }
 

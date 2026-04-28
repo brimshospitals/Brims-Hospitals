@@ -7,6 +7,7 @@ import Hospital from "../../../models/Hospital";
 import SurgeryPackage from "../../../models/SurgeryPackage";
 import LabTest from "../../../models/LabTest";
 import SupportTicket from "../../../models/SupportTicket";
+import Notification from "../../../models/Notification";
 import { requireAuth } from "../../../lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -43,7 +44,7 @@ export async function GET(request) {
       Hospital.countDocuments({ isVerified: true, isActive: true }),
       Hospital.countDocuments({ isVerified: false }),
       Doctor.countDocuments({ isActive: true }),
-      Doctor.countDocuments({ isActive: false }),
+      Doctor.countDocuments({ isActive: false, userId: null }), // B5: pending approval only (no linked user)
       SurgeryPackage.countDocuments({ isActive: true }),
       LabTest.countDocuments({ isActive: true }),
       SupportTicket.countDocuments({ status: { $in: ["open", "in_progress"] } }),
@@ -92,21 +93,22 @@ export async function GET(request) {
       .populate("doctorId", "name speciality")
       .lean();
 
-    // Enrich with package/lab test names
-    const enriched = await Promise.all(
-      bookings.map(async (b) => {
-        let extra = {};
-        if (b.type === "Surgery" && b.packageId) {
-          const pkg = await SurgeryPackage.findById(b.packageId).select("name hospitalName").lean();
-          if (pkg) extra = { packageName: pkg.name, hospitalName: pkg.hospitalName };
-        }
-        if (b.type === "Lab" && b.labTestId) {
-          const test = await LabTest.findById(b.labTestId).select("name hospitalName").lean();
-          if (test) extra = { testName: test.name, hospitalName: test.hospitalName };
-        }
-        return { ...b, ...extra };
-      })
-    );
+    // B5: Batch-fetch package/lab test names — eliminates N+1 queries
+    const bkPkgIds  = [...new Set(bookings.filter(b => b.type === "Surgery" && b.packageId).map(b => b.packageId.toString()))];
+    const bkLabIds  = [...new Set(bookings.filter(b => b.type === "Lab"     && b.labTestId).map(b => b.labTestId.toString()))];
+    const [bkPkgs, bkTests] = await Promise.all([
+      bkPkgIds.length ? SurgeryPackage.find({ _id: { $in: bkPkgIds } }).select("name hospitalName").lean() : [],
+      bkLabIds.length ? LabTest.find({ _id: { $in: bkLabIds } }).select("name hospitalName").lean()        : [],
+    ]);
+    const bkPkgMap  = {}; bkPkgs.forEach(p  => { bkPkgMap[p._id.toString()]  = p; });
+    const bkTestMap = {}; bkTests.forEach(t => { bkTestMap[t._id.toString()] = t; });
+
+    const enriched = bookings.map(b => {
+      let extra = {};
+      if (b.type === "Surgery" && b.packageId) { const p = bkPkgMap[b.packageId.toString()];  if (p) extra = { packageName: p.name, hospitalName: p.hospitalName }; }
+      if (b.type === "Lab"     && b.labTestId) { const t = bkTestMap[b.labTestId.toString()]; if (t) extra = { testName: t.name, hospitalName: t.hospitalName }; }
+      return { ...b, ...extra };
+    });
 
     return NextResponse.json({
       success: true,
@@ -179,6 +181,22 @@ export async function PATCH(request) {
         { success: false, message: "Booking nahi mili" },
         { status: 404 }
       );
+    }
+
+    // B10: Notify patient when booking status changes
+    const notifStatus = update.status || null;
+    if (notifStatus && booking.userId) {
+      const labelMap = { confirmed: "Confirm", completed: "Complete", cancelled: "Cancel" };
+      if (labelMap[notifStatus]) {
+        try {
+          await Notification.create({
+            userId:  booking.userId,
+            type:    "booking",
+            title:   `Booking ${labelMap[notifStatus]} Ho Gayi`,
+            message: `Aapki booking #${booking.bookingId} ${notifStatus} ho gayi hai.`,
+          });
+        } catch {}
+      }
     }
 
     return NextResponse.json({

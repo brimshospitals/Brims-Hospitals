@@ -61,6 +61,9 @@ function OPDBookingContent() {
   const [booking, setBooking]         = useState<any>(null);
   const [submitting, setSubmitting]   = useState(false);
   const [error, setError]             = useState("");
+  const [activatingCard, setActivatingCard] = useState(false);
+  const [pendingBookings, setPendingBookings] = useState<any[]>([]);
+  const [draftId, setDraftId] = useState<string | null>(null);
 
   // Load profile + doctors on mount
   useEffect(() => {
@@ -80,7 +83,48 @@ function OPDBookingContent() {
       .finally(() => setProfileLoading(false));
 
     fetchDoctors();
+    fetchPendingBookings(userId);
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("activated") === "1") {
+      window.history.replaceState({}, "", "/opd-booking");
+      const draftDoctorId = sessionStorage.getItem("opdDraftDoctorId");
+      if (draftDoctorId) sessionStorage.setItem("opdAutoOpenDoctor", draftDoctorId);
+      sessionStorage.removeItem("opdDraftDoctorId");
+    }
   }, []);
+
+  async function fetchPendingBookings(userId: string) {
+    try {
+      const res  = await fetch(`/api/my-bookings?userId=${userId}&type=OPD&status=pending`);
+      const data = await res.json();
+      if (data.success) setPendingBookings(data.bookings?.slice(0, 3) || []);
+    } catch {}
+  }
+
+  async function activateCard() {
+    const userId = localStorage.getItem("userId");
+    if (!userId) { setError("Pehle login karein"); return; }
+    if (selectedDoctor) sessionStorage.setItem("opdDraftDoctorId", selectedDoctor._id);
+    setActivatingCard(true);
+    try {
+      const res = await fetch("/api/create-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, returnUrl: "/opd-booking" }),
+      });
+      const data = await res.json();
+      if (data.success && data.redirectUrl) {
+        window.location.href = data.redirectUrl;
+      } else {
+        setError(data.message || "Payment shuru nahi ho saka");
+        setActivatingCard(false);
+      }
+    } catch {
+      setError("Network error");
+      setActivatingCard(false);
+    }
+  }
 
   async function fetchDoctors(spec?: string) {
     setDoctorsLoading(true);
@@ -91,9 +135,15 @@ function OPDBookingContent() {
       const data = await res.json();
       if (data.success) {
         setDoctors(data.doctors);
-        // Build spec list
         const allSpecs = ["All", ...new Set<string>(data.doctors.map((d: any) => d.department).filter(Boolean))];
         setSpecs(allSpecs as string[]);
+        // Auto-select doctor after card activation return
+        const autoId = sessionStorage.getItem("opdAutoOpenDoctor");
+        if (autoId) {
+          sessionStorage.removeItem("opdAutoOpenDoctor");
+          const doc = data.doctors.find((d: any) => d._id === autoId);
+          if (doc) setTimeout(() => setSelectedDoctor(doc), 200);
+        }
       }
     } catch {}
     setDoctorsLoading(false);
@@ -103,6 +153,52 @@ function OPDBookingContent() {
     setFilterSpec(s);
     fetchDoctors(s);
   }
+
+  // ── BookingDraft auto-save ────────────────────────────────────────────────
+  async function saveDraft(stage: number, extra: Record<string, any> = {}, docOverride?: any) {
+    const doc = docOverride || selectedDoctor;
+    if (!doc) return;
+    try {
+      const body: any = {
+        type: "OPD", itemId: doc._id, itemType: "Doctor",
+        itemName: `Dr. ${doc.name}`, hospitalName: doc.hospitalName || "",
+        amount: doc.offerFee || doc.opdFee || 0, stage, ...extra,
+      };
+      if (draftId) body.draftId = draftId;
+      const res  = await fetch("/api/booking-draft", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const data = await res.json();
+      if (data.success && data.draftId) setDraftId(data.draftId);
+    } catch {}
+  }
+
+  // Stage 1: doctor selected
+  useEffect(() => {
+    if (!selectedDoctor) { setDraftId(null); return; }
+    saveDraft(1, {}, selectedDoctor);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDoctor?._id]);
+
+  // Stage 2: patient selected
+  useEffect(() => {
+    if (!selectedDoctor || !selectedPatient || !draftId) return;
+    saveDraft(2, { patientInfo: { name: selectedPatient.name, mobile: selectedPatient.mobile, age: selectedPatient.age, gender: selectedPatient.gender } });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPatient?.name]);
+
+  // Stage 3: date or slot selected
+  useEffect(() => {
+    if (!selectedDoctor || !draftId || (!selectedDate && !selectedSlot)) return;
+    const t = setTimeout(() => saveDraft(3, { slotInfo: { date: selectedDate, slot: selectedSlot } }), 600);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate, selectedSlot]);
+
+  // Stage 4: payment mode selected
+  useEffect(() => {
+    if (!selectedDoctor || !draftId || !paymentMode) return;
+    saveDraft(4, { paymentMode });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paymentMode]);
 
   async function applyPromo() {
     if (!promoInput.trim() || !selectedDoctor) return;
@@ -163,7 +259,16 @@ function OPDBookingContent() {
       });
       const data = await res.json();
       if (data.success) {
+        if (data.redirectUrl) {
+          // Online payment — redirect to PhonePe (draft marked converted on callback)
+          window.location.href = data.redirectUrl;
+          return;
+        }
         setBooking(data.booking);
+        if (draftId) {
+          fetch("/api/booking-draft", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ draftId, status: "converted", convertedBookingId: data.booking?.bookingId }) }).catch(() => {});
+          setDraftId(null);
+        }
         setStep(4);
       } else {
         setError(data.message || "Booking fail ho gayi");
@@ -239,6 +344,26 @@ function OPDBookingContent() {
       )}
 
       <div className="max-w-lg mx-auto px-4 space-y-4">
+
+        {/* In-progress OPD bookings */}
+        {step === 1 && pendingBookings.length > 0 && (
+          <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4">
+            <p className="text-sm font-bold text-blue-700 mb-2">📋 Aapki pending OPD bookings:</p>
+            <div className="space-y-2">
+              {pendingBookings.map((b: any) => (
+                <div key={b._id} className="flex items-center justify-between bg-white rounded-xl px-3 py-2.5 border border-blue-100">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800">{b.doctorName || "Doctor"}</p>
+                    <p className="text-xs text-gray-500">{b.patientName || ""} · {b.bookingId} · {b.slot || ""}</p>
+                  </div>
+                  <a href="/my-bookings" className="text-xs font-bold text-blue-600 bg-white border border-blue-300 px-3 py-1.5 rounded-lg whitespace-nowrap hover:bg-blue-50">
+                    Track →
+                  </a>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* ── STEP 1: Doctor Selection ── */}
         {step === 1 && (
@@ -468,7 +593,9 @@ function OPDBookingContent() {
                   <p className="text-xs font-bold text-amber-800">Family Card activate karein!</p>
                   <p className="text-xs text-amber-700">Wallet se OPD book karein + family ko bhi add karein</p>
                 </div>
-                <a href="/dashboard" className="text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 px-3 py-1.5 rounded-lg whitespace-nowrap">₹249/yr →</a>
+                <button onClick={activateCard} disabled={activatingCard} className="text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 px-3 py-1.5 rounded-lg whitespace-nowrap disabled:opacity-70">
+                  {activatingCard ? "..." : "₹249/yr →"}
+                </button>
               </div>
             )}
 
@@ -642,7 +769,9 @@ function OPDBookingContent() {
               <div className="bg-teal-50 border border-teal-200 rounded-xl px-4 py-3 text-xs text-teal-700 mb-3 text-left flex items-center gap-2">
                 <span>💳</span>
                 <span>Family Card activate karein (₹249/yr) — Wallet se bookings karein aur puri family ko manage karein!</span>
-                <a href="/dashboard" className="ml-auto font-bold text-teal-600 whitespace-nowrap">Activate →</a>
+                <button onClick={activateCard} disabled={activatingCard} className="ml-auto font-bold text-teal-600 whitespace-nowrap disabled:opacity-60">
+                  {activatingCard ? "..." : "Activate →"}
+                </button>
               </div>
             )}
 

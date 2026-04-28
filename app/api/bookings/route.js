@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import crypto from "crypto";
+import axios from "axios";
 import connectDB from "../../../lib/mongodb";
 import Booking from "../../../models/Booking";
 import User from "../../../models/User";
@@ -11,6 +13,7 @@ import Coordinator from "../../../models/Coordinator";
 import Transaction from "../../../models/Transaction";
 import { requireAuth } from "../../../lib/auth";
 import { sendPushMulticast } from "../../../lib/fcm-admin";
+import BookingDraft from "../../../models/BookingDraft";
 
 const DEFAULT_COMMISSION = { OPD: 10, Lab: 12, Surgery: 8, Consultation: 15, IPD: 8 };
 
@@ -60,11 +63,23 @@ export async function POST(request) {
       // Partial booking (Surgery)
       isPartialBooking,
       depositAmount,
+      // Draft tracking
+      draftId,
     } = body;
 
     if (!type || !appointmentDate || !patientName || !patientMobile) {
       return NextResponse.json(
         { success: false, message: "type, appointmentDate, patientName aur mobile zaruri hai" },
+        { status: 400 }
+      );
+    }
+
+    // appointmentDate past mein nahi hona chahiye
+    const apptDate = new Date(appointmentDate);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    if (apptDate < today) {
+      return NextResponse.json(
+        { success: false, message: "Appointment date aaj ya future mein honi chahiye" },
         { status: 400 }
       );
     }
@@ -96,14 +111,6 @@ export async function POST(request) {
       ...(tpaName            && { tpaName }),
     });
 
-    // Increment promo usage count
-    if (promoCode) {
-      await PromoCode.findOneAndUpdate(
-        { code: promoCode.toUpperCase(), isActive: true },
-        { $inc: { usedCount: 1 } }
-      );
-    }
-
     // ── Commission calculation ──────────────────────────────────
     let commissionPct = DEFAULT_COMMISSION[type] ?? 10;
     if (hospitalId) {
@@ -114,14 +121,13 @@ export async function POST(request) {
     const platformCommission = Math.round(bookingAmount * commissionPct / 100);
     const hospitalPayable    = bookingAmount - platformCommission;
 
-    // ── Coordinator lookup ──────────────────────────────────────
+    // ── Coordinator lookup (only lookup, DO NOT update yet) ──────
     let coordId = undefined, coordName = "", coordCommissionAmt = 0, coordCommissionPct = 0;
     const resolvedCoordUserId = coordinatorUserId || (session.role === "coordinator" ? session.userId : null);
     let coord = null;
     if (resolvedCoordUserId) {
       coord = await Coordinator.findOne({ userId: resolvedCoordUserId, isActive: true }).lean();
     } else {
-      // Auto-detect: if this user was registered by a coordinator, credit that coordinator
       const bookingUser = await User.findById(session.userId, "registeredByCoordinator").lean();
       if (bookingUser?.registeredByCoordinator) {
         coord = await Coordinator.findById(bookingUser.registeredByCoordinator).lean();
@@ -132,14 +138,23 @@ export async function POST(request) {
       coordName = coord.name;
       coordCommissionPct = coord.commissionRates?.[type] ?? 0;
       coordCommissionAmt = Math.round(bookingAmount * coordCommissionPct / 100);
-      await Coordinator.findByIdAndUpdate(coord._id, {
-        $inc: { totalBookings: 1, totalEarned: coordCommissionAmt, pendingEarned: coordCommissionAmt },
-      });
     }
 
     // ── Partial booking for Surgery ─────────────────────────────
     const actualDepositAmount = isPartialBooking && type === "Surgery" ? (depositAmount || 1000) : 0;
     const balanceAmt = isPartialBooking ? bookingAmount - actualDepositAmount : 0;
+
+    // ── Wallet balance check BEFORE booking creation ────────────
+    if (paymentMode === "wallet" && bookingAmount > 0) {
+      const deductAmt = isPartialBooking ? actualDepositAmount : bookingAmount;
+      const walletUser = await User.findById(session.userId, "walletBalance").lean();
+      if (!walletUser || (walletUser.walletBalance || 0) < deductAmt) {
+        return NextResponse.json(
+          { success: false, message: `Wallet mein balance nahi hai. Available: ₹${walletUser?.walletBalance || 0}` },
+          { status: 400 }
+        );
+      }
+    }
 
     const booking = await Booking.create({
       bookingId,
@@ -175,9 +190,18 @@ export async function POST(request) {
     try {
       const txnsToCreate = [];
 
-      // Wallet payment deduction
+      // Wallet payment deduction — atomic to prevent overdraft
       if (paymentMode === "wallet" && bookingAmount > 0) {
         const deductAmt = isPartialBooking ? actualDepositAmount : bookingAmount;
+        const updatedWalletUser = await User.findOneAndUpdate(
+          { _id: session.userId, walletBalance: { $gte: deductAmt } },
+          { $inc: { walletBalance: -deductAmt } }
+        );
+        if (!updatedWalletUser) {
+          // Race condition caught — another request spent the balance
+          await Booking.findByIdAndUpdate(booking._id, { status: "cancelled" });
+          return NextResponse.json({ success: false, message: "Wallet mein sufficient balance nahi hai" }, { status: 400 });
+        }
         txnsToCreate.push({
           userId:      session.userId,
           type:        "debit",
@@ -188,9 +212,6 @@ export async function POST(request) {
           category:    "booking_payment",
           status:      "success",
         });
-
-        // Deduct from wallet
-        await User.findByIdAndUpdate(session.userId, { $inc: { walletBalance: -deductAmt } });
         await Booking.findByIdAndUpdate(booking._id, { paymentStatus: "paid" });
       }
 
@@ -227,6 +248,26 @@ export async function POST(request) {
       }
     } catch (txnErr) {
       console.error("Transaction record error:", txnErr.message);
+    }
+
+    // ── Post-booking side effects (run AFTER booking confirmed created) ────
+    // Promo code usage increment — only after booking is successfully created
+    if (promoCode) {
+      try {
+        await PromoCode.findOneAndUpdate(
+          { code: promoCode.toUpperCase(), isActive: true },
+          { $inc: { usedCount: 1 } }
+        );
+      } catch {}
+    }
+
+    // Coordinator earnings — increment only after booking is created
+    if (coord && coordCommissionAmt >= 0) {
+      try {
+        await Coordinator.findByIdAndUpdate(coord._id, {
+          $inc: { totalBookings: 1, totalEarned: coordCommissionAmt, pendingEarned: coordCommissionAmt },
+        });
+      } catch {}
     }
 
     // ── Notifications ──────────────────────────────────────────
@@ -304,7 +345,75 @@ export async function POST(request) {
     } catch (fcmErr) {
       console.error("FCM push error:", fcmErr.message);
     }
-    // ────────────────────────────────────────────────────────────
+    // ── Mark BookingDraft as converted ────────────────────────────────────────
+    if (draftId) {
+      try {
+        await BookingDraft.findOneAndUpdate(
+          { _id: draftId, userId: session.userId },
+          { $set: { status: "converted", convertedBookingId: bookingId } }
+        );
+      } catch {}
+    } else {
+      // Auto-match: convert any active draft for this type+item by this user
+      const itemRef = doctorId || labTestId || packageId;
+      if (itemRef) {
+        try {
+          await BookingDraft.findOneAndUpdate(
+            { userId: session.userId, type, itemId: itemRef, status: "active" },
+            { $set: { status: "converted", convertedBookingId: bookingId } }
+          );
+        } catch {}
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // ── PhonePe redirect for online payment ───────────────────────────────────
+    if (paymentMode === "online" && bookingAmount > 0) {
+      try {
+        const MERCHANT_ID = process.env.PHONEPE_MERCHANT_ID;
+        const SALT_KEY    = process.env.PHONEPE_SALT_KEY;
+        const SALT_INDEX  = process.env.PHONEPE_SALT_INDEX || "1";
+        const transactionId = "BRIMSBKG" + Date.now();
+        const amountInPaise = Math.round(bookingAmount * 100);
+
+        const payload = {
+          merchantId:            MERCHANT_ID,
+          merchantTransactionId: transactionId,
+          merchantUserId:        session.userId,
+          amount:                amountInPaise,
+          redirectUrl: `${process.env.NEXTAUTH_URL}/api/booking-payment-callback?bookingId=${booking._id}&txnId=${transactionId}`,
+          redirectMode: "POST",
+          callbackUrl:  `${process.env.NEXTAUTH_URL}/api/booking-payment-callback?bookingId=${booking._id}&txnId=${transactionId}`,
+          paymentInstrument: { type: "PAY_PAGE" },
+        };
+
+        const payloadBase64 = Buffer.from(JSON.stringify(payload)).toString("base64");
+        const checksum =
+          crypto.createHash("sha256")
+            .update(payloadBase64 + "/pg/v1/pay" + SALT_KEY)
+            .digest("hex") +
+          "###" + SALT_INDEX;
+
+        const phonepeRes = await axios.post(
+          "https://api.phonepe.com/apis/hermes/pg/v1/pay",
+          { request: payloadBase64 },
+          { headers: { "Content-Type": "application/json", "X-VERIFY": checksum } }
+        );
+
+        const redirectUrl = phonepeRes.data?.data?.instrumentResponse?.redirectInfo?.url;
+        if (redirectUrl) {
+          return NextResponse.json({
+            success: true,
+            redirectUrl,
+            booking: { _id: booking._id, bookingId: booking.bookingId, type: booking.type, amount: booking.amount },
+          });
+        }
+      } catch (phonepeErr) {
+        console.error("PhonePe init error:", phonepeErr?.response?.data || phonepeErr.message);
+        // Fall through — booking is created with pending status; user can see it in My Bookings
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     return NextResponse.json({
       success: true,

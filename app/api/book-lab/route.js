@@ -3,13 +3,13 @@ import connectDB from "../../../lib/mongodb";
 import User from "../../../models/User";
 import LabTest from "../../../models/LabTest";
 import Booking from "../../../models/Booking";
-import FamilyCard from "../../../models/FamilyCard";
 import Transaction from "../../../models/Transaction";
 
 export const dynamic = "force-dynamic";
 
-function generateBookingId() {
-  return "BRIMS-LAB-" + Date.now().toString(36).toUpperCase();
+async function generateBookingId() {
+  const count = await Booking.countDocuments();
+  return `BH-LAB-${String(count + 1).padStart(5, "0")}`;
 }
 
 export async function POST(request) {
@@ -46,39 +46,29 @@ export async function POST(request) {
 
     // Wallet se payment
     if (paymentType === "wallet") {
-      if (!user.familyCardId) {
+      // Atomic deduction — race condition safe
+      const walletUser = await User.findOneAndUpdate(
+        { _id: userId, walletBalance: { $gte: amount } },
+        { $inc: { walletBalance: -amount } }
+      );
+      if (!walletUser) {
         return NextResponse.json(
-          { success: false, message: "Wallet use karne ke liye Family Card activate karein" },
+          { success: false, message: `Wallet mein balance nahi hai. Required: ₹${amount}` },
           { status: 400 }
         );
       }
-
-      const familyCard = await FamilyCard.findById(user.familyCardId);
-      if (!familyCard || familyCard.walletBalance < amount) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: `Wallet mein insufficient balance. Required: ₹${amount}`,
-          },
-          { status: 400 }
-        );
-      }
-
-      familyCard.walletBalance -= amount;
-      await familyCard.save();
-
       await Transaction.create({
         userId,
-        familyCardId: user.familyCardId,
-        type: "debit",
+        type:        "debit",
         amount,
         description: `Lab Test Booking - ${test.name}`,
-        status: "success",
+        category:    "booking_payment",
+        status:      "success",
       });
     }
 
     const booking = await Booking.create({
-      bookingId: generateBookingId(),
+      bookingId: await generateBookingId(),
       type: "Lab",
       userId,
       memberId: memberId || userId,

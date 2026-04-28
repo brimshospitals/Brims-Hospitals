@@ -34,13 +34,8 @@ export async function POST(request) {
       );
     }
 
-    // Promote to admin if not already
-    if (user.role !== "admin") {
-      user.role = "admin";
-      await user.save();
-    }
-
-    // Create session cookie so admin API routes (requireAuth) work
+    // Create session cookie with admin role — do NOT permanently write to DB
+    // Admin key is the authorization; JWT session grants temporary admin access
     await createSession({
       userId: user._id.toString(),
       role:   "admin",

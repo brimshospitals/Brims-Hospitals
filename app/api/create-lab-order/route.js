@@ -5,6 +5,7 @@ import connectDB from "../../../lib/mongodb";
 import User from "../../../models/User";
 import LabTest from "../../../models/LabTest";
 import Booking from "../../../models/Booking";
+import BookingDraft from "../../../models/BookingDraft";
 
 export const dynamic = "force-dynamic";
 
@@ -12,13 +13,15 @@ const MERCHANT_ID = process.env.PHONEPE_MERCHANT_ID;
 const SALT_KEY    = process.env.PHONEPE_SALT_KEY;
 const SALT_INDEX  = process.env.PHONEPE_SALT_INDEX || "1";
 
-function generateBookingId() {
-  return "BRIMS-LAB-" + Date.now().toString(36).toUpperCase();
+async function generateBookingId() {
+  const count = await Booking.countDocuments();
+  return `BH-LAB-${String(count + 1).padStart(5, "0")}`;
 }
 
 export async function POST(request) {
   try {
-    const { userId, memberId, labTestId, appointmentDate, slot, homeCollection, amount } =
+    const { userId, memberId, labTestId, appointmentDate, slot, homeCollection, homeAddress, amount,
+            patientName, patientMobile, patientAge, patientGender, promoCode, promoDiscount, draftId } =
       await request.json();
 
     if (!userId || !labTestId || !amount) {
@@ -41,7 +44,18 @@ export async function POST(request) {
     }
 
     // Pehle pending booking banao
-    const bookingId = generateBookingId();
+    const bookingId = await generateBookingId();
+    const notes = JSON.stringify({
+      patientName:    patientName  || user.name,
+      patientMobile:  patientMobile || user.mobile,
+      patientAge:     patientAge   || "",
+      patientGender:  patientGender || "",
+      paymentMode:    "online",
+      homeAddress:    homeAddress  || null,
+      promoCode:      promoCode    || null,
+      promoDiscount:  promoDiscount || 0,
+    });
+
     const booking = await Booking.create({
       bookingId,
       type: "Lab",
@@ -53,12 +67,14 @@ export async function POST(request) {
       slot: slot || (homeCollection ? "Home Collection" : null),
       status: "pending",
       paymentStatus: "pending",
+      paymentMode: "online",
       amount,
       familyCardId: user.familyCardId || null,
-      notes: `Lab Test: ${test.name}${homeCollection ? " (Home Collection)" : ""} | Payment: Online`,
+      notes,
     });
 
     // PhonePe order banao
+    // NOTE: Draft is marked converted only AFTER PhonePe URL is successfully obtained (below)
     const transactionId = "BRIMSLAB" + Date.now();
     const amountInPaise = Math.round(amount * 100);
 
@@ -98,13 +114,28 @@ export async function POST(request) {
     const redirectUrl = response.data?.data?.instrumentResponse?.redirectInfo?.url;
 
     if (!redirectUrl) {
-      // PhonePe URL nahi mili — booking delete karo
+      // PhonePe URL nahi mili — booking delete karo (draft stays active for retry)
       await Booking.deleteOne({ _id: booking._id });
       return NextResponse.json(
         { success: false, message: "Payment URL nahi mili. Dobara try karein." },
         { status: 500 }
       );
     }
+
+    // PhonePe URL mili — ab draft ko converted mark karo
+    try {
+      if (draftId) {
+        await BookingDraft.findOneAndUpdate(
+          { _id: draftId, userId },
+          { $set: { status: "converted", convertedBookingId: bookingId } }
+        );
+      } else {
+        await BookingDraft.findOneAndUpdate(
+          { userId, type: "Lab", itemId: labTestId, status: "active" },
+          { $set: { status: "converted", convertedBookingId: bookingId } }
+        );
+      }
+    } catch {}
 
     return NextResponse.json({ success: true, redirectUrl, bookingId });
   } catch (error) {

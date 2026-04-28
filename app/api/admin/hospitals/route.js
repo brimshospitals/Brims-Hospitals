@@ -6,6 +6,7 @@ import SurgeryPackage from "../../../../models/SurgeryPackage";
 import LabTest from "../../../../models/LabTest";
 import User from "../../../../models/User";
 import { requireAuth, hashPassword } from "../../../../lib/auth";
+import Notification from "../../../../models/Notification";
 
 export const dynamic = "force-dynamic";
 
@@ -106,10 +107,10 @@ export async function POST(request) {
       isActive:       verified,
     });
 
-    // Create or update User account so hospital can login with mobile + password
-    const defaultPw   = mobile.trim(); // default password = mobile number
-    const hashedPw    = await hashPassword(defaultPw);
-    const profId      = email?.trim() || mobile.trim();
+    // Create or update User account — use hospitalId as professionalId (same as onboarding flow)
+    const defaultPw = mobile.trim();
+    const hashedPw  = await hashPassword(defaultPw);
+    const profId    = hospital.hospitalId; // BRIMS-HOSP-xxx (consistent with onboarding)
 
     let user = await User.findOne({ mobile: mobile.trim() });
     if (user) {
@@ -142,7 +143,7 @@ export async function POST(request) {
 
     return NextResponse.json({
       success: true,
-      message: `${hospital.name} add ho gaya. Login: ${profId} | Default password: ${defaultPw}`,
+      message: `${hospital.name} add ho gaya. Login ID: ${profId} | Default password: ${defaultPw}`,
       hospital,
     });
   } catch (err) {
@@ -164,8 +165,22 @@ export async function PATCH(request) {
     if (isActive   !== undefined) update.isActive   = isActive;
 
     const hosp = await Hospital.findByIdAndUpdate(hospitalId, { $set: update }, { new: true })
-      .select("name isVerified isActive").lean();
+      .select("name isVerified isActive userId").lean();
     if (!hosp) return NextResponse.json({ success: false, message: "Hospital not found" }, { status: 404 });
+
+    // B3: sync linked User.isActive so hospital login is also blocked/unblocked
+    if (isActive !== undefined && hosp.userId) {
+      await User.findByIdAndUpdate(hosp.userId, { $set: { isActive } });
+    }
+
+    // I1: notify hospital user on verification status change
+    if (isVerified !== undefined && hosp.userId) {
+      const notifTitle = isVerified ? "Hospital Verified! 🎉" : "Application Status Update";
+      const notifMsg = isVerified
+        ? `Badhaai ho! ${hosp.name} Brims Health Network mein verify ho gaya. Ab aap hospital dashboard access kar sakte hain.`
+        : `${hosp.name} ki application is samay approved nahi hui. Zyada jankari ke liye helpline se contact karein.`;
+      try { await Notification.create({ userId: hosp.userId, type: "system", title: notifTitle, message: notifMsg }); } catch {}
+    }
 
     const msg = isVerified === true
       ? `✅ ${hosp.name} verified!`

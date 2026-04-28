@@ -7,20 +7,28 @@ import LabTest from "../../../models/LabTest";
 import FamilyCard from "../../../models/FamilyCard";
 import User from "../../../models/User";
 import Review from "../../../models/Review";
+import { getSession } from "../../../lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
-    const userId = searchParams.get("userId");
-    const type = searchParams.get("type") || "";
+    const type   = searchParams.get("type")   || "";
     const status = searchParams.get("status") || "";
+
+    // Auth: prefer session (secure), fallback to userId param (backward compat for staff/admin)
+    const session = await getSession(request);
+    let userId = session?.userId?.toString();
+    if (!userId) {
+      // Allow param fallback for staff/admin dashboard queries
+      userId = searchParams.get("userId");
+    }
 
     if (!userId) {
       return NextResponse.json(
-        { success: false, message: "userId zaruri hai" },
-        { status: 400 }
+        { success: false, message: "Login zaruri hai" },
+        { status: 401 }
       );
     }
 
@@ -105,16 +113,28 @@ export async function GET(request) {
 // PATCH — Cancel a booking (patient side)
 export async function PATCH(request) {
   try {
-    const { bookingId, userId } = await request.json();
-    if (!bookingId || !userId) {
-      return NextResponse.json({ success: false, message: "bookingId aur userId zaruri hai" }, { status: 400 });
+    const session = await getSession(request);
+    const { bookingId, userId: bodyUserId } = await request.json();
+    if (!bookingId) {
+      return NextResponse.json({ success: false, message: "bookingId zaruri hai" }, { status: 400 });
+    }
+
+    // Use session userId if present; fallback to body param for backward compat
+    const userId = session?.userId?.toString() || bodyUserId;
+    if (!userId) {
+      return NextResponse.json({ success: false, message: "Login zaruri hai" }, { status: 401 });
     }
 
     await connectDB();
 
-    const booking = await Booking.findOne({ bookingId, userId });
+    const booking = await Booking.findOne({ bookingId });
     if (!booking) {
       return NextResponse.json({ success: false, message: "Booking nahi mili" }, { status: 404 });
+    }
+
+    // Security: ensure the booking belongs to the requesting user
+    if (booking.userId.toString() !== userId) {
+      return NextResponse.json({ success: false, message: "Aap is booking ko cancel nahi kar sakte" }, { status: 403 });
     }
     if (["completed", "cancelled"].includes(booking.status)) {
       return NextResponse.json({ success: false, message: "Yeh booking already " + booking.status + " hai" }, { status: 400 });

@@ -40,40 +40,39 @@ export async function GET(request) {
       .select("-otp -otpExpiry -__v")
       .lean();
 
-    // Attach family card wallet balance and expand embedded secondary members
+    // B11: Batch-fetch all family cards in one query — eliminates N+1 pattern
+    const cardIds = [...new Set(users.filter(u => u.familyCardId).map(u => u.familyCardId.toString()))];
+    const cards   = cardIds.length
+      ? await FamilyCard.find({ _id: { $in: cardIds } }).select("walletBalance status cardNumber").lean()
+      : [];
+    const cardMap = {};
+    cards.forEach(c => { cardMap[c._id.toString()] = c; });
+
     const enriched = [];
-    await Promise.all(
-      users.map(async (u) => {
-        let walletBalance = 0;
-        let cardStatus    = null;
-        let cardNumber    = null;
-        if (u.familyCardId) {
-          const card = await FamilyCard.findById(u.familyCardId).select("walletBalance status cardNumber").lean();
-          if (card) {
-            walletBalance = card.walletBalance || 0;
-            cardStatus    = card.status;
-            cardNumber    = card.cardNumber;
-          }
-        }
-        // Primary user row
-        enriched.push({ ...u, walletBalance, cardStatus, cardNumber, isPrimary: true });
-        // Secondary members as separate rows
-        (u.familyMembers || []).forEach((fm) => {
-          enriched.push({
-            ...fm,
-            isPrimary:     false,
-            primaryUserId: u._id,
-            primaryName:   u.name,
-            mobile:        u.mobile,
-            walletBalance,
-            cardStatus,
-            cardNumber,
-            familyCardId:  u.familyCardId,
-            role:          u.role,
-          });
+    users.forEach(u => {
+      let walletBalance = 0, cardStatus = null, cardNumber = null;
+      if (u.familyCardId) {
+        const card = cardMap[u.familyCardId.toString()];
+        if (card) { walletBalance = card.walletBalance || 0; cardStatus = card.status; cardNumber = card.cardNumber; }
+      }
+      // Primary user row
+      enriched.push({ ...u, walletBalance, cardStatus, cardNumber, isPrimary: true });
+      // Secondary members as separate rows
+      (u.familyMembers || []).forEach(fm => {
+        enriched.push({
+          ...fm,
+          isPrimary:     false,
+          primaryUserId: u._id,
+          primaryName:   u.name,
+          mobile:        u.mobile,
+          walletBalance,
+          cardStatus,
+          cardNumber,
+          familyCardId:  u.familyCardId,
+          role:          u.role,
         });
-      })
-    );
+      });
+    });
 
     return NextResponse.json({ success: true, members: enriched, total, page, pages: Math.ceil(total / limit) });
   } catch (err) {

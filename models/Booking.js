@@ -72,8 +72,9 @@ const bookingSchema = new mongoose.Schema(
     payoutProcessedAt:  { type: Date },
 
     // Reminder tracking (avoid duplicate SMS)
-    reminderToday:     { type: Boolean, default: false },
-    reminderTomorrow:  { type: Boolean, default: false },
+    reminderToday:      { type: Boolean, default: false },
+    reminderTomorrow:   { type: Boolean, default: false },
+    reminderAbandoned:  { type: Boolean, default: false }, // 30-min abandonment reminder sent
   },
   { timestamps: true }
 );

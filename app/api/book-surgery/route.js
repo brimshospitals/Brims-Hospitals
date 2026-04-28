@@ -8,8 +8,9 @@ import Transaction from "../../../models/Transaction";
 
 export const dynamic = "force-dynamic";
 
-function generateBookingId() {
-  return "BRIMS-SURG-" + Date.now().toString(36).toUpperCase();
+async function generateBookingId() {
+  const count = await Booking.countDocuments();
+  return `BH-SRG-${String(count + 1).padStart(5, "0")}`;
 }
 
 export async function POST(request) {
@@ -37,7 +38,7 @@ export async function POST(request) {
 
     // Booking create karo
     const booking = await Booking.create({
-      bookingId: generateBookingId(),
+      bookingId: await generateBookingId(),
       type: "Surgery",
       userId,
       memberId: memberId || userId,

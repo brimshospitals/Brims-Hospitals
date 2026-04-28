@@ -35,6 +35,10 @@ export default function LabTestsPage() {
   const [walletBalance, setWalletBalance]   = useState(0);
   const [booking, setBooking]           = useState(false);
   const [message, setMessage]           = useState("");
+  const [activatingCard, setActivatingCard] = useState(false);
+  const [pendingBookings, setPendingBookings] = useState<any[]>([]);
+  const [localDraft, setLocalDraft] = useState<any>(null);
+  const [draftId, setDraftId] = useState<string | null>(null);
 
   // Booking form state
   const [homeCollection, setHomeCollection] = useState(false);
@@ -56,18 +60,87 @@ export default function LabTestsPage() {
   useEffect(() => {
     fetchTests();
     fetchUserData();
-    // Payment callback se aayi success/fail message
+    fetchPendingBookings();
+
     const params = new URLSearchParams(window.location.search);
-    const payment = params.get("payment");
-    const bId     = params.get("bookingId");
+    const payment   = params.get("payment");
+    const activated = params.get("activated");
+    const bId       = params.get("bookingId");
+
     if (payment === "success") {
       setMessage(`✅ Payment successful! Booking confirm ho gayi.${bId ? " Booking ID: " + bId : ""}`);
       window.history.replaceState({}, "", "/lab-tests");
     } else if (payment === "failed") {
       setMessage("❌ Payment fail ho gayi. Dobara try karein.");
       window.history.replaceState({}, "", "/lab-tests");
+    // Check localStorage draft (user had selected a test but never booked)
+    try {
+      const raw = localStorage.getItem("labDraft");
+      if (raw) {
+        const d = JSON.parse(raw);
+        if (d.ts && Date.now() - d.ts < 2 * 60 * 60 * 1000) setLocalDraft(d); // <2hr old
+        else localStorage.removeItem("labDraft");
+      }
+    } catch { localStorage.removeItem("labDraft"); }
+
+    } else if (activated === "1") {
+      // Card activate ho gayi — restore draft test if any
+      setMessage("✅ Family Card activate ho gayi! Ab aap Member Price par book kar sakte hain.");
+      window.history.replaceState({}, "", "/lab-tests");
+      const draftId = sessionStorage.getItem("labTestDraftId");
+      if (draftId) {
+        sessionStorage.removeItem("labTestDraftId");
+        // Tests load hone ke baad auto-open karega (handled below in fetchTests)
+        sessionStorage.setItem("labTestAutoOpen", draftId);
+      }
     }
   }, []);
+
+  // ── BookingDraft auto-save (silent, cross-device funnel tracking) ──────────
+  async function saveDraft(stage: number, extra: Record<string, any> = {}, testOverride?: any) {
+    const test = testOverride || selectedTest;
+    if (!test) return;
+    try {
+      const body: any = {
+        type: "Lab", itemId: test._id, itemType: "LabTest",
+        itemName: test.name, hospitalName: test.hospitalName,
+        amount: test.offerPrice, stage, ...extra,
+      };
+      if (draftId) body.draftId = draftId;
+      const res  = await fetch("/api/booking-draft", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const data = await res.json();
+      if (data.success && data.draftId) setDraftId(data.draftId);
+    } catch {}
+  }
+
+  // Stage 1: when modal opens for a new test
+  useEffect(() => {
+    if (!selectedTest) { setDraftId(null); return; }
+    saveDraft(1, {}, selectedTest);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTest?._id]);
+
+  // Stage 2: patient selected
+  useEffect(() => {
+    if (!selectedTest || !selectedPatient || !draftId) return;
+    saveDraft(2, { patientInfo: { name: selectedPatient.name, mobile: selectedPatient.mobile, age: selectedPatient.age, gender: selectedPatient.gender } });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPatient?.name]);
+
+  // Stage 3: date/slot selected
+  useEffect(() => {
+    if (!selectedTest || !draftId || (!appointmentDate && !selectedSlot)) return;
+    const t = setTimeout(() => saveDraft(3, { slotInfo: { date: appointmentDate, slot: selectedSlot } }), 600);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appointmentDate, selectedSlot]);
+
+  // Stage 4: payment mode changed
+  useEffect(() => {
+    if (!selectedTest || !draftId) return;
+    saveDraft(4, { paymentMode: paymentType });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paymentType]);
 
   async function fetchTests() {
     setLoading(true);
@@ -80,9 +153,52 @@ export default function LabTestsPage() {
       if (homeOnly) params.append("homeCollection", "true");
       const res  = await fetch(`/api/lab-tests?${params}`);
       const data = await res.json();
-      if (data.success) setTests(data.tests);
+      if (data.success) {
+        setTests(data.tests);
+        // Auto-open draft test after card activation
+        const autoId = sessionStorage.getItem("labTestAutoOpen");
+        if (autoId) {
+          sessionStorage.removeItem("labTestAutoOpen");
+          const t = data.tests.find((t: any) => t._id === autoId);
+          if (t) setTimeout(() => openBooking(t), 300);
+        }
+      }
     } catch (e) { console.error(e); }
     setLoading(false);
+  }
+
+  async function fetchPendingBookings() {
+    const userId = localStorage.getItem("userId");
+    if (!userId) return;
+    try {
+      const res  = await fetch(`/api/my-bookings?userId=${userId}&type=Lab&status=pending`);
+      const data = await res.json();
+      if (data.success) setPendingBookings(data.bookings?.slice(0, 3) || []);
+    } catch {}
+  }
+
+  async function activateCard() {
+    const userId = localStorage.getItem("userId");
+    if (!userId) { setMessage("❌ Pehle login karein"); return; }
+    if (selectedTest) sessionStorage.setItem("labTestDraftId", selectedTest._id);
+    setActivatingCard(true);
+    try {
+      const res = await fetch("/api/create-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, returnUrl: "/lab-tests" }),
+      });
+      const data = await res.json();
+      if (data.success && data.redirectUrl) {
+        window.location.href = data.redirectUrl;
+      } else {
+        setMessage("❌ " + (data.message || "Payment shuru nahi ho saka"));
+        setActivatingCard(false);
+      }
+    } catch {
+      setMessage("❌ Network error");
+      setActivatingCard(false);
+    }
   }
 
   async function fetchUserData() {
@@ -137,6 +253,8 @@ export default function LabTestsPage() {
     setHcAddress({ flat: "", street: "", landmark: "", district: "Patna", pincode: "" });
     setPromoInput(""); setPromoData(null); setPromoError("");
     setMessage("");
+    // Save draft for abandonment tracking
+    localStorage.setItem("labDraft", JSON.stringify({ testId: test._id, testName: test.name, hospitalName: test.hospitalName, amount: test.offerPrice, ts: Date.now() }));
   }
 
   async function handleBooking() {
@@ -182,6 +300,7 @@ export default function LabTestsPage() {
             patientName: selectedPatient.name,
             patientMobile: selectedPatient.mobile,
             ...(promoData && { promoCode: promoData.code, promoDiscount: promoData.discount }),
+            ...(draftId && { draftId }),
           }),
         });
         const data = await res.json();
@@ -221,6 +340,10 @@ export default function LabTestsPage() {
       });
       const data = await res.json();
       if (data.success) {
+        // Mark draft converted
+        if (draftId) {
+          fetch("/api/booking-draft", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ draftId, status: "converted", convertedBookingId: data.booking?.bookingId }) }).catch(() => {});
+        }
         const savedVsMrp = (selectedTest.mrp || 0) - finalAmount;
         const couldSave  = !hasMembership && selectedTest.membershipPrice
           ? selectedTest.offerPrice - selectedTest.membershipPrice : 0;
@@ -228,6 +351,9 @@ export default function LabTestsPage() {
         if (savedVsMrp > 0) successMsg += ` · MRP se ₹${savedVsMrp.toLocaleString("en-IN")} bachaye!`;
         if (couldSave  > 0) successMsg += ` · 💳 Card activate karo aur ₹${couldSave.toLocaleString("en-IN")} aur bachao!`;
         setMessage(successMsg);
+        localStorage.removeItem("labDraft");
+        setDraftId(null);
+        fetchPendingBookings();
         setSelectedTest(null);
         if (paymentType === "wallet") {
           setWalletBalance((prev) => prev - finalAmount);
@@ -259,6 +385,29 @@ export default function LabTestsPage() {
               ? "bg-green-50 border border-green-200 text-green-700"
               : "bg-red-50 border border-red-200 text-red-700"
           }`}>{message}</div>
+        )}
+
+        {/* Draft resume banner */}
+        {localDraft && !selectedTest && (
+          <div className="mb-4 bg-gradient-to-r from-teal-500 to-teal-600 rounded-2xl p-4 flex items-center gap-4">
+            <div className="flex-1 min-w-0">
+              <p className="text-white text-sm font-bold">↩️ Wahan se shuru karein jahan chode tha!</p>
+              <p className="text-teal-100 text-xs mt-0.5 truncate">"{localDraft.testName}" — ₹{localDraft.amount?.toLocaleString("en-IN")}</p>
+            </div>
+            <div className="flex gap-2 flex-shrink-0">
+              <button
+                onClick={() => {
+                  const t = tests.find((t: any) => t._id === localDraft.testId);
+                  if (t) openBooking(t);
+                  else { fetchTests(); setMessage("Test dhundha ja raha hai..."); }
+                }}
+                className="bg-white text-teal-700 text-xs font-bold px-3 py-2 rounded-xl hover:bg-teal-50">
+                Resume →
+              </button>
+              <button onClick={() => { setLocalDraft(null); localStorage.removeItem("labDraft"); }}
+                className="text-teal-200 hover:text-white text-sm px-1">✕</button>
+            </div>
+          </div>
         )}
 
         {/* Search & Filters */}
@@ -297,6 +446,53 @@ export default function LabTestsPage() {
           </button>
         </div>
 
+        {/* In-progress bookings banner */}
+        {pendingBookings.length > 0 && (() => {
+          const abandoned = pendingBookings.filter((b: any) => b.paymentMode === "online");
+          const upcoming  = pendingBookings.filter((b: any) => b.paymentMode !== "online");
+          return (
+            <>
+              {abandoned.length > 0 && (
+                <div className="bg-red-50 border border-red-200 rounded-2xl p-4 mb-3">
+                  <p className="text-sm font-bold text-red-700 mb-2">⚠️ Adhoori payment — complete karein!</p>
+                  <div className="space-y-2">
+                    {abandoned.map((b: any) => (
+                      <div key={b._id} className="flex items-center justify-between bg-white rounded-xl px-3 py-2.5 border border-red-100">
+                        <div>
+                          <p className="text-sm font-semibold text-gray-800">{b.testName || "Lab Test"}</p>
+                          <p className="text-xs text-gray-500">{b.patientName || ""} · ₹{b.amount?.toLocaleString("en-IN")}</p>
+                        </div>
+                        <button onClick={() => openBooking(tests.find((t: any) => t._id === b.labTestId?.toString()) || b)}
+                          className="text-xs font-bold text-white bg-red-500 hover:bg-red-600 px-3 py-1.5 rounded-lg whitespace-nowrap">
+                          Pay Now →
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {upcoming.length > 0 && (
+                <div className="bg-teal-50 border border-teal-200 rounded-2xl p-4 mb-3">
+                  <p className="text-sm font-bold text-teal-700 mb-2">📋 Aapki pending Lab bookings:</p>
+                  <div className="space-y-2">
+                    {upcoming.map((b: any) => (
+                      <div key={b._id} className="flex items-center justify-between bg-white rounded-xl px-3 py-2.5 border border-teal-100">
+                        <div>
+                          <p className="text-sm font-semibold text-gray-800">{b.testName || "Lab Test"}</p>
+                          <p className="text-xs text-gray-500">{b.patientName || ""} · {b.bookingId}</p>
+                        </div>
+                        <a href="/my-bookings" className="text-xs font-bold text-teal-600 bg-white border border-teal-300 px-3 py-1.5 rounded-lg whitespace-nowrap hover:bg-teal-50">
+                          Track →
+                        </a>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          );
+        })()}
+
         {/* Membership Banner */}
         {!hasMembership && (
           <div className="bg-gradient-to-r from-teal-600 to-teal-700 rounded-2xl p-4 text-white mb-6">
@@ -305,9 +501,10 @@ export default function LabTestsPage() {
                 <p className="font-bold">💳 Family Card se extra discount!</p>
                 <p className="text-sm text-teal-100">Lab tests par Member Price milega — har test par paise bachao</p>
               </div>
-              <a href="/dashboard" className="bg-white text-teal-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-teal-50 flex-shrink-0">
-                ₹249/yr →
-              </a>
+              <button onClick={activateCard} disabled={activatingCard}
+                className="bg-white text-teal-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-teal-50 flex-shrink-0 disabled:opacity-70">
+                {activatingCard ? "..." : "₹249/yr →"}
+              </button>
             </div>
             <p className="text-xs text-teal-200 mt-2">👇 Neeche diye price tags mein green 💳 Member Price dekho — kitna bachega!</p>
           </div>
@@ -675,9 +872,10 @@ export default function LabTestsPage() {
                     <div className="bg-gradient-to-r from-amber-500 to-orange-400 px-4 py-2 flex items-center gap-2">
                       <span className="text-white text-lg">💳</span>
                       <p className="text-white text-xs font-bold flex-1">Family Card activate karein — sirf ₹249/year</p>
-                      <a href="/dashboard" className="bg-white text-amber-600 text-xs font-black px-3 py-1 rounded-full whitespace-nowrap">
-                        Activate →
-                      </a>
+                      <button onClick={activateCard} disabled={activatingCard}
+                        className="bg-white text-amber-600 text-xs font-black px-3 py-1 rounded-full whitespace-nowrap disabled:opacity-70">
+                        {activatingCard ? "..." : "Abhi Activate →"}
+                      </button>
                     </div>
                     <div className="bg-amber-50 px-4 py-2 flex items-center justify-between">
                       <span className="text-xs text-amber-700">Is test par aur kitna bachega:</span>
@@ -771,6 +969,17 @@ export default function LabTestsPage() {
                       : `Book Karein — ₹${(promoData ? promoData.finalAmount : getTotalAmount(selectedTest)).toLocaleString()}`
                   }
                 </button>
+
+                {/* Trust + Helpline */}
+                <div className="flex items-center justify-between pt-1">
+                  <p className="text-[11px] text-gray-400">🔒 Safe & Secure booking</p>
+                  <a href="tel:9876543210" className="text-[11px] text-teal-600 font-medium hover:underline">📞 Help: 9876543210</a>
+                </div>
+                <a href={`https://wa.me/919876543210?text=${encodeURIComponent(`Namaskar! Mujhe ${selectedTest.name} ke baare mein jaankari chahiye.`)}`}
+                  target="_blank" rel="noreferrer"
+                  className="flex items-center justify-center gap-2 border border-green-200 text-green-700 text-xs font-semibold py-2.5 rounded-xl hover:bg-green-50 transition">
+                  💬 WhatsApp par puchein
+                </a>
               </div>
             </div>
           </div>

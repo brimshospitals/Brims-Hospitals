@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import connectDB from "../../../lib/mongodb";
 import Hospital from "../../../models/Hospital";
 import User from "../../../models/User";
+import CommissionSlab from "../../../models/CommissionSlab";
+import Notification from "../../../models/Notification";
 import { hashPassword } from "../../../lib/auth";
+import Notification from "../../../models/Notification";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +47,30 @@ export async function POST(request) {
       );
     }
 
+    // Email format validation
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      return NextResponse.json(
+        { success: false, message: "Valid email address daalo" },
+        { status: 400 }
+      );
+    }
+
+    // SPOC email validation
+    if (spocEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(spocEmail.trim())) {
+      return NextResponse.json(
+        { success: false, message: "Valid SPOC email address daalo" },
+        { status: 400 }
+      );
+    }
+
+    // Website URL validation
+    if (website && !/^https?:\/\/.+\..+/.test(website.trim())) {
+      return NextResponse.json(
+        { success: false, message: "Valid website URL daalo (https://example.com)" },
+        { status: 400 }
+      );
+    }
+
     await connectDB();
 
     // Check duplicate hospital
@@ -75,7 +102,7 @@ export async function POST(request) {
       rohiniNo,
       mobile: mobile.trim(),
       email: email?.trim() || null,
-      website,
+      website:  website?.trim() || null,
       address: { street, district, city, pincode, state: "Bihar" },
       spocName,
       spocContact,
@@ -111,6 +138,19 @@ export async function POST(request) {
     await hospital.save();
 
     console.log(`🏥 New Hospital Registration: ${name} (${mobile}) — Hospital ID: ${hospitalId}`);
+
+    // I2: notify all admins about new hospital application
+    try {
+      const admins = await User.find({ role: "admin" }).select("_id").lean();
+      if (admins.length > 0) {
+        await Notification.insertMany(admins.map((a) => ({
+          userId:  a._id,
+          type:    "system",
+          title:   "Naya Hospital Application 🏥",
+          message: `${name} (${district}) ne Brims Health Network join karne ke liye apply kiya hai. Hospital ID: ${hospitalId}. Review karein.`,
+        })));
+      }
+    } catch {}
 
     return NextResponse.json({
       success: true,

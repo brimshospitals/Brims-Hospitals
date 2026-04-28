@@ -126,8 +126,13 @@ export async function PATCH(request) {
     await connectDB();
 
     const update = {};
-    if (isActive    !== undefined) update.isActive          = isActive;
-    if (permissions !== undefined) update.staffPermissions  = permissions;
+    if (isActive !== undefined) update.isActive = isActive;
+    // B6: Use dot-notation for individual permission fields — prevents wiping unmentioned permissions
+    if (permissions !== undefined) {
+      Object.entries(permissions).forEach(([k, v]) => {
+        update[`staffPermissions.${k}`] = v;
+      });
+    }
 
     const user = await User.findByIdAndUpdate(userId, { $set: update }, { new: true })
       .select("name isActive staffPermissions").lean();

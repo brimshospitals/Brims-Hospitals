@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Header from "../components/header";
 import BookingStageTimeline, { BOOKING_STAGES } from "../components/BookingStageTimeline";
 import LangToggle from "../components/LangToggle";
@@ -183,13 +183,14 @@ function ReviewModal({ booking, onClose, onDone }: { booking: any; onClose: () =
 }
 
 // ── Booking Card ─────────────────────────────────────────────────────────────
-function BookingCard({ b, onCancel, onReview }: { b: any; onCancel: (b: any) => void; onReview: (b: any) => void }) {
+function BookingCard({ b, onCancel, onReview, onPayBalance }: { b: any; onCancel: (b: any) => void; onReview: (b: any) => void; onPayBalance?: (b: any) => void }) {
   const [expanded, setExpanded] = useState(false);
   const tc = TYPE_CONFIG[b.type]   ?? { label: b.type, icon: "📄", bg: "bg-gray-50", text: "text-gray-700", border: "border-gray-300" };
   const sc = STATUS_CONFIG[b.status] ?? { label: b.status, icon: "●", bg: "bg-gray-100", text: "text-gray-600", dot: "bg-gray-400" };
   const notes = (() => { try { return b.notes ? JSON.parse(b.notes) : {}; } catch { return {}; } })();
-  const canCancel = ["pending", "confirmed"].includes(b.status);
-  const canReview = b.status === "completed" && !b.reviewed && (b.doctorId || b.hospitalId);
+  const canCancel     = ["pending", "confirmed"].includes(b.status);
+  const canReview     = b.status === "completed" && !b.reviewed && (b.doctorId || b.hospitalId);
+  const canPayBalance = b.type === "Surgery" && b.isPartialBooking && (b.balanceAmount || 0) > 0 && !["cancelled", "completed"].includes(b.status);
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
@@ -215,6 +216,9 @@ function BookingCard({ b, onCancel, onReview }: { b: any; onCancel: (b: any) => 
               )}
               {b.paymentStatus === "refunded" && (
                 <span className="inline-flex items-center text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium border border-blue-100">↩ Refunded</span>
+              )}
+              {canPayBalance && (
+                <span className="inline-flex items-center text-xs px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 font-medium border border-purple-200">₹{(b.balanceAmount || 0).toLocaleString()} Due</span>
               )}
             </div>
           </div>
@@ -344,6 +348,14 @@ function BookingCard({ b, onCancel, onReview }: { b: any; onCancel: (b: any) => 
             </button>
           </div>
           <div className="flex items-center gap-2">
+            {canPayBalance && (
+              <button
+                onClick={() => onPayBalance?.(b)}
+                className="text-xs bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-lg font-semibold transition"
+              >
+                💳 Pay ₹{(b.balanceAmount || 0).toLocaleString()}
+              </button>
+            )}
             {canCancel && (
               <button
                 onClick={() => onCancel(b)}
@@ -380,6 +392,65 @@ function BookingCard({ b, onCancel, onReview }: { b: any; onCancel: (b: any) => 
   );
 }
 
+// ── Balance Payment Modal ─────────────────────────────────────────────────────
+function BalancePayModal({ booking, onClose, onDone }: { booking: any; onClose: () => void; onDone: (msg: string) => void }) {
+  const [mode, setMode]       = useState<"wallet"|"online">("wallet");
+  const [loading, setLoading] = useState(false);
+  const [error, setError]     = useState("");
+
+  async function pay() {
+    setLoading(true); setError("");
+    try {
+      const res  = await fetch("/api/bookings/balance-payment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bookingId: booking.bookingId, paymentMode: mode }),
+      });
+      const data = await res.json();
+      if (!data.success) { setError(data.message || "Payment fail ho gayi"); setLoading(false); return; }
+      if (data.redirectUrl) { window.location.href = data.redirectUrl; return; }
+      onDone(data.message || "Balance payment ho gaya!");
+      onClose();
+    } catch { setError("Network error. Dobara try karein."); }
+    setLoading(false);
+  }
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={onClose} />
+      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
+        <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-6">
+          <p className="text-3xl text-center mb-2">💳</p>
+          <h3 className="font-bold text-gray-800 text-lg text-center mb-1">Balance Pay Karein</h3>
+          <p className="text-sm text-gray-500 text-center mb-4">
+            {getTitle(booking)} — ₹{(booking.balanceAmount || 0).toLocaleString()} remaining
+          </p>
+          <div className="space-y-2 mb-4">
+            {[
+              { id: "wallet", label: "Wallet se Pay", icon: "💰" },
+              { id: "online", label: "UPI / Online",  icon: "📱" },
+            ].map((opt) => (
+              <button key={opt.id} onClick={() => setMode(opt.id as any)}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition ${mode === opt.id ? "border-purple-500 bg-purple-50" : "border-gray-200 hover:border-purple-300"}`}>
+                <span className="text-xl">{opt.icon}</span>
+                <span className="font-semibold text-sm text-gray-800">{opt.label}</span>
+              </button>
+            ))}
+          </div>
+          {error && <p className="text-red-500 text-xs mb-3 text-center">{error}</p>}
+          <div className="flex gap-3">
+            <button onClick={onClose} className="flex-1 border border-gray-200 text-gray-600 py-3 rounded-xl text-sm font-semibold">Baad Mein</button>
+            <button onClick={pay} disabled={loading}
+              className="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-3 rounded-xl text-sm font-semibold transition disabled:opacity-50">
+              {loading ? "Processing..." : `Pay ₹${(booking.balanceAmount || 0).toLocaleString()}`}
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function MyBookingsPage() {
   const { lang } = useLang();
@@ -388,10 +459,35 @@ export default function MyBookingsPage() {
   const [loading, setLoading]       = useState(true);
   const [activeType, setActiveType] = useState("");
   const [activeStatus, setActiveStatus] = useState("");
-  const [cancelTarget, setCancelTarget] = useState<any>(null);
-  const [cancelling, setCancelling]     = useState(false);
-  const [reviewTarget, setReviewTarget] = useState<any>(null);
-  const [toast, setToast]               = useState("");
+  const [cancelTarget, setCancelTarget]     = useState<any>(null);
+  const [cancelling, setCancelling]         = useState(false);
+  const [reviewTarget, setReviewTarget]     = useState<any>(null);
+  const [balanceTarget, setBalanceTarget]   = useState<any>(null);
+  const [toast, setToast]                   = useState("");
+  const toastRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function showToast(msg: string) {
+    setToast(msg);
+    if (toastRef.current) clearTimeout(toastRef.current);
+    toastRef.current = setTimeout(() => setToast(""), 4000);
+  }
+
+  // Handle PhonePe payment return (?payment=success|failed&bookingId=...)
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    const payment = p.get("payment");
+    if (payment === "success") {
+      const bid = p.get("bookingId");
+      showToast(bid ? `✅ Payment successful! Booking ${bid} confirm ho gayi.` : "✅ Payment successful!");
+    } else if (payment === "failed") {
+      showToast("❌ Payment fail ho gayi. My Bookings mein Retry kar sakte hain.");
+    }
+    if (payment) {
+      // Remove query params from URL without reload
+      window.history.replaceState({}, "", "/my-bookings");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const fetchBookings = useCallback(async () => {
     const userId = localStorage.getItem("userId");
@@ -422,17 +518,16 @@ export default function MyBookingsPage() {
       });
       const data = await res.json();
       if (data.success) {
-        setToast(data.message);
+        showToast(data.message);
         setCancelTarget(null);
         fetchBookings();
       } else {
-        setToast(data.message || "Cancel nahi hua");
+        showToast(data.message || "Cancel nahi hua");
       }
     } catch {
-      setToast("Network error. Dobara try karein.");
+      showToast("Network error. Dobara try karein.");
     }
     setCancelling(false);
-    setTimeout(() => setToast(""), 4000);
   }
 
   const TYPES = ["", "OPD", "Surgery", "Lab", "Consultation"];
@@ -464,7 +559,16 @@ export default function MyBookingsPage() {
         <ReviewModal
           booking={reviewTarget}
           onClose={() => setReviewTarget(null)}
-          onDone={() => { fetchBookings(); setToast("Review submit ho gaya! Shukriya 🙏"); setTimeout(() => setToast(""), 3000); }}
+          onDone={() => { fetchBookings(); showToast("Review submit ho gaya! Shukriya 🙏"); }}
+        />
+      )}
+
+      {/* Balance Payment Modal */}
+      {balanceTarget && (
+        <BalancePayModal
+          booking={balanceTarget}
+          onClose={() => setBalanceTarget(null)}
+          onDone={(msg) => { showToast(msg); fetchBookings(); }}
         />
       )}
 
@@ -550,7 +654,7 @@ export default function MyBookingsPage() {
         ) : (
           <div className="space-y-3">
             {bookings.map((b) => (
-              <BookingCard key={b._id} b={b} onCancel={setCancelTarget} onReview={setReviewTarget} />
+              <BookingCard key={b._id} b={b} onCancel={setCancelTarget} onReview={setReviewTarget} onPayBalance={setBalanceTarget} />
             ))}
             <p className="text-center text-xs text-gray-400 pt-2">{bookings.length} booking{bookings.length !== 1 ? "s" : ""} found</p>
           </div>

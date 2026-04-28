@@ -34,43 +34,41 @@ export async function GET(request) {
 
     // Family card + wallet
     let familyCard = null;
-    let familyMembers = [];
     if (user.familyCardId) {
       familyCard = await FamilyCard.findById(user.familyCardId).lean();
-      if (familyCard?.members?.length) {
-        familyMembers = await User.find({ _id: { $in: familyCard.members } })
-          .select("name age gender photo relationship memberId")
-          .lean();
-      }
     }
+    // B4: Family members are embedded in user.familyMembers (not a separate collection)
+    const familyMembers = user.familyMembers || [];
 
-    // All bookings for this user
-    const bookingsRaw = await Booking.find({ userId })
-      .sort({ createdAt: -1 })
-      .limit(20)
-      .lean();
+    // All bookings for this user (last 20 display + real total count)
+    const [bookingsRaw, totalBookings] = await Promise.all([
+      Booking.find({ userId }).sort({ createdAt: -1 }).limit(20).lean(),
+      Booking.countDocuments({ userId }),
+    ]);
 
-    const bookings = await Promise.all(
-      bookingsRaw.map(async (b) => {
-        let extra = {};
-        let notes = {};
-        try { notes = b.notes ? JSON.parse(b.notes) : {}; } catch {}
+    // B4: Batch-fetch related docs instead of N+1 individual queries
+    const doctorIds  = [...new Set(bookingsRaw.filter(b => b.type === "OPD"     && b.doctorId ).map(b => b.doctorId.toString()))];
+    const packageIds = [...new Set(bookingsRaw.filter(b => b.type === "Surgery" && b.packageId).map(b => b.packageId.toString()))];
+    const labTestIds = [...new Set(bookingsRaw.filter(b => b.type === "Lab"     && b.labTestId).map(b => b.labTestId.toString()))];
 
-        if (b.type === "OPD" && b.doctorId) {
-          const doc = await Doctor.findById(b.doctorId).select("name department photo").lean();
-          if (doc) extra = { doctorName: doc.name, department: doc.department, doctorPhoto: doc.photo };
-        }
-        if (b.type === "Surgery" && b.packageId) {
-          const pkg = await SurgeryPackage.findById(b.packageId).select("name category hospitalName").lean();
-          if (pkg) extra = { packageName: pkg.name, category: pkg.category, hospitalName: pkg.hospitalName };
-        }
-        if (b.type === "Lab" && b.labTestId) {
-          const test = await LabTest.findById(b.labTestId).select("name category hospitalName").lean();
-          if (test) extra = { testName: test.name, category: test.category, hospitalName: test.hospitalName };
-        }
-        return { ...b, ...notes, ...extra };
-      })
-    );
+    const [doctors, packages, labTestDocs] = await Promise.all([
+      doctorIds.length  ? Doctor.find({ _id: { $in: doctorIds }  }).select("name department photo").lean()          : [],
+      packageIds.length ? SurgeryPackage.find({ _id: { $in: packageIds } }).select("name category hospitalName").lean() : [],
+      labTestIds.length ? LabTest.find({ _id: { $in: labTestIds } }).select("name category hospitalName").lean()     : [],
+    ]);
+    const docMap  = {}; doctors.forEach(d   => { docMap[d._id.toString()]  = d; });
+    const pkgMap  = {}; packages.forEach(p  => { pkgMap[p._id.toString()]  = p; });
+    const testMap = {}; labTestDocs.forEach(t => { testMap[t._id.toString()] = t; });
+
+    const bookings = bookingsRaw.map(b => {
+      let extra = {};
+      let notes = {};
+      try { notes = b.notes ? JSON.parse(b.notes) : {}; } catch {}
+      if (b.type === "OPD"     && b.doctorId ) { const d = docMap[b.doctorId.toString()];   if (d) extra = { doctorName: d.name, department: d.department, doctorPhoto: d.photo }; }
+      if (b.type === "Surgery" && b.packageId) { const p = pkgMap[b.packageId.toString()];  if (p) extra = { packageName: p.name, category: p.category, hospitalName: p.hospitalName }; }
+      if (b.type === "Lab"     && b.labTestId) { const t = testMap[b.labTestId.toString()]; if (t) extra = { testName: t.name, category: t.category, hospitalName: t.hospitalName }; }
+      return { ...b, ...notes, ...extra };
+    });
 
     return NextResponse.json({
       success: true,
@@ -78,7 +76,7 @@ export async function GET(request) {
       familyCard,
       familyMembers,
       bookings,
-      totalBookings: bookingsRaw.length,
+      totalBookings,
     });
   } catch (err) {
     return NextResponse.json({ success: false, message: "Server error: " + err.message }, { status: 500 });
