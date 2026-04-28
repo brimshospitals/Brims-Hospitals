@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import connectDB from "../../../../lib/mongodb";
 import Booking from "../../../../models/Booking";
+import Hospital from "../../../../models/Hospital";
+import Doctor from "../../../../models/Doctor";
 import Transaction from "../../../../models/Transaction";
+import User from "../../../../models/User";
 import { requireAuth } from "../../../../lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +14,7 @@ const ENTITY_TYPES = {
   hospital:  ["OPD", "IPD", "Surgery"],
   lab:       ["Lab"],
   doctor:    ["Consultation"],
-  ambulance: [],   // future: ambulance-specific type
+  ambulance: ["Ambulance"],   // Ambulance booking type
 };
 
 const ENTITY_PAYOUT_CATEGORY = {
@@ -147,8 +150,25 @@ export async function PATCH(request) {
     const label    = ENTITY_LABEL[entity]  || "Partner";
     const category = ENTITY_PAYOUT_CATEGORY[entity] || "hospital_payout";
 
+    // Resolve the entity's userId (hospital/lab/doctor account), not the patient's userId
+    let entityUserId = null;
+    try {
+      if ((entity === "hospital" || entity === "lab") && booking.hospitalId) {
+        const hosp = await Hospital.findById(booking.hospitalId).select("userId").lean();
+        entityUserId = hosp?.userId || null;
+      } else if (entity === "doctor" && booking.doctorId) {
+        const doc = await Doctor.findById(booking.doctorId).select("userId").lean();
+        entityUserId = doc?.userId || null;
+      }
+    } catch {}
+    // Fallback: use first admin userId if entity has no linked user account
+    if (!entityUserId) {
+      const admin = await User.findOne({ role: "admin" }).select("_id").lean();
+      entityUserId = admin?._id || booking.userId;
+    }
+
     await Transaction.create({
-      userId:      booking.userId,
+      userId:      entityUserId,
       type:        "debit",
       amount:      booking.hospitalPayable,
       description: `${label} Payout — ${booking.type} (${booking.bookingId}) | UTR: ${utr.trim()}`,

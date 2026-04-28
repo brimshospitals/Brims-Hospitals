@@ -87,7 +87,7 @@ export async function POST(request) {
   }
 }
 
-// DELETE — remove slab (revert to defaults)
+// DELETE — deactivate slab (revert to defaults); preserves history for existing bookings
 export async function DELETE(request) {
   const { error } = await requireAuth(request, ["admin"]);
   if (error) return error;
@@ -97,8 +97,10 @@ export async function DELETE(request) {
     if (!slabId) return NextResponse.json({ success: false, message: "slabId zaruri hai" }, { status: 400 });
 
     await connectDB();
-    await CommissionSlab.findByIdAndDelete(slabId);
-    return NextResponse.json({ success: true, message: "Slab delete ho gaya — ab default rates lagenge" });
+    await CommissionSlab.findByIdAndUpdate(slabId, {
+      $set: { isActive: false, deactivatedAt: new Date() },
+    });
+    return NextResponse.json({ success: true, message: "Slab deactivate ho gaya — ab default rates lagenge" });
   } catch (err) {
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });
   }

@@ -45,6 +45,12 @@ export async function POST(request) {
       return NextResponse.json({ success: false, message: "Yeh promo code ki limit khatam ho gayi hai" }, { status: 400 });
     }
 
+    // Per-user check — each user can use a code only once
+    const alreadyUsed = promo.usedBy?.some(id => id.toString() === session.userId);
+    if (alreadyUsed) {
+      return NextResponse.json({ success: false, message: "Aap yeh promo code pehle se use kar chuke hain" }, { status: 400 });
+    }
+
     // Check minimum amount
     if (amount < promo.minAmount) {
       return NextResponse.json({ success: false, message: `Minimum booking amount ₹${promo.minAmount} hona chahiye` }, { status: 400 });
@@ -147,8 +153,9 @@ export async function DELETE(request) {
     if (!id) return NextResponse.json({ success: false, message: "id zaruri hai" }, { status: 400 });
 
     await connectDB();
-    await PromoCode.findByIdAndDelete(id);
-    return NextResponse.json({ success: true, message: "Code delete ho gaya" });
+    // Soft delete — preserve history and prevent code reuse by others
+    await PromoCode.findByIdAndUpdate(id, { $set: { isActive: false, deactivatedAt: new Date() } });
+    return NextResponse.json({ success: true, message: "Code deactivate ho gaya" });
   } catch (err) {
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });
   }

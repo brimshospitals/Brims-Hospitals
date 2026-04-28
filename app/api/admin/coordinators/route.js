@@ -4,6 +4,7 @@ import Coordinator from "../../../../models/Coordinator";
 import User from "../../../../models/User";
 import Booking from "../../../../models/Booking";
 import Transaction from "../../../../models/Transaction";
+import Notification from "../../../../models/Notification";
 import { requireAuth } from "../../../../lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -32,24 +33,53 @@ export async function GET(request) {
       const coord = await Coordinator.findById(id).lean();
       if (!coord) return NextResponse.json({ success: false, message: "Not found" }, { status: 404 });
 
-      // Fetch their bookings
-      const bookings = await Booking.find({ coordinatorId: coord._id })
-        .sort({ createdAt: -1 }).limit(100).lean();
+      // SB1 Fix: Compute earnings via aggregation (no cap)
+      const [earningsAgg = {}] = await Booking.aggregate([
+        { $match: { coordinatorId: coord._id } },
+        {
+          $group: {
+            _id: null,
+            totalBookings:   { $sum: 1 },
+            totalCommission: { $sum: { $ifNull: ["$coordinatorCommission", 0] } },
+            availableEarned: {
+              $sum: {
+                $cond: [
+                  { $and: [{ $ne: ["$coordinatorPaid", true] }, { $eq: ["$status", "completed"] }] },
+                  { $ifNull: ["$coordinatorCommission", 0] }, 0,
+                ],
+              },
+            },
+            paidEarned: {
+              $sum: {
+                $cond: [{ $eq: ["$coordinatorPaid", true] }, { $ifNull: ["$coordinatorCommission", 0] }, 0],
+              },
+            },
+          },
+        },
+      ]);
 
-      // Fetch transaction ledger (card activations, withdrawals, etc.)
+      // Recent bookings for display (last 50)
+      const bookings = await Booking.find({ coordinatorId: coord._id })
+        .sort({ createdAt: -1 }).limit(50).lean();
+
+      // Transaction ledger (last 50)
       const transactions = coord.userId
-        ? await Transaction.find({ userId: coord.userId }).sort({ createdAt: -1 }).limit(100).lean()
+        ? await Transaction.find({ userId: coord.userId }).sort({ createdAt: -1 }).limit(50).lean()
         : [];
 
-      // Compute availableEarned dynamically (completed but not yet paid)
-      const availableEarned = bookings
-        .filter(b => !b.coordinatorPaid && b.status === "completed")
-        .reduce((s, b) => s + (b.coordinatorCommission || 0), 0);
+      const pendingWithdrawals = transactions.filter(t => t.category === "withdrawal" && t.status === "pending");
 
-      // Pending withdrawal requests
-      const pendingWithdrawals = transactions.filter(t => t.type === "debit" && t.status === "pending");
-
-      return NextResponse.json({ success: true, coordinator: coord, bookings, transactions, availableEarned, pendingWithdrawals });
+      return NextResponse.json({
+        success: true,
+        coordinator:      coord,
+        bookings,
+        transactions,
+        availableEarned:  earningsAgg.availableEarned  || 0,
+        paidEarned:       earningsAgg.paidEarned        || 0,
+        totalCommission:  earningsAgg.totalCommission   || 0,
+        totalBookings:    earningsAgg.totalBookings      || 0,
+        pendingWithdrawals,
+      });
     }
 
     const coordinators = await Coordinator.find({}).sort({ createdAt: -1 }).lean();
@@ -148,7 +178,7 @@ export async function PATCH(request) {
 
     // ── Process withdrawal (admin marks payment done with UTR) ──────────────
     if (body.action === "process-withdraw") {
-      const { txnId, utr, coordinatorId } = body;
+      const { txnId, utr } = body;
       if (!txnId || !utr) {
         return NextResponse.json({ success: false, message: "txnId aur UTR zaruri hai" }, { status: 400 });
       }
@@ -159,14 +189,45 @@ export async function PATCH(request) {
         return NextResponse.json({ success: false, message: "Ye transaction already processed hai" }, { status: 409 });
       }
 
-      txn.status = "success";
-      txn.paymentId = utr;
+      // Mark transaction success
+      txn.status      = "success";
+      txn.paymentId   = utr;
       txn.description = txn.description + ` | UTR: ${utr}`;
       await txn.save();
 
+      // CB1 Fix: Now mark the associated bookings as paid (stored as JSON in referenceId)
+      let markedCount = 0;
+      try {
+        const bookingObjectIds = JSON.parse(txn.referenceId || "[]");
+        if (Array.isArray(bookingObjectIds) && bookingObjectIds.length > 0) {
+          const result = await Booking.updateMany(
+            { _id: { $in: bookingObjectIds } },
+            { $set: { coordinatorPaid: true } }
+          );
+          markedCount = result.modifiedCount;
+        }
+      } catch {}
+
+      // SB2 Fix: Update coordinator stats — paidEarned up, pendingEarned down
+      const coord = await Coordinator.findOne({ userId: txn.userId });
+      if (coord) {
+        await Coordinator.findByIdAndUpdate(coord._id, {
+          $inc: { paidEarned: txn.amount, pendingEarned: -txn.amount },
+        });
+        // I4: Notify coordinator that withdrawal was processed
+        try {
+          await Notification.create({
+            userId:  coord.userId,
+            type:    "system",
+            title:   "Withdrawal Process Ho Gaya! 💰",
+            message: `Aapka ₹${txn.amount.toLocaleString("en-IN")} withdrawal successfully process ho gaya. UTR: ${utr}. Amount aapke bank account mein aa jayega.`,
+          });
+        } catch {}
+      }
+
       return NextResponse.json({
         success: true,
-        message: `₹${txn.amount.toLocaleString("en-IN")} withdrawal processed. UTR: ${utr}`,
+        message: `₹${txn.amount.toLocaleString("en-IN")} withdrawal processed. UTR: ${utr}. ${markedCount} bookings marked paid.`,
       });
     }
 

@@ -9,6 +9,7 @@ const promoCodeSchema = new mongoose.Schema({
   minAmount:    { type: Number, default: 0 },           // minimum booking amount
   usageLimit:   { type: Number, default: null },        // null = unlimited
   usedCount:    { type: Number, default: 0 },
+  usedBy:       [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   validFrom:    { type: Date,   default: Date.now },
   validUntil:   { type: Date,   default: null },        // null = no expiry
   applicableOn: { type: [String], default: ["OPD","Lab","Surgery","Consultation"] },

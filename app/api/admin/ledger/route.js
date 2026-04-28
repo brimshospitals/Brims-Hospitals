@@ -128,7 +128,7 @@ export async function GET(request) {
     ]);
     const totalExpenses = expenseAgg[0]?.total || 0;
 
-    // Pending payouts (withdrawal requests not yet processed)
+    // Coordinator pending withdrawals (requested but UTR not yet entered)
     const pendingPayoutsAgg = await Transaction.aggregate([
       { $match: { category: "withdrawal", status: "pending", ...dateFilter } },
       { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } },
@@ -136,7 +136,22 @@ export async function GET(request) {
     const pendingPayouts      = pendingPayoutsAgg[0]?.total || 0;
     const pendingPayoutsCount = pendingPayoutsAgg[0]?.count || 0;
 
-    // Total paid out (withdrawal processed with UTR)
+    // MB1 Fix: Partner payout obligations (hospital/lab/doctor completed bookings, not yet paid out)
+    const partnerPayoutsAgg = await Booking.aggregate([
+      {
+        $match: {
+          status:      "completed",
+          paymentMode: { $in: ["online", "wallet", "insurance"] },
+          payoutStatus: { $in: [null, "pending"] },
+          ...dateFilter,
+        },
+      },
+      { $group: { _id: null, total: { $sum: "$hospitalPayable" }, count: { $sum: 1 } } },
+    ]);
+    const partnerPendingPayouts      = partnerPayoutsAgg[0]?.total || 0;
+    const partnerPendingPayoutsCount = partnerPayoutsAgg[0]?.count || 0;
+
+    // Total paid out (coordinator withdrawals processed with UTR)
     const paidOutAgg = await Transaction.aggregate([
       { $match: { category: "withdrawal", status: "success", ...dateFilter } },
       { $group: { _id: null, total: { $sum: "$amount" } } },
@@ -154,10 +169,14 @@ export async function GET(request) {
       // Finance
       totalIncome,
       totalExpenses,
-      netBalance:           totalIncome - totalExpenses,
+      netBalance:                  totalIncome - totalExpenses,
+      // Coordinator withdrawals pending UTR
       pendingPayouts,
       pendingPayoutsCount,
       totalPaidOut,
+      // MB1: Partner payout obligations (hospital/lab/doctor)
+      partnerPendingPayouts,
+      partnerPendingPayoutsCount,
     };
 
     // ── Coordinator lookup (used for enrichment) ──────────────────────────────

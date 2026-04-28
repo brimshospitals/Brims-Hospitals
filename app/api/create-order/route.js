@@ -78,9 +78,9 @@ export async function POST(request) {
       merchantTransactionId: transactionId,
       merchantUserId:        userId,
       amount:                CARD_PRICE,
-      redirectUrl: `${process.env.NEXTAUTH_URL}/api/payment-callback?${callbackParams.toString()}`,
+      redirectUrl: `${process.env.NEXT_PUBLIC_BASE_URL || process.env.NEXTAUTH_URL}/api/payment-callback?${callbackParams.toString()}`,
       redirectMode: "POST",
-      callbackUrl:  `${process.env.NEXTAUTH_URL}/api/payment-callback`,
+      callbackUrl:  `${process.env.NEXT_PUBLIC_BASE_URL || process.env.NEXTAUTH_URL}/api/payment-callback`,
       mobileNumber: user.mobile,
       paymentInstrument: { type: "PAY_PAGE" },
     };

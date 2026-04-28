@@ -49,11 +49,11 @@ export async function GET(request) {
     // ── Summary aggregations (all-time, no type/date filter) ──────────────────
     const [onlinePendingAgg, onlinePaidAgg, counterAgg, thisMonthAgg] = await Promise.all([
 
-      // Platform owes hospital — online/wallet/insurance, payout not yet sent
+      // Platform owes hospital — only completed bookings (service delivered + online payment received)
       Booking.aggregate([
         { $match: {
           hospitalId: hObjId,
-          status: { $in: ["confirmed", "completed"] },
+          status: "completed",
           paymentMode: { $in: ["online", "wallet", "insurance"] },
           $or: [{ payoutStatus: null }, { payoutStatus: "pending" }],
         }},

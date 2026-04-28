@@ -194,7 +194,7 @@ export async function POST(request) {
             amount:      100,
             description: `Card Activation Commission — ${user.name} (${user.mobile})`,
             referenceId: user._id.toString(),
-            category:    "card_activation",
+            category:    "coordinator_commission",
             status:      "success",
           });
         }

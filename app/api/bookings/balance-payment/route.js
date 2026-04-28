@@ -121,9 +121,9 @@ export async function POST(request) {
       merchantTransactionId: transactionId,
       merchantUserId:        session.userId,
       amount:                amountInPaise,
-      redirectUrl: `${process.env.NEXTAUTH_URL}/api/booking-payment-callback?bookingId=${booking._id}&txnId=${transactionId}&isBalance=1`,
+      redirectUrl: `${process.env.NEXT_PUBLIC_BASE_URL || process.env.NEXTAUTH_URL}/api/booking-payment-callback?bookingId=${booking._id}&txnId=${transactionId}&isBalance=1`,
       redirectMode: "POST",
-      callbackUrl: `${process.env.NEXTAUTH_URL}/api/booking-payment-callback?bookingId=${booking._id}&txnId=${transactionId}&isBalance=1`,
+      callbackUrl: `${process.env.NEXT_PUBLIC_BASE_URL || process.env.NEXTAUTH_URL}/api/booking-payment-callback?bookingId=${booking._id}&txnId=${transactionId}&isBalance=1`,
       paymentInstrument: { type: "PAY_PAGE" },
     };
 

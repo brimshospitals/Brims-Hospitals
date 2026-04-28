@@ -3,6 +3,8 @@ import connectDB from "../../../../lib/mongodb";
 import Booking from "../../../../models/Booking";
 import User    from "../../../../models/User";
 import Notification from "../../../../models/Notification";
+import Transaction from "../../../../models/Transaction";
+import Coordinator from "../../../../models/Coordinator";
 import { requireAuth, getSession } from "../../../../lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -191,6 +193,20 @@ export async function PATCH(request) {
           });
         } catch {}
       }
+    }
+
+    // SB4: When booking completed — mark coordinator commission Transaction as success
+    const finalStatus = notifStatus;
+    if (finalStatus === "completed" && booking.coordinatorId && (booking.coordinatorCommission || 0) > 0) {
+      try {
+        await Transaction.updateOne(
+          { referenceId: booking.bookingId, category: "coordinator_commission", status: "pending" },
+          { $set: { status: "success" } }
+        );
+        await Coordinator.findByIdAndUpdate(booking.coordinatorId, {
+          $inc: { totalEarned: booking.coordinatorCommission, pendingEarned: booking.coordinatorCommission },
+        });
+      } catch {}
     }
 
     return NextResponse.json({ success: true, booking });

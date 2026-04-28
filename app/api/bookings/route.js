@@ -243,6 +243,20 @@ export async function POST(request) {
         });
       }
 
+      // Promo discount — record as platform expense for ledger accuracy
+      if (promoCode && promoDiscount > 0) {
+        txnsToCreate.push({
+          userId:      session.userId,
+          type:        "debit",
+          amount:      promoDiscount,
+          description: `Promo Discount — Code: ${promoCode.toUpperCase()} | ${type} Booking (${bookingId})`,
+          bookingId:   booking._id,
+          referenceId: bookingId,
+          category:    "expense",
+          status:      "success",
+        });
+      }
+
       if (txnsToCreate.length > 0) {
         await Transaction.insertMany(txnsToCreate);
       }
@@ -256,16 +270,21 @@ export async function POST(request) {
       try {
         await PromoCode.findOneAndUpdate(
           { code: promoCode.toUpperCase(), isActive: true },
-          { $inc: { usedCount: 1 } }
+          {
+            $inc:    { usedCount: 1 },
+            $addToSet: { usedBy: session.userId },
+          }
         );
       } catch {}
     }
 
-    // Coordinator earnings — increment only after booking is created
-    if (coord && coordCommissionAmt >= 0) {
+    // Coordinator booking count — increment at booking creation
+    // NOTE: totalEarned and pendingEarned are incremented only when booking is COMPLETED
+    // (in staff/bookings PATCH and admin/route.js PATCH) to prevent double-counting
+    if (coord) {
       try {
         await Coordinator.findByIdAndUpdate(coord._id, {
-          $inc: { totalBookings: 1, totalEarned: coordCommissionAmt, pendingEarned: coordCommissionAmt },
+          $inc: { totalBookings: 1 },
         });
       } catch {}
     }

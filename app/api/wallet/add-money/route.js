@@ -39,9 +39,9 @@ export async function POST(request) {
       merchantTransactionId: transactionId,
       merchantUserId: userId,
       amount: amountInPaise,
-      redirectUrl: `${process.env.NEXTAUTH_URL}/api/wallet/callback?txnId=${transactionId}&userId=${userId}&amount=${amount}`,
+      redirectUrl: `${process.env.NEXT_PUBLIC_BASE_URL || process.env.NEXTAUTH_URL}/api/wallet/callback?txnId=${transactionId}&userId=${userId}&amount=${amount}`,
       redirectMode: "POST",
-      callbackUrl: `${process.env.NEXTAUTH_URL}/api/wallet/callback`,
+      callbackUrl: `${process.env.NEXT_PUBLIC_BASE_URL || process.env.NEXTAUTH_URL}/api/wallet/callback`,
       mobileNumber: user.mobile,
       paymentInstrument: { type: "PAY_PAGE" },
     };

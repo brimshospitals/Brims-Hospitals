@@ -8,6 +8,8 @@ import SurgeryPackage from "../../../models/SurgeryPackage";
 import LabTest from "../../../models/LabTest";
 import SupportTicket from "../../../models/SupportTicket";
 import Notification from "../../../models/Notification";
+import Transaction from "../../../models/Transaction";
+import Coordinator from "../../../models/Coordinator";
 import { requireAuth } from "../../../lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -197,6 +199,20 @@ export async function PATCH(request) {
           });
         } catch {}
       }
+    }
+
+    // SB4: When booking completed — mark coordinator commission Transaction as success
+    if (update.status === "completed" && booking.coordinatorId && (booking.coordinatorCommission || 0) > 0) {
+      try {
+        await Transaction.updateOne(
+          { referenceId: booking.bookingId, category: "coordinator_commission", status: "pending" },
+          { $set: { status: "success" } }
+        );
+        // Increment coordinator lifetime totals so pendingEarned reflects available earnings
+        await Coordinator.findByIdAndUpdate(booking.coordinatorId, {
+          $inc: { totalEarned: booking.coordinatorCommission, pendingEarned: booking.coordinatorCommission },
+        });
+      } catch {}
     }
 
     return NextResponse.json({

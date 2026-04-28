@@ -13,84 +13,144 @@ export async function GET(request) {
   try {
     await connectDB();
 
-    // Find coordinator by userId
     const coord = await Coordinator.findOne({ userId: session.userId }).lean();
     if (!coord) {
       return NextResponse.json({ success: false, message: "Coordinator profile nahi mila" }, { status: 404 });
     }
 
-    // Bookings made through this coordinator — populated with service/hospital names
+    const now      = new Date();
+    const today    = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+    const thisMonth   = new Date(now.getFullYear(), now.getMonth(), 1);
+    const sevenDaysAgo = new Date(today); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+
+    // SB1 Fix: All stats via aggregation — no 100-booking cap
+    const [earningsAgg = {}] = await Booking.aggregate([
+      { $match: { coordinatorId: coord._id } },
+      {
+        $group: {
+          _id: null,
+          totalBookings: { $sum: 1 },
+          // pendingEarned: commission on active (not completed/cancelled) bookings
+          pendingEarned: {
+            $sum: {
+              $cond: [
+                { $and: [
+                  { $ne: ["$coordinatorPaid", true] },
+                  { $not: [{ $in: ["$status", ["completed", "cancelled"]] }] },
+                ]},
+                { $ifNull: ["$coordinatorCommission", 0] }, 0,
+              ],
+            },
+          },
+          // availableEarned: completed but not yet paid out
+          availableEarned: {
+            $sum: {
+              $cond: [
+                { $and: [
+                  { $ne: ["$coordinatorPaid", true] },
+                  { $eq: ["$status", "completed"] },
+                ]},
+                { $ifNull: ["$coordinatorCommission", 0] }, 0,
+              ],
+            },
+          },
+          // paidEarned: already transferred to coordinator
+          paidEarned: {
+            $sum: {
+              $cond: [
+                { $eq: ["$coordinatorPaid", true] },
+                { $ifNull: ["$coordinatorCommission", 0] }, 0,
+              ],
+            },
+          },
+        },
+      },
+    ]);
+
+    const pendingEarned   = earningsAgg.pendingEarned   || 0;
+    const availableEarned = earningsAgg.availableEarned || 0;
+    const paidEarned      = earningsAgg.paidEarned      || 0;
+    // MB3 Fix: totalEarned includes ALL commissions (pending + available + paid)
+    const totalEarned     = pendingEarned + availableEarned + paidEarned;
+
+    // Today / month counts
+    const [[todayAgg = {}], [monthAgg = {}]] = await Promise.all([
+      Booking.aggregate([
+        { $match: { coordinatorId: coord._id, createdAt: { $gte: today, $lt: tomorrow } } },
+        { $group: { _id: null, count: { $sum: 1 } } },
+      ]),
+      Booking.aggregate([
+        { $match: { coordinatorId: coord._id, createdAt: { $gte: thisMonth } } },
+        { $group: {
+          _id: null,
+          count:  { $sum: 1 },
+          earned: { $sum: { $ifNull: ["$coordinatorCommission", 0] } },
+        }},
+      ]),
+    ]);
+
+    // Unique clients (by userId)
+    const uniqueClientIds = await Booking.distinct("userId", { coordinatorId: coord._id });
+
+    // Last 7 days trend via aggregation
+    const trendRaw = await Booking.aggregate([
+      { $match: { coordinatorId: coord._id, createdAt: { $gte: sevenDaysAgo } } },
+      {
+        $group: {
+          _id:      { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+          bookings: { $sum: 1 },
+          earned:   { $sum: { $ifNull: ["$coordinatorCommission", 0] } },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]);
+    const trendMap = {};
+    trendRaw.forEach(d => { trendMap[d._id] = d; });
+
+    const trend = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const key = d.toISOString().slice(0, 10);
+      trend.push({
+        date:     d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" }),
+        bookings: trendMap[key]?.bookings || 0,
+        earned:   trendMap[key]?.earned   || 0,
+      });
+    }
+
+    // This month type breakdown via aggregation
+    const typeRaw = await Booking.aggregate([
+      { $match: { coordinatorId: coord._id, createdAt: { $gte: thisMonth } } },
+      { $group: { _id: "$type", earned: { $sum: { $ifNull: ["$coordinatorCommission", 0] } } } },
+    ]);
+    const typeBreakdown = {};
+    typeRaw.forEach(t => { typeBreakdown[t._id] = t.earned; });
+
+    // Recent bookings for display (last 20 only)
     const bookings = await Booking.find({ coordinatorId: coord._id })
       .populate("packageId",  "name mrp offerPrice membershipPrice hospitalName")
       .populate("labTestId",  "name mrp offerPrice membershipPrice hospitalName category")
       .populate("doctorId",   "name department hospitalName opdFee offerFee")
       .populate("hospitalId", "name")
       .sort({ createdAt: -1 })
-      .limit(100)
+      .limit(20)
       .lean();
-
-    // Stats
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const thisMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-
-    const todayBookings  = bookings.filter(b => new Date(b.createdAt) >= today);
-    const monthBookings  = bookings.filter(b => new Date(b.createdAt) >= thisMonth);
-
-    // Pending = commission on bookings not yet "completed"
-    // Available = commission on completed bookings, not yet paid out
-    // Paid = already transferred to coordinator
-    const pendingEarned   = bookings.filter(b => !b.coordinatorPaid && b.status !== "completed").reduce((s, b) => s + (b.coordinatorCommission || 0), 0);
-    const availableEarned = bookings.filter(b => !b.coordinatorPaid && b.status === "completed").reduce((s, b) => s + (b.coordinatorCommission || 0), 0);
-    const paidEarned      = bookings.filter(b => b.coordinatorPaid).reduce((s, b) => s + (b.coordinatorCommission || 0), 0);
-    const totalEarned     = availableEarned + paidEarned;
-
-    // Unique clients
-    const clientMobiles = new Set();
-    bookings.forEach(b => {
-      let n = {};
-      try { n = JSON.parse(b.notes || "{}"); } catch {}
-      if (n.patientMobile) clientMobiles.add(n.patientMobile);
-    });
-
-    // Last 7 days earnings trend
-    const trend = [];
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setHours(0, 0, 0, 0);
-      d.setDate(d.getDate() - i);
-      const next = new Date(d);
-      next.setDate(next.getDate() + 1);
-      const dayBookings = bookings.filter(b => {
-        const t = new Date(b.createdAt);
-        return t >= d && t < next;
-      });
-      trend.push({
-        date:     d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" }),
-        bookings: dayBookings.length,
-        earned:   dayBookings.reduce((s, b) => s + (b.coordinatorCommission || 0), 0),
-      });
-    }
-
-    // This month breakdown by type
-    const typeBreakdown = {};
-    monthBookings.forEach(b => {
-      typeBreakdown[b.type] = (typeBreakdown[b.type] || 0) + (b.coordinatorCommission || 0);
-    });
 
     return NextResponse.json({
       success: true,
       coordinator: coord,
       stats: {
-        totalBookings:  bookings.length,
-        todayBookings:  todayBookings.length,
-        monthBookings:  monthBookings.length,
-        totalClients:   clientMobiles.size,
+        totalBookings:  earningsAgg.totalBookings || 0,
+        todayBookings:  todayAgg.count  || 0,
+        monthBookings:  monthAgg.count  || 0,
+        totalClients:   uniqueClientIds.length,
         totalEarned,
         pendingEarned,
         availableEarned,
         paidEarned,
-        monthEarned:    monthBookings.reduce((s, b) => s + (b.coordinatorCommission || 0), 0),
+        monthEarned:    monthAgg.earned || 0,
       },
       trend,
       typeBreakdown,

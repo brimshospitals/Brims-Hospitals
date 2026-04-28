@@ -7,6 +7,8 @@ import { requireAuth } from "../../../../lib/auth";
 
 export const dynamic = "force-dynamic";
 
+const MIN_WITHDRAWAL = 100; // ₹100 minimum
+
 // POST — coordinator requests withdrawal of available (completed) earnings
 export async function POST(request) {
   const { error, session } = await requireAuth(request, ["coordinator", "member", "admin"]);
@@ -17,35 +19,53 @@ export async function POST(request) {
     const coord = await Coordinator.findOne({ userId: session.userId });
     if (!coord) return NextResponse.json({ success: false, message: "Coordinator nahi mila" }, { status: 404 });
 
-    // Find completed bookings with unpaid commission
-    const completedBookings = await Booking.find({
-      coordinatorId: coord._id,
-      coordinatorPaid: { $ne: true },
-      status: "completed",
-      coordinatorCommission: { $gt: 0 },
-    });
-
-    const availableAmount = completedBookings.reduce((s, b) => s + (b.coordinatorCommission || 0), 0);
-    if (availableAmount <= 0) {
-      return NextResponse.json({ success: false, message: "Abhi koi available earning nahi hai. Services complete hone ka intezaar karein." }, { status: 400 });
+    // CB3: Block duplicate pending withdrawal requests
+    const existingPending = await Transaction.findOne({
+      userId:   coord.userId,
+      category: "withdrawal",
+      status:   "pending",
+    }).lean();
+    if (existingPending) {
+      return NextResponse.json({
+        success: false,
+        message: `Aapka pehle ka ₹${existingPending.amount.toLocaleString("en-IN")} withdrawal request abhi pending hai. Admin process karne ke baad hi naya request karein.`,
+      }, { status: 409 });
     }
 
-    // Mark bookings as paid
-    const bookingIds = completedBookings.map(b => b._id);
-    await Booking.updateMany({ _id: { $in: bookingIds } }, { $set: { coordinatorPaid: true } });
+    // Find completed, unpaid bookings with commission
+    const completedBookings = await Booking.find({
+      coordinatorId:         coord._id,
+      coordinatorPaid:       { $ne: true },
+      status:                "completed",
+      coordinatorCommission: { $gt: 0 },
+    }).select("_id coordinatorCommission bookingId").lean();
 
-    // Update coordinator stats
-    await Coordinator.findByIdAndUpdate(coord._id, {
-      $inc: { paidEarned: availableAmount, pendingEarned: -availableAmount },
-    });
+    const availableAmount = completedBookings.reduce((s, b) => s + (b.coordinatorCommission || 0), 0);
 
-    // Create transaction record
+    if (availableAmount <= 0) {
+      return NextResponse.json({
+        success: false,
+        message: "Abhi koi available earning nahi hai. Services complete hone ka intezaar karein.",
+      }, { status: 400 });
+    }
+
+    if (availableAmount < MIN_WITHDRAWAL) {
+      return NextResponse.json({
+        success: false,
+        message: `Minimum ₹${MIN_WITHDRAWAL} available hona chahiye withdrawal ke liye. Abhi ₹${availableAmount} available hai.`,
+      }, { status: 400 });
+    }
+
+    // CB1 Fix: Store booking ObjectIds in referenceId — do NOT mark bookings as paid yet.
+    // Bookings will only be marked paid when admin processes the UTR.
+    const bookingObjectIds = completedBookings.map(b => b._id.toString());
+
     const txn = await Transaction.create({
       userId:      coord.userId,
       type:        "debit",
       amount:      availableAmount,
       description: `Withdrawal Request — ₹${availableAmount.toLocaleString("en-IN")} (${completedBookings.length} bookings)`,
-      referenceId: coord._id.toString(),
+      referenceId: JSON.stringify(bookingObjectIds),
       category:    "withdrawal",
       status:      "pending",
     });
@@ -53,8 +73,8 @@ export async function POST(request) {
     return NextResponse.json({
       success: true,
       message: `₹${availableAmount.toLocaleString("en-IN")} withdrawal request bhej diya gaya. Admin 24-48 hours mein process karega.`,
-      amount: availableAmount,
-      txnId: txn._id,
+      amount:  availableAmount,
+      txnId:   txn._id,
     });
   } catch (err) {
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });

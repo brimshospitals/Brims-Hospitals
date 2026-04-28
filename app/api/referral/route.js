@@ -26,10 +26,10 @@ export async function GET(request) {
     // Kitne log is code se aaye
     const referredCount = await User.countDocuments({ referredBy: user.referralCode });
 
-    // Referral transactions
+    // Referral transactions — filter by category for accuracy (not description regex)
     const earnings = await Transaction.find({
       userId,
-      description: { $regex: "referral", $options: "i" },
+      category: { $in: ["referral_cashback", "referral"] },
       status: "success",
     }).sort({ createdAt: -1 }).limit(20).lean();
 

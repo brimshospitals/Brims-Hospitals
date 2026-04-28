@@ -98,22 +98,22 @@ export async function POST(request) {
       return NextResponse.json({ success: true, exists: true, user: existing, message: "Pehle se registered hai" });
     }
 
-    // Create new user (basic member)
+    // CB2 Fix: Link user to coordinator so bookings auto-credit commission
+    const coord = await Coordinator.findOne({ userId: session.userId }).select("_id").lean();
+
     const user = await User.create({
-      mobile: mobile.trim(),
-      name:   name.trim(),
-      age:    Number(age),
+      mobile:                  mobile.trim(),
+      name:                    name.trim(),
+      age:                     Number(age),
       gender,
-      role:   "user",
-      isActive: true,
+      role:                    "user",
+      isActive:                true,
+      registeredByCoordinator: coord?._id || undefined,
     });
 
     // Increment coordinator's client count
-    if (session.role === "coordinator" || session.role === "member") {
-      const coord = await Coordinator.findOne({ userId: session.userId });
-      if (coord) {
-        await Coordinator.findByIdAndUpdate(coord._id, { $inc: { totalClients: 1 } });
-      }
+    if (coord) {
+      await Coordinator.findByIdAndUpdate(coord._id, { $inc: { totalClients: 1 } });
     }
 
     return NextResponse.json({ success: true, exists: false, user, message: "Naya client register ho gaya" });
