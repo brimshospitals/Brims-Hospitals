@@ -39,5 +39,8 @@ const supportTicketSchema = new mongoose.Schema({
   resolvedAt:   { type: Date },
 }, { timestamps: true });
 
+supportTicketSchema.index({ userId: 1, createdAt: -1 });
+supportTicketSchema.index({ status: 1, createdAt: -1 });
+
 const SupportTicket = mongoose.models.SupportTicket || mongoose.model("SupportTicket", supportTicketSchema);
 export default SupportTicket;

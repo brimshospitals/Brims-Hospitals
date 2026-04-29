@@ -6,6 +6,14 @@ import { requireAuth } from "../../../../lib/auth";
 
 export const dynamic = "force-dynamic";
 
+const VALID_STATUSES   = ["open", "in_progress", "resolved", "closed"];
+const VALID_PRIORITIES = ["low", "medium", "high", "urgent"];
+
+// Escape special regex characters to prevent injection
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 // GET — admin: all tickets with filters + stats
 // ?status=open|in_progress|resolved|closed|all
 // ?category=booking|payment|...
@@ -24,7 +32,8 @@ export async function GET(request) {
     const category = searchParams.get("category") || "all";
     const priority = searchParams.get("priority") || "all";
     const search   = searchParams.get("search")   || "";
-    const page     = parseInt(searchParams.get("page") || "1", 10);
+    let page       = parseInt(searchParams.get("page") || "1", 10);
+    if (isNaN(page) || page < 1) page = 1;
     const limit    = 30;
 
     const query = {};
@@ -32,10 +41,11 @@ export async function GET(request) {
     if (category !== "all") query.category = category;
     if (priority !== "all") query.priority = priority;
     if (search.trim()) {
+      const escaped = escapeRegex(search.trim());
       query.$or = [
-        { ticketId:   { $regex: search.trim(), $options: "i" } },
-        { subject:    { $regex: search.trim(), $options: "i" } },
-        { bookingRef: { $regex: search.trim(), $options: "i" } },
+        { ticketId:   { $regex: escaped, $options: "i" } },
+        { subject:    { $regex: escaped, $options: "i" } },
+        { bookingRef: { $regex: escaped, $options: "i" } },
       ];
     }
 
@@ -48,7 +58,7 @@ export async function GET(request) {
         .populate("userId", "name mobile")
         .select("-messages")
         .lean(),
-      // Stats breakdown
+      // Stats always reflect global counts (sidebar badges must show all, not filtered)
       SupportTicket.aggregate([
         { $group: { _id: "$status", count: { $sum: 1 } } },
       ]),
@@ -66,6 +76,7 @@ export async function GET(request) {
       stats,
     });
   } catch (err) {
+    console.error("Admin support GET error:", err.message);
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });
   }
 }
@@ -82,6 +93,14 @@ export async function PATCH(request) {
     const { ticketId, message, status, priority, assignedName } = await request.json();
     if (!ticketId) return NextResponse.json({ success: false, message: "ticketId required" }, { status: 400 });
 
+    // Enum validation
+    if (status && !VALID_STATUSES.includes(status)) {
+      return NextResponse.json({ success: false, message: `Invalid status: ${status}` }, { status: 400 });
+    }
+    if (priority && !VALID_PRIORITIES.includes(priority)) {
+      return NextResponse.json({ success: false, message: `Invalid priority: ${priority}` }, { status: 400 });
+    }
+
     const ticket = await SupportTicket.findOne({ ticketId });
     if (!ticket) return NextResponse.json({ success: false, message: "Ticket nahi mila" }, { status: 404 });
 
@@ -96,15 +115,18 @@ export async function PATCH(request) {
 
     if (status) {
       ticket.status = status;
-      if (status === "resolved" || status === "closed") ticket.resolvedAt = new Date();
+      if (status === "resolved") ticket.resolvedAt = new Date();
+      if (status === "closed")   ticket.closedAt   = new Date();
     }
     if (priority) ticket.priority = priority;
+
+    // Use session name/id — never trust user-supplied assignedName
     if (assignedName !== undefined) {
       ticket.assignedTo   = session.userId;
-      ticket.assignedName = assignedName || session.name;
+      ticket.assignedName = session.name || "Support Team";
     }
 
-    // Auto-mark in_progress when admin first replies
+    // Auto-mark in_progress only when ticket is still open
     if (message?.trim() && ticket.status === "open") {
       ticket.status = "in_progress";
     }
@@ -123,10 +145,13 @@ export async function PATCH(request) {
         title:   `💬 Support Update — ${ticketId}`,
         message: notifMsg,
       });
-    } catch {}
+    } catch (notifErr) {
+      console.error("Admin support notification failed:", notifErr.message);
+    }
 
     return NextResponse.json({ success: true, message: "Ticket updated", ticket });
   } catch (err) {
+    console.error("Admin support PATCH error:", err.message);
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });
   }
 }

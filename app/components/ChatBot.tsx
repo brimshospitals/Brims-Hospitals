@@ -4,6 +4,19 @@ import { BIHAR_DISTRICTS } from "../../lib/biharDistricts";
 
 type ChatMsg = { role: "user" | "assistant"; content: string };
 
+type ChatView = "chat" | "booking" | "support";
+
+const SUPPORT_CATEGORIES = [
+  { key: "booking",         icon: "📋", label: "Booking Issue" },
+  { key: "payment",         icon: "💳", label: "Payment / Refund" },
+  { key: "cancellation",    icon: "❌", label: "Cancellation" },
+  { key: "service",         icon: "🏥", label: "Service Quality" },
+  { key: "home_collection", icon: "🏍️", label: "Home Collection" },
+  { key: "report",          icon: "📄", label: "Report / Prescription" },
+  { key: "account",         icon: "👤", label: "Account / Wallet" },
+  { key: "other",           icon: "💬", label: "Kuch Aur" },
+];
+
 type BookingStep =
   | "idle" | "loading_session" | "patient_select"
   | "mobile" | "name" | "symptoms"
@@ -207,7 +220,7 @@ function StepBar({ step, loggedIn }: { step: BookingStep; loggedIn: boolean }) {
 
 export default function ChatBot() {
   const [open,        setOpen]        = useState(false);
-  const [view,        setView]        = useState<"chat" | "booking">("chat");
+  const [view,        setView]        = useState<ChatView>("chat");
   const [messages,    setMessages]    = useState<ChatMsg[]>([]);
   const [input,       setInput]       = useState("");
   const [loading,     setLoading]     = useState(false);
@@ -217,6 +230,17 @@ export default function ChatBot() {
   const [deptTab,     setDeptTab]     = useState("general");
   const [sessionUser, setSessionUser] = useState<any>(null);    // logged-in user profile
   const [newPatient,  setNewPatient]  = useState(false);        // "New Patient" toggle in patient_select
+
+  // Support flow state
+  const [suppStep,       setSuppStep]       = useState<"category" | "details" | "done">("category");
+  const [suppCategory,   setSuppCategory]   = useState("");
+  const [suppSubject,    setSuppSubject]     = useState("");
+  const [suppDesc,       setSuppDesc]       = useState("");
+  const [suppTicketId,   setSuppTicketId]   = useState("");
+  const [suppLoading,    setSuppLoading]    = useState(false);
+  const [suppLoggedIn,   setSuppLoggedIn]   = useState<boolean | null>(null);
+  const [suppError,      setSuppError]      = useState("");
+
   const deptTabRef = useRef<HTMLDivElement>(null);
   const bottomRef  = useRef<HTMLDivElement>(null);
   const inputRef   = useRef<HTMLInputElement>(null);
@@ -279,6 +303,49 @@ export default function ChatBot() {
     setSessionUser(null);
     setNewPatient(false);
     setView("chat");
+  }
+
+  async function startSupport() {
+    setView("support");
+    setSuppStep("category");
+    setSuppCategory(""); setSuppSubject(""); setSuppDesc("");
+    setSuppTicketId(""); setSuppError(""); setSuppLoggedIn(null);
+    try {
+      const meRes = await fetch("/api/auth/me");
+      const me    = await meRes.json();
+      setSuppLoggedIn(!!(me.success && me.loggedIn));
+    } catch {
+      setSuppLoggedIn(false);
+    }
+  }
+
+  async function submitSupport() {
+    if (!suppCategory)       { setSuppError("Category select karein"); return; }
+    if (!suppSubject.trim()) { setSuppError("Subject likhein"); return; }
+    if (!suppDesc.trim())    { setSuppError("Problem describe karein"); return; }
+    setSuppLoading(true); setSuppError("");
+    try {
+      const res = await fetch("/api/support", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          category:    suppCategory,
+          subject:     suppSubject.trim(),
+          description: suppDesc.trim(),
+        }),
+      });
+      const d = await res.json();
+      if (d.success) {
+        setSuppTicketId(d.ticketId);
+        setSuppStep("done");
+      } else {
+        setSuppError(d.message || "Error hua. Dobara try karein.");
+      }
+    } catch {
+      setSuppError("Network error. Internet check karein.");
+    } finally {
+      setSuppLoading(false);
+    }
   }
 
   async function nextStep() {
@@ -390,8 +457,8 @@ export default function ChatBot() {
               <p className="text-teal-200 text-xs">Booking · Health · Platform Help · 24×7</p>
             </div>
             <div className="flex items-center gap-2">
-              {view === "booking" && (
-                <button onClick={cancelBooking}
+              {(view === "booking" || view === "support") && (
+                <button onClick={() => { if (view === "booking") cancelBooking(); else setView("chat"); }}
                   className="text-teal-200 hover:text-white text-xs border border-teal-400 px-2 py-1 rounded-lg transition">
                   ← Chat
                 </button>
@@ -916,6 +983,125 @@ export default function ChatBot() {
             </div>
           )}
 
+          {/* ════════════════ SUPPORT WIZARD ════════════════ */}
+          {view === "support" && (
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+
+              {/* Checking login */}
+              {suppLoggedIn === null && (
+                <div className="flex flex-col items-center justify-center py-16 gap-3">
+                  <div className="w-9 h-9 border-4 border-rose-400 border-t-transparent rounded-full animate-spin" />
+                  <p className="text-gray-400 text-sm">Checking login...</p>
+                </div>
+              )}
+
+              {/* Not logged in */}
+              {suppLoggedIn === false && (
+                <div className="space-y-4 pt-2">
+                  <div className="bg-rose-50 rounded-2xl p-4 text-center border border-rose-100">
+                    <p className="text-3xl mb-2">🔒</p>
+                    <p className="font-bold text-gray-800 text-sm">Login Zaruri Hai</p>
+                    <p className="text-xs text-gray-500 mt-1">Support ticket raise karne ke liye pehle login karein</p>
+                  </div>
+                  <a href="/login?redirect=/support"
+                    className="block w-full bg-teal-600 hover:bg-teal-700 text-white py-3 rounded-xl font-bold text-sm text-center transition">
+                    Login / Register Karein
+                  </a>
+                  <a href="/support"
+                    className="block w-full border border-gray-200 text-gray-500 py-2.5 rounded-xl text-xs font-medium text-center hover:bg-gray-50 transition">
+                    Full Support Page Kholen →
+                  </a>
+                </div>
+              )}
+
+              {/* Logged in — step: category */}
+              {suppLoggedIn === true && suppStep === "category" && (
+                <div className="space-y-3">
+                  <div className="bg-rose-50 rounded-2xl p-3 border border-rose-100 flex items-center gap-2">
+                    <span className="text-xl">🎧</span>
+                    <div>
+                      <p className="font-bold text-gray-800 text-sm">Support Ticket</p>
+                      <p className="text-xs text-gray-500">Kaunsi problem hai?</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {SUPPORT_CATEGORIES.map(c => (
+                      <button key={c.key} onClick={() => { setSuppCategory(c.key); setSuppStep("details"); setSuppError(""); }}
+                        className="p-3 rounded-2xl border-2 border-gray-200 bg-white hover:border-rose-300 hover:bg-rose-50 text-left transition">
+                        <p className="text-lg mb-0.5">{c.icon}</p>
+                        <p className="text-xs font-bold text-gray-700 leading-snug">{c.label}</p>
+                      </button>
+                    ))}
+                  </div>
+                  <a href="/support"
+                    className="block w-full border border-gray-200 text-gray-400 py-2 rounded-xl text-xs text-center hover:bg-gray-50 transition">
+                    Full Support Page Kholen →
+                  </a>
+                </div>
+              )}
+
+              {/* Logged in — step: details form */}
+              {suppLoggedIn === true && suppStep === "details" && (() => {
+                const cat = SUPPORT_CATEGORIES.find(c => c.key === suppCategory);
+                return (
+                  <div className="space-y-3">
+                    <button onClick={() => { setSuppStep("category"); setSuppError(""); }}
+                      className="text-teal-600 text-xs font-semibold hover:underline flex items-center gap-1">
+                      ← Category Badlein
+                    </button>
+                    <div className="bg-rose-50 rounded-xl px-3 py-2 border border-rose-100 flex items-center gap-2">
+                      <span>{cat?.icon}</span>
+                      <span className="text-xs font-bold text-rose-700">{cat?.label}</span>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-500 mb-1">Subject *</label>
+                      <input value={suppSubject} onChange={e => { setSuppSubject(e.target.value); setSuppError(""); }}
+                        maxLength={120} placeholder="Ek line mein problem batayein..."
+                        className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-300" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-500 mb-1">Problem Detail *</label>
+                      <textarea value={suppDesc} onChange={e => { setSuppDesc(e.target.value); setSuppError(""); }}
+                        rows={4} placeholder="Poori detail mein batayein — kab hua, kya hua..."
+                        className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-300 resize-none" />
+                    </div>
+                    {suppError && <p className="text-xs text-red-500 bg-red-50 border border-red-100 rounded-xl px-3 py-2">⚠️ {suppError}</p>}
+                    <button onClick={submitSupport} disabled={suppLoading}
+                      className="w-full bg-rose-600 hover:bg-rose-700 text-white py-3 rounded-xl font-bold text-sm transition disabled:opacity-50 flex items-center justify-center gap-2">
+                      {suppLoading
+                        ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Submit ho raha hai...</>
+                        : "✓ Ticket Submit Karein"
+                      }
+                    </button>
+                  </div>
+                );
+              })()}
+
+              {/* Done */}
+              {suppLoggedIn === true && suppStep === "done" && (
+                <div className="flex flex-col items-center gap-4 pt-4 text-center">
+                  <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center text-3xl">🎉</div>
+                  <div>
+                    <p className="font-black text-green-700 text-lg">Ticket Submit Ho Gaya!</p>
+                    <p className="text-gray-500 text-xs mt-1">Hum 24 ghante mein aapko contact karenge</p>
+                  </div>
+                  <div className="w-full bg-rose-50 border-2 border-rose-200 rounded-2xl p-4">
+                    <p className="text-xs text-rose-500 font-semibold uppercase tracking-wider">Ticket ID</p>
+                    <p className="font-black text-rose-700 text-2xl mt-1 tracking-widest">{suppTicketId}</p>
+                  </div>
+                  <a href="/support"
+                    className="w-full block bg-teal-600 hover:bg-teal-700 text-white py-2.5 rounded-xl font-bold text-sm text-center transition">
+                    My Tickets Dekhein
+                  </a>
+                  <button onClick={() => setView("chat")}
+                    className="w-full border border-gray-200 text-gray-500 py-2 rounded-xl text-xs font-medium hover:bg-gray-50 transition">
+                    Chat Pe Wapas Jayein
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ════════════════ CHAT VIEW ════════════════ */}
           {view === "chat" && (
             <>
@@ -935,6 +1121,10 @@ export default function ChatBot() {
                     {a.icon} {a.label}
                   </a>
                 ))}
+                <button onClick={startSupport}
+                  className="flex items-center gap-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-2.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition flex-shrink-0">
+                  🎧 Support
+                </button>
               </div>
 
               {/* Messages */}

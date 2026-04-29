@@ -79,6 +79,7 @@ export default function SupportPage() {
   const [guestMobile,       setGuestMobile]       = useState("");
   const [submitting,        setSubmitting]        = useState(false);
 
+  const [detailLoading, setDetailLoading] = useState(false);
   const [toast,  setToast]  = useState("");
   const [toastOk,setToastOk]= useState(true);
 
@@ -107,11 +108,20 @@ export default function SupportPage() {
   }
 
   async function fetchDetail(ticketId: string) {
-    const res = await fetch(`/api/support/${ticketId}`);
-    const d   = await res.json();
-    if (d.success) {
-      setOpenTicket(d.ticket);
-      setTimeout(() => threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: "smooth" }), 100);
+    setDetailLoading(true);
+    try {
+      const res = await fetch(`/api/support/${ticketId}`);
+      const d   = await res.json();
+      if (d.success) {
+        setOpenTicket(d.ticket);
+        setTimeout(() => threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: "smooth" }), 100);
+      } else {
+        showToast(d.message || "Ticket load nahi hua", false);
+      }
+    } catch {
+      showToast("Network error — ticket load nahi hua", false);
+    } finally {
+      setDetailLoading(false);
     }
   }
 
@@ -146,7 +156,7 @@ export default function SupportPage() {
       }
       if (selectedBooking) lines.push(`Booking ID: ${selectedBooking}`);
       if (selectedTxn) {
-        const t = [...(ctx.transactions || []), ...(ctx.appointments || [])].find((x: any) => x._id === selectedTxn);
+        const t = [...(ctx?.transactions || []), ...(ctx?.appointments || [])].find((x: any) => x._id === selectedTxn);
         if (t) lines.push(`Transaction: ${t.referenceId || t._id?.slice(-8)} | ₹${t.amount} | ${t.category} | ${t.status}`);
       }
       if (selectedService) lines.push(`Service: ${selectedService}`);
@@ -158,6 +168,7 @@ export default function SupportPage() {
   async function submitTicket() {
     if (!ctx?.loggedIn) {
       if (!guestName.trim() || !guestMobile.trim()) return showToast("Naam aur mobile darj karein", false);
+      if (guestMobile.length !== 10) return showToast("10-digit valid mobile number darj karein", false);
       showToast("Ticket submit karne ke liye login karein", false);
       setTimeout(() => window.location.href = `/login?redirect=/support`, 1600);
       return;
@@ -673,7 +684,12 @@ export default function SupportPage() {
 
               {/* Thread */}
               <div ref={threadRef} className="space-y-3 max-h-[55vh] overflow-y-auto pr-1 pb-2">
-                {(openTicket.messages || []).map((msg: any, idx: number) => {
+                {detailLoading && (
+                  <div className="flex justify-center py-8">
+                    <div className="w-7 h-7 border-4 border-teal-200 border-t-teal-600 rounded-full animate-spin" />
+                  </div>
+                )}
+                {!detailLoading && (openTicket.messages || []).map((msg: any, idx: number) => {
                   const isSupport = ["admin","staff"].includes(msg.senderRole);
                   return (
                     <div key={msg._id || idx} className={`flex ${isSupport ? "justify-start" : "justify-end"}`}>
@@ -783,10 +799,10 @@ export default function SupportPage() {
             {/* Helpline strip */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-4 flex items-center gap-4">
               <div className="flex-1">
-                <p className="text-sm font-bold text-gray-800">📞 Helpline: 1800-XXX-XXXX</p>
-                <p className="text-xs text-gray-400 mt-0.5">Mon–Sat · 9 AM – 6 PM · Free call</p>
+                <p className="text-sm font-bold text-gray-800">📞 Helpline: 9955564596</p>
+                <p className="text-xs text-gray-400 mt-0.5">Mon–Sat · 9 AM – 6 PM</p>
               </div>
-              <a href="tel:18001234567" className="bg-teal-600 text-white text-xs font-bold px-3 py-2 rounded-xl">Call Now</a>
+              <a href="tel:9955564596" className="bg-teal-600 text-white text-xs font-bold px-3 py-2 rounded-xl">Call Now</a>
             </div>
 
             <button onClick={openNewTicket}

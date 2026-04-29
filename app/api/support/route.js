@@ -7,9 +7,14 @@ import { requireAuth } from "../../../lib/auth";
 
 export const dynamic = "force-dynamic";
 
+// Atomic-safe ticket ID: use the latest ticket's ID as base, retry on duplicate key
 async function generateTicketId() {
-  const count = await SupportTicket.countDocuments();
-  return `TKT-${String(count + 1).padStart(5, "0")}`;
+  const last = await SupportTicket.findOne({}, { ticketId: 1 })
+    .sort({ createdAt: -1 }).lean();
+  if (!last?.ticketId) return "TKT-00001";
+  const m = last.ticketId.match(/^TKT-(\d+)$/);
+  const num = m ? parseInt(m[1], 10) : 0;
+  return `TKT-${String(num + 1).padStart(5, "0")}`;
 }
 
 // POST — user creates a new support ticket
@@ -26,22 +31,47 @@ export async function POST(request) {
       return NextResponse.json({ success: false, message: "Category, subject aur description required hai" }, { status: 400 });
     }
 
-    const ticketId = await generateTicketId();
+    // Enum validation
+    const VALID_CATEGORIES = ["booking","payment","cancellation","service","home_collection","report","account","other"];
+    if (!VALID_CATEGORIES.includes(category)) {
+      return NextResponse.json({ success: false, message: "Invalid category" }, { status: 400 });
+    }
 
-    const ticket = await SupportTicket.create({
-      ticketId,
-      userId:      session.userId,
-      category,
-      subject:     subject.trim(),
-      description: description.trim(),
-      bookingRef:  bookingRef?.trim() || undefined,
-      messages: [{
-        senderId:   session.userId,
-        senderName: session.name || "User",
-        senderRole: session.role,
-        message:    description.trim(),
-      }],
-    });
+    // Length validation
+    if (subject.trim().length > 120) {
+      return NextResponse.json({ success: false, message: "Subject 120 characters se zyada nahi ho sakta" }, { status: 400 });
+    }
+    if (description.trim().length > 5000) {
+      return NextResponse.json({ success: false, message: "Description 5000 characters se zyada nahi ho sakta" }, { status: 400 });
+    }
+
+    // Create with duplicate-key retry to handle rare race condition
+    let ticket;
+    let ticketId;
+    let attempts = 0;
+    while (attempts < 3) {
+      ticketId = await generateTicketId();
+      try {
+        ticket = await SupportTicket.create({
+          ticketId,
+          userId:      session.userId,
+          category,
+          subject:     subject.trim(),
+          description: description.trim(),
+          bookingRef:  bookingRef?.trim() || undefined,
+          messages: [{
+            senderId:   session.userId,
+            senderName: session.name || "User",
+            senderRole: session.role,
+            message:    description.trim(),
+          }],
+        });
+        break;
+      } catch (e) {
+        if (e.code === 11000 && attempts < 2) { attempts++; continue; }
+        throw e;
+      }
+    }
 
     // Notify all admin users
     try {
@@ -54,7 +84,9 @@ export async function POST(request) {
           message: `${session.name || "User"} | ${category} | ${subject.trim()}`,
         })));
       }
-    } catch {}
+    } catch (notifErr) {
+      console.error("Support ticket notification failed:", notifErr.message);
+    }
 
     return NextResponse.json({
       success: true,
@@ -77,7 +109,8 @@ export async function GET(request) {
 
     const { searchParams } = new URL(request.url);
     const status = searchParams.get("status") || "all";
-    const page   = parseInt(searchParams.get("page") || "1", 10);
+    let page  = parseInt(searchParams.get("page") || "1", 10);
+    if (isNaN(page) || page < 1) page = 1;
     const limit  = 20;
 
     const query = { userId: session.userId };
@@ -101,6 +134,7 @@ export async function GET(request) {
       page,
     });
   } catch (err) {
+    console.error("Support GET error:", err.message);
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });
   }
 }

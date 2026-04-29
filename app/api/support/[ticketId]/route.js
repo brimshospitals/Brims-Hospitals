@@ -7,6 +7,9 @@ import { requireAuth } from "../../../../lib/auth";
 
 export const dynamic = "force-dynamic";
 
+const VALID_STATUSES   = ["open", "in_progress", "resolved", "closed"];
+const VALID_PRIORITIES = ["low", "medium", "high", "urgent"];
+
 // GET — full ticket detail including message thread
 export async function GET(request, { params }) {
   const { error, session } = await requireAuth(request, ["user", "member", "admin", "staff", "coordinator"]);
@@ -40,12 +43,30 @@ export async function PATCH(request, { params }) {
     const { ticketId } = await params;
     const { message, status, priority } = await request.json();
 
+    // Require at least one field to update
+    if (!message?.trim() && !status && !priority) {
+      return NextResponse.json({ success: false, message: "message, status ya priority mein se kuch provide karein" }, { status: 400 });
+    }
+
+    // Enum validation
+    if (status && !VALID_STATUSES.includes(status)) {
+      return NextResponse.json({ success: false, message: `Invalid status: ${status}` }, { status: 400 });
+    }
+    if (priority && !VALID_PRIORITIES.includes(priority)) {
+      return NextResponse.json({ success: false, message: `Invalid priority: ${priority}` }, { status: 400 });
+    }
+
     const ticket = await SupportTicket.findOne({ ticketId });
     if (!ticket) return NextResponse.json({ success: false, message: "Ticket nahi mila" }, { status: 404 });
 
     // Users can only update their own tickets
     if (!["admin", "staff"].includes(session.role) && ticket.userId.toString() !== session.userId) {
       return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 403 });
+    }
+
+    // Users cannot change status/priority
+    if (!["admin", "staff"].includes(session.role) && (status || priority)) {
+      return NextResponse.json({ success: false, message: "Sirf support team status ya priority badal sakti hai" }, { status: 403 });
     }
 
     // Add reply message
@@ -58,15 +79,19 @@ export async function PATCH(request, { params }) {
       });
     }
 
-    // Admin/staff can update status and priority
+    // Admin/staff: update status and priority
     if (["admin", "staff"].includes(session.role)) {
       if (status) {
         ticket.status = status;
-        if (status === "resolved" || status === "closed") {
-          ticket.resolvedAt = new Date();
-        }
+        if (status === "resolved") ticket.resolvedAt = new Date();
+        if (status === "closed")   ticket.closedAt   = new Date();
       }
       if (priority) ticket.priority = priority;
+
+      // Auto-mark in_progress only when ticket is still open
+      if (message?.trim() && ticket.status === "open") {
+        ticket.status = "in_progress";
+      }
     }
 
     await ticket.save();
@@ -74,7 +99,6 @@ export async function PATCH(request, { params }) {
     // Notify the other party
     try {
       if (["admin", "staff"].includes(session.role)) {
-        // Admin replied → notify the user who raised the ticket
         await Notification.create({
           userId:  ticket.userId,
           type:    "support",
@@ -82,7 +106,6 @@ export async function PATCH(request, { params }) {
           message: `Team ne aapke ticket ka jawab diya: "${message?.trim()?.slice(0, 80)}"`,
         });
       } else {
-        // User replied → notify admins
         const admins = await User.find({ role: "admin" }).select("_id").lean();
         if (admins.length > 0) {
           await Notification.insertMany(admins.map(a => ({
@@ -93,7 +116,9 @@ export async function PATCH(request, { params }) {
           })));
         }
       }
-    } catch {}
+    } catch (notifErr) {
+      console.error("Ticket reply notification failed:", notifErr.message);
+    }
 
     return NextResponse.json({
       success: true,
