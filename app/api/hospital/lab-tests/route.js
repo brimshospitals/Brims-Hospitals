@@ -4,6 +4,34 @@ import LabTest from "../../../../models/LabTest";
 import Hospital from "../../../../models/Hospital";
 import { requireHospitalAccess } from "../../../../lib/auth";
 
+// Bihar district centroids — fallback when hospital has no GPS set
+const DISTRICT_CENTROIDS = {
+  "Patna":{lat:25.5941,lng:85.1376},"Gaya":{lat:24.7955,lng:85.0002},
+  "Bhojpur":{lat:25.5562,lng:84.6607},"Buxar":{lat:25.5652,lng:83.9782},
+  "Rohtas":{lat:24.9463,lng:84.0318},"Kaimur":{lat:25.0390,lng:83.6036},
+  "Nalanda":{lat:25.1954,lng:85.5010},"Nawada":{lat:24.8857,lng:85.5440},
+  "Aurangabad":{lat:24.7517,lng:84.3743},"Jehanabad":{lat:25.2121,lng:84.9941},
+  "Arwal":{lat:25.2532,lng:84.6808},"Saran":{lat:25.7829,lng:84.7431},
+  "Siwan":{lat:26.2227,lng:84.3543},"Gopalganj":{lat:26.4683,lng:84.4338},
+  "West Champaran":{lat:27.0283,lng:84.5110},"East Champaran":{lat:26.6499,lng:84.9167},
+  "Muzaffarpur":{lat:26.1209,lng:85.3647},"Sheohar":{lat:26.5193,lng:85.2969},
+  "Sitamarhi":{lat:26.5912,lng:85.4820},"Vaishali":{lat:25.6900,lng:85.2099},
+  "Darbhanga":{lat:26.1542,lng:85.8999},"Madhubani":{lat:26.3534,lng:86.0729},
+  "Samastipur":{lat:25.8639,lng:85.7822},"Begusarai":{lat:25.4182,lng:86.1272},
+  "Khagaria":{lat:25.5024,lng:86.4633},"Munger":{lat:25.3762,lng:86.4736},
+  "Lakhisarai":{lat:25.1553,lng:86.1027},"Sheikhpura":{lat:25.1393,lng:85.8423},
+  "Jamui":{lat:24.9262,lng:86.2221},"Banka":{lat:24.8859,lng:86.9228},
+  "Bhagalpur":{lat:25.2496,lng:86.9718},"Supaul":{lat:26.1260,lng:86.6044},
+  "Madhepura":{lat:25.9262,lng:86.7897},"Saharsa":{lat:25.8829,lng:86.5980},
+  "Purnia":{lat:25.7771,lng:87.4718},"Katihar":{lat:25.5392,lng:87.5821},
+  "Kishanganj":{lat:26.1043,lng:87.9440},"Araria":{lat:26.1457,lng:87.5173},
+};
+function resolveCoords(hospital) {
+  if (hospital.coordinates?.lat && hospital.coordinates?.lng)
+    return { lat: hospital.coordinates.lat, lng: hospital.coordinates.lng };
+  return DISTRICT_CENTROIDS[hospital.address?.district] || null;
+}
+
 export const dynamic = "force-dynamic";
 
 function generateTestId() {
@@ -82,6 +110,8 @@ export async function POST(request) {
       city:     hospital.address?.city     || "",
       state:    "Bihar",
     };
+    const coords = resolveCoords(hospital);
+    if (coords) doc.coordinates = coords;
 
     const labTest = await LabTest.create(doc);
     return NextResponse.json({ success: true, labTest });

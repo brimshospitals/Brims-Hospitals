@@ -65,6 +65,11 @@ const labTestSchema = new mongoose.Schema(
       city:     { type: String },
       state:    { type: String, default: "Bihar" },
     },
+    // Actual GPS coordinates (from hospital record; falls back to district centroid if absent)
+    coordinates: {
+      lat: { type: Number },
+      lng: { type: Number },
+    },
 
     // Stats
     totalBookings: { type: Number, default: 0 },
