@@ -4,7 +4,7 @@ import Header from "../components/header";
 import PatientSelector, { SelectedPatient } from "../components/PatientSelector";
 import { BIHAR_DISTRICTS } from "../../lib/biharDistricts";
 import LocationBar, { UserLocation } from "../components/LocationBar";
-import { getDistanceKm, fmtDistance, getDistrictCoords, normalizeDistrict } from "../../lib/biharDistrictCoords";
+import { getItemDistanceKm, fmtDistance, getDistrictCoords, normalizeDistrict } from "../../lib/biharDistrictCoords";
 
 const categories = [
   "General Surgery", "Laparoscopic Surgery", "Cardiac Surgery",
@@ -92,9 +92,11 @@ export default function SurgeryPackagesPage() {
     if (!userLocation) { setFilteredPackages(packages); return; }
     const withDist = packages.map((p) => ({
       ...p,
-      _distKm: getDistanceKm(userLocation.lat, userLocation.lng, p.address?.district || "") ?? 9999,
+      _distKm: getItemDistanceKm(userLocation.lat, userLocation.lng, p) ?? 9999,
     }));
-    const inRadius = radius > 0 ? withDist.filter((p) => p._distKm <= radius) : withDist;
+    const inRadius = radius > 0
+      ? withDist.filter((p) => p._distKm <= radius || normalizeDistrict(p.address?.district || "") === "Patna")
+      : withDist;
     inRadius.sort((a, b) => a._distKm - b._distKm);
     setFilteredPackages(inRadius);
   }, [packages, userLocation, radius]);

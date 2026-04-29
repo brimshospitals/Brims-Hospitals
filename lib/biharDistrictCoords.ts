@@ -157,3 +157,17 @@ export function fmtDistance(km: number | null): string {
   if (km < 10) return `~${km} km`;
   return `~${Math.round(km / 5) * 5} km`; // round to nearest 5
 }
+
+/**
+ * Distance from user GPS to an item (doctor/lab/surgery package).
+ * Prefers item.coordinates (actual GPS) over district centroid fallback.
+ */
+export function getItemDistanceKm(
+  userLat: number,
+  userLng: number,
+  item: { coordinates?: { lat?: number; lng?: number }; address?: { district?: string } }
+): number | null {
+  if (item.coordinates?.lat && item.coordinates?.lng)
+    return Math.round(haversineKm(userLat, userLng, item.coordinates.lat, item.coordinates.lng));
+  return getDistanceKm(userLat, userLng, item.address?.district || "");
+}

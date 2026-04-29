@@ -4,7 +4,7 @@ import Header from "../components/header";
 import PatientSelector, { SelectedPatient } from "../components/PatientSelector";
 import { BIHAR_DISTRICTS } from "../../lib/biharDistricts";
 import LocationBar, { UserLocation } from "../components/LocationBar";
-import { getDistanceKm, fmtDistance, getDistrictCoords, normalizeDistrict } from "../../lib/biharDistrictCoords";
+import { getItemDistanceKm, fmtDistance, getDistrictCoords, normalizeDistrict } from "../../lib/biharDistrictCoords";
 
 const categories = [
   "Blood Test", "Urine Test", "Stool Test", "Imaging",
@@ -121,9 +121,11 @@ export default function LabTestsPage() {
     if (!userLocation) { setFilteredTests(tests); return; }
     const withDist = tests.map((t) => ({
       ...t,
-      _distKm: getDistanceKm(userLocation.lat, userLocation.lng, t.address?.district || "") ?? 9999,
+      _distKm: getItemDistanceKm(userLocation.lat, userLocation.lng, t) ?? 9999,
     }));
-    const inRadius = radius > 0 ? withDist.filter((t) => t._distKm <= radius) : withDist;
+    const inRadius = radius > 0
+      ? withDist.filter((t) => t._distKm <= radius || normalizeDistrict(t.address?.district || "") === "Patna")
+      : withDist;
     inRadius.sort((a, b) => a._distKm - b._distKm);
     setFilteredTests(inRadius);
   }, [tests, userLocation, radius]);

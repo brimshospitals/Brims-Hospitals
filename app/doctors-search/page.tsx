@@ -4,7 +4,7 @@ import Header from "../components/header";
 import { BIHAR_DISTRICTS } from "../../lib/biharDistricts";
 import { MEDICAL_DEPARTMENTS } from "../../lib/medicalDepartments";
 import LocationBar, { UserLocation } from "../components/LocationBar";
-import { getDistanceKm, fmtDistance, getDistrictCoords, normalizeDistrict } from "../../lib/biharDistrictCoords";
+import { getItemDistanceKm, fmtDistance, getDistrictCoords, normalizeDistrict } from "../../lib/biharDistrictCoords";
 
 const departments = MEDICAL_DEPARTMENTS;
 const biharDistricts = BIHAR_DISTRICTS;
@@ -57,9 +57,11 @@ export default function DoctorsSearchPage() {
     if (!userLocation) { setFilteredDoctors(doctors); return; }
     const withDist = doctors.map((d) => ({
       ...d,
-      _distKm: getDistanceKm(userLocation.lat, userLocation.lng, d.address?.district || "") ?? 9999,
+      _distKm: getItemDistanceKm(userLocation.lat, userLocation.lng, d) ?? 9999,
     }));
-    const inRadius = radius > 0 ? withDist.filter((d) => d._distKm <= radius) : withDist;
+    const inRadius = radius > 0
+      ? withDist.filter((d) => d._distKm <= radius || normalizeDistrict(d.address?.district || "") === "Patna")
+      : withDist;
     inRadius.sort((a, b) => a._distKm - b._distKm);
     setFilteredDoctors(inRadius);
   }, [doctors, userLocation, radius]);
