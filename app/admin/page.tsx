@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import DoctorFullForm from "@/app/components/DoctorFullForm";
 import LabTestFullForm from "@/app/components/LabTestFullForm";
 import BookingStageTimeline from "@/app/components/BookingStageTimeline";
@@ -6220,7 +6220,7 @@ function SupportTab() {
   const [updating,       setUpdating]       = useState(false);
   const [toast,          setToast]          = useState("");
   const [toastOk,        setToastOk]        = useState(true);
-  const threadRef = React.useRef<HTMLDivElement>(null);
+  const threadRef = useRef<HTMLDivElement>(null);
 
   function showToast(msg: string, ok = true) {
     setToast(msg); setToastOk(ok); setTimeout(() => setToast(""), 3000);
