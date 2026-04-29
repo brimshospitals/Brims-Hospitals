@@ -28,8 +28,10 @@ export async function GET(request) {
     if (type   !== "all") query.type   = type;
 
     const dateFilter = searchParams.get("date") || "";
-    const now   = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    // IST = UTC+5:30 — compute "today" in IST so filter is correct for Indian users
+    const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+    const nowIST = new Date(Date.now() + IST_OFFSET_MS);
+    const today  = new Date(Date.UTC(nowIST.getUTCFullYear(), nowIST.getUTCMonth(), nowIST.getUTCDate()));
     if (dateFilter === "today") {
       const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
       query.appointmentDate = { $gte: today, $lt: tomorrow };
@@ -80,7 +82,7 @@ export async function GET(request) {
       };
     });
 
-    // Stats
+    // Stats (reuses same IST-corrected `today`)
     const [todayPending, totalPending, totalConfirmed, todayCollected] = await Promise.all([
       Booking.countDocuments({ status: "pending", appointmentDate: { $gte: today } }),
       Booking.countDocuments({ status: "pending" }),

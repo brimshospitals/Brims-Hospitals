@@ -13,6 +13,7 @@ const biharDistricts = BIHAR_DISTRICTS;
 
 export default function SurgeryPackagesPage() {
   const [packages, setPackages] = useState<any[]>([]);
+  const [total, setTotal] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [district, setDistrict] = useState("");
@@ -40,8 +41,17 @@ export default function SurgeryPackagesPage() {
   const [promoLoading, setPromoLoading] = useState(false);
   const [promoError, setPromoError]     = useState("");
 
+  // Auto-search on select filter change
+  useEffect(() => { fetchPackages(); }, [district, category, maxPrice]);
+
+  // Debounce text search
   useEffect(() => {
-    fetchPackages();
+    const t = setTimeout(() => fetchPackages(), 500);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
+
+  useEffect(() => {
     fetchUserData();
     fetchPendingBookings();
 
@@ -125,6 +135,7 @@ export default function SurgeryPackagesPage() {
       const data = await res.json();
       if (data.success) {
         setPackages(data.packages);
+        setTotal(data.total ?? null);
         const autoId = sessionStorage.getItem("surgeryAutoOpen");
         if (autoId) {
           sessionStorage.removeItem("surgeryAutoOpen");
@@ -353,7 +364,7 @@ export default function SurgeryPackagesPage() {
           </div>
           <button onClick={fetchPackages}
             className="mt-3 w-full bg-teal-600 hover:bg-teal-700 text-white font-semibold py-3 rounded-lg transition">
-            Search Karein
+            {loading ? "Dhundh rahe hain..." : "Search Karein"}
           </button>
         </div>
 
@@ -395,6 +406,12 @@ export default function SurgeryPackagesPage() {
         )}
 
         {/* Packages List */}
+        {!loading && total !== null && (
+          <p className="text-sm text-gray-500 mb-3">
+            {total === 0 ? "Koi package nahi mila" : `${total} package${total === 1 ? "" : "s"} mile`}
+            {(search || district || category || maxPrice) ? " — filters lagaye hain" : ""}
+          </p>
+        )}
         {loading ? (
           <div className="text-center py-10 text-teal-600">Packages dhundh rahe hain...</div>
         ) : packages.length === 0 ? (

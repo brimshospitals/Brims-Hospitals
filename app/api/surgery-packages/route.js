@@ -7,32 +7,52 @@ export const dynamic = "force-dynamic";
 export async function GET(request) {
   try {
     const url = new URL(request.url);
-    const district = url.searchParams.get("district");
-    const category = url.searchParams.get("category");
-    const search = url.searchParams.get("search");
-    const maxPrice = url.searchParams.get("maxPrice");
+    const district  = url.searchParams.get("district")  || "";
+    const category  = url.searchParams.get("category")  || "";
+    const search    = url.searchParams.get("search")    || "";
+    const maxPrice  = url.searchParams.get("maxPrice")  || "";
+    const page      = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
+    const limit     = 20;
 
     await connectDB();
 
-    let query = { isActive: true };
+    const query = { isActive: true };
 
-    if (district) query["address.district"] = district;
-    if (category) query.category = { $regex: category, $options: "i" };
-    if (search) {
+    // Case-insensitive district match (fixes exact-match bug)
+    if (district) query["address.district"] = { $regex: `^${district.trim()}$`, $options: "i" };
+
+    // Case-insensitive category match
+    if (category) query.category = { $regex: `^${category.trim()}$`, $options: "i" };
+
+    if (search.trim()) {
       query.$or = [
-        { name: { $regex: search, $options: "i" } },
-        { category: { $regex: search, $options: "i" } },
-        { surgeonName: { $regex: search, $options: "i" } },
-        { hospitalName: { $regex: search, $options: "i" } },
+        { name:         { $regex: search.trim(), $options: "i" } },
+        { category:     { $regex: search.trim(), $options: "i" } },
+        { surgeonName:  { $regex: search.trim(), $options: "i" } },
+        { hospitalName: { $regex: search.trim(), $options: "i" } },
       ];
     }
-    if (maxPrice) query.offerPrice = { $lte: parseInt(maxPrice) };
 
-    const packages = await SurgeryPackage.find(query)
-      .sort({ rating: -1, totalBookings: -1 })
-      .limit(50);
+    // Fix: NaN-safe price filter
+    const price = parseInt(maxPrice, 10);
+    if (maxPrice && !isNaN(price) && price > 0) query.offerPrice = { $lte: price };
 
-    return NextResponse.json({ success: true, packages });
+    const [packages, total] = await Promise.all([
+      SurgeryPackage.find(query)
+        .sort({ rating: -1, totalBookings: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+      SurgeryPackage.countDocuments(query),
+    ]);
+
+    return NextResponse.json({
+      success: true,
+      packages,
+      total,
+      page,
+      pages: Math.ceil(total / limit),
+    });
   } catch (error) {
     return NextResponse.json(
       { success: false, message: "Server error: " + error.message },
@@ -46,10 +66,8 @@ export async function POST(request) {
     const body = await request.json();
     await connectDB();
 
-    // packageId generate karo
     body.packageId = "SURG-" + Date.now().toString(36).toUpperCase();
 
-    // membershipPrice calculate karo
     if (body.membershipDiscount && body.offerPrice) {
       body.membershipPrice = Math.round(
         body.offerPrice - (body.offerPrice * body.membershipDiscount) / 100

@@ -15,6 +15,7 @@ export default function DoctorsSearchPage() {
   const [district, setDistrict] = useState("");
   const [department, setDepartment] = useState("");
   const [maxFee, setMaxFee] = useState("");
+  const [total, setTotal] = useState<number | null>(null);
   const [selectedDoctor, setSelectedDoctor] = useState<any>(null);
   const [bookingStep, setBookingStep] = useState(0);
   const [selectedDate, setSelectedDate] = useState("");
@@ -26,10 +27,17 @@ export default function DoctorsSearchPage() {
   const [booking, setBooking] = useState(false);
   const [message, setMessage] = useState("");
 
+  // Auto-search on select filter change (district, department, maxFee)
+  useEffect(() => { fetchDoctors(); }, [district, department, maxFee]);
+
+  // Debounce text search — fire 500ms after user stops typing
   useEffect(() => {
-    fetchDoctors();
-    fetchUserData();
-  }, []);
+    const t = setTimeout(() => fetchDoctors(), 500);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
+
+  useEffect(() => { fetchUserData(); }, []);
 
   async function fetchDoctors() {
     setLoading(true);
@@ -42,7 +50,7 @@ export default function DoctorsSearchPage() {
 
       const res = await fetch(`/api/doctors?${params}`);
       const data = await res.json();
-      if (data.success) setDoctors(data.doctors);
+      if (data.success) { setDoctors(data.doctors); setTotal(data.total ?? null); }
     } catch (e) { console.error(e); }
     setLoading(false);
   }
@@ -155,11 +163,17 @@ export default function DoctorsSearchPage() {
           </div>
           <button onClick={fetchDoctors}
             className="mt-3 w-full bg-teal-600 hover:bg-teal-700 text-white font-semibold py-3 rounded-lg transition">
-            Search Karein
+            {loading ? "Dhundh rahe hain..." : "Search Karein"}
           </button>
         </div>
 
         {/* Doctors List */}
+        {!loading && total !== null && (
+          <p className="text-sm text-gray-500 mb-3">
+            {total === 0 ? "Koi doctor nahi mila" : `${total} doctor${total === 1 ? "" : "s"} mile`}
+            {(search || district || department || maxFee) ? " — filters lagaye hain" : ""}
+          </p>
+        )}
         {loading ? (
           <div className="text-center py-10 text-teal-600">Doctors dhundh rahe hain...</div>
         ) : doctors.length === 0 ? (

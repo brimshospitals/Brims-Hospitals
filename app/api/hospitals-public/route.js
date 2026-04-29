@@ -11,12 +11,12 @@ export async function GET(request) {
     const district = searchParams.get("district") || "";
     const type     = searchParams.get("type")     || "";
     const search   = searchParams.get("search")   || "";
-    const all      = searchParams.get("all") === "true"; // admin: include unverified
-    const full     = searchParams.get("full") === "true"; // search page: full fields
+    const full = searchParams.get("full") === "true"; // search page: full fields
 
     await connectDB();
 
-    const query = all ? {} : { isVerified: true, isActive: true };
+    // Always filter to verified + active — admin uses /api/admin/hospitals (auth-protected)
+    const query = { isVerified: true, isActive: true };
     if (district) query["address.district"] = { $regex: district, $options: "i" };
     if (type)     query.type = type;
     if (search)   query.name = { $regex: search, $options: "i" };

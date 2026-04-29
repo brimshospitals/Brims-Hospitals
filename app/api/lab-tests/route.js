@@ -4,35 +4,56 @@ import LabTest from "../../../models/LabTest";
 
 export const dynamic = "force-dynamic";
 
-// GET: Search & list lab tests
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
-    const search = searchParams.get("search") || "";
-    const category = searchParams.get("category") || "";
-    const district = searchParams.get("district") || "";
-    const maxPrice = searchParams.get("maxPrice") || "";
+    const search         = searchParams.get("search")         || "";
+    const category       = searchParams.get("category")       || "";
+    const district       = searchParams.get("district")       || "";
+    const maxPrice       = searchParams.get("maxPrice")       || "";
     const homeCollection = searchParams.get("homeCollection") || "";
+    const page           = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
+    const limit          = 20;
 
     await connectDB();
 
     const query = { isActive: true };
 
-    if (search) {
+    if (search.trim()) {
       query.$or = [
-        { name: { $regex: search, $options: "i" } },
-        { hospitalName: { $regex: search, $options: "i" } },
-        { category: { $regex: search, $options: "i" } },
+        { name:         { $regex: search.trim(), $options: "i" } },
+        { hospitalName: { $regex: search.trim(), $options: "i" } },
+        { category:     { $regex: search.trim(), $options: "i" } },
       ];
     }
-    if (category) query.category = category;
-    if (district) query["address.district"] = { $regex: district, $options: "i" };
-    if (maxPrice) query.offerPrice = { $lte: parseInt(maxPrice) };
+
+    // Fix: case-insensitive category match (was strict equality)
+    if (category) query.category = { $regex: `^${category.trim()}$`, $options: "i" };
+
+    if (district) query["address.district"] = { $regex: district.trim(), $options: "i" };
+
+    // Fix: NaN-safe price filter
+    const price = parseInt(maxPrice, 10);
+    if (maxPrice && !isNaN(price) && price > 0) query.offerPrice = { $lte: price };
+
     if (homeCollection === "true") query.homeCollection = true;
 
-    const tests = await LabTest.find(query).sort({ offerPrice: 1 });
+    const [tests, total] = await Promise.all([
+      LabTest.find(query)
+        .sort({ offerPrice: 1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+      LabTest.countDocuments(query),
+    ]);
 
-    return NextResponse.json({ success: true, tests });
+    return NextResponse.json({
+      success: true,
+      tests,
+      total,
+      page,
+      pages: Math.ceil(total / limit),
+    });
   } catch (error) {
     return NextResponse.json(
       { success: false, message: "Server error: " + error.message },
@@ -41,7 +62,6 @@ export async function GET(request) {
   }
 }
 
-// POST: Create a new lab test (hospital/admin use)
 export async function POST(request) {
   try {
     const body = await request.json();
@@ -57,7 +77,6 @@ export async function POST(request) {
 
     const testId = "LAB-" + Date.now().toString(36).toUpperCase();
 
-    // membershipPrice auto-calculate if not provided
     if (body.membershipDiscount && !body.membershipPrice) {
       body.membershipPrice = Math.round(
         body.offerPrice * (1 - body.membershipDiscount / 100)

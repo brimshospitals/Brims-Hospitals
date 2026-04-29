@@ -21,6 +21,7 @@ const timeSlots = [
 
 export default function LabTestsPage() {
   const [tests, setTests]               = useState<any[]>([]);
+  const [total, setTotal]               = useState<number | null>(null);
   const [loading, setLoading]           = useState(false);
   const [search, setSearch]             = useState("");
   const [category, setCategory]         = useState("");
@@ -57,8 +58,17 @@ export default function LabTestsPage() {
     flat: "", street: "", landmark: "", district: "Patna", pincode: "",
   });
 
+  // Auto-search on select filter change
+  useEffect(() => { fetchTests(); }, [category, district, maxPrice, homeOnly]);
+
+  // Debounce text search
   useEffect(() => {
-    fetchTests();
+    const t = setTimeout(() => fetchTests(), 500);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
+
+  useEffect(() => {
     fetchUserData();
     fetchPendingBookings();
 
@@ -155,6 +165,7 @@ export default function LabTestsPage() {
       const data = await res.json();
       if (data.success) {
         setTests(data.tests);
+        setTotal(data.total ?? null);
         // Auto-open draft test after card activation
         const autoId = sessionStorage.getItem("labTestAutoOpen");
         if (autoId) {
@@ -442,7 +453,7 @@ export default function LabTestsPage() {
           </div>
           <button onClick={fetchTests}
             className="w-full bg-teal-600 hover:bg-teal-700 text-white font-semibold py-3 rounded-lg transition">
-            Search Karein
+            {loading ? "Dhundh rahe hain..." : "Search Karein"}
           </button>
         </div>
 
@@ -511,6 +522,12 @@ export default function LabTestsPage() {
         )}
 
         {/* Tests List */}
+        {!loading && total !== null && (
+          <p className="text-sm text-gray-500 mb-3">
+            {total === 0 ? "Koi test nahi mila" : `${total} test${total === 1 ? "" : "s"} mile`}
+            {(search || category || district || maxPrice || homeOnly) ? " — filters lagaye hain" : ""}
+          </p>
+        )}
         {loading ? (
           <div className="text-center py-10 text-teal-600">Tests dhundh rahe hain...</div>
         ) : tests.length === 0 ? (
