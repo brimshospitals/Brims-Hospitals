@@ -3,6 +3,8 @@ import { useState, useEffect } from "react";
 import Header from "../components/header";
 import PatientSelector, { SelectedPatient } from "../components/PatientSelector";
 import { BIHAR_DISTRICTS } from "../../lib/biharDistricts";
+import LocationBar, { UserLocation } from "../components/LocationBar";
+import { getDistanceKm, fmtDistance, getDistrictCoords, normalizeDistrict } from "../../lib/biharDistrictCoords";
 
 const categories = [
   "Blood Test", "Urine Test", "Stool Test", "Imaging",
@@ -21,9 +23,11 @@ const timeSlots = [
 
 export default function LabTestsPage() {
   const [tests, setTests]               = useState<any[]>([]);
-  const [total, setTotal]               = useState<number | null>(null);
+  const [filteredTests, setFilteredTests] = useState<any[]>([]);
   const [loading, setLoading]           = useState(false);
   const [search, setSearch]             = useState("");
+  const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
+  const [radius, setRadius]             = useState(50);
   const [category, setCategory]         = useState("");
   const [district, setDistrict]         = useState("");
   const [maxPrice, setMaxPrice]         = useState("");
@@ -58,17 +62,12 @@ export default function LabTestsPage() {
     flat: "", street: "", landmark: "", district: "Patna", pincode: "",
   });
 
-  // Auto-search on select filter change
-  useEffect(() => { fetchTests(); }, [category, district, maxPrice, homeOnly]);
-
-  // Debounce text search
+  // Load saved location on mount
   useEffect(() => {
-    const t = setTimeout(() => fetchTests(), 500);
-    return () => clearTimeout(t);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search]);
-
-  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("brimsUserLocation");
+      if (saved) setUserLocation(JSON.parse(saved));
+    } catch {}
     fetchUserData();
     fetchPendingBookings();
 
@@ -105,6 +104,29 @@ export default function LabTestsPage() {
       }
     }
   }, []);
+
+  // Auto-search on select filter change
+  useEffect(() => { fetchTests(); }, [category, district, maxPrice, homeOnly]);
+  // Re-fetch when location changes
+  useEffect(() => { fetchTests(); }, [userLocation]);
+  // Debounce text search
+  useEffect(() => {
+    const t = setTimeout(() => fetchTests(), 500);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
+
+  // Distance sort + radius filter
+  useEffect(() => {
+    if (!userLocation) { setFilteredTests(tests); return; }
+    const withDist = tests.map((t) => ({
+      ...t,
+      _distKm: getDistanceKm(userLocation.lat, userLocation.lng, t.address?.district || "") ?? 9999,
+    }));
+    const inRadius = radius > 0 ? withDist.filter((t) => t._distKm <= radius) : withDist;
+    inRadius.sort((a, b) => a._distKm - b._distKm);
+    setFilteredTests(inRadius);
+  }, [tests, userLocation, radius]);
 
   // ── BookingDraft auto-save (silent, cross-device funnel tracking) ──────────
   async function saveDraft(stage: number, extra: Record<string, any> = {}, testOverride?: any) {
@@ -165,7 +187,6 @@ export default function LabTestsPage() {
       const data = await res.json();
       if (data.success) {
         setTests(data.tests);
-        setTotal(data.total ?? null);
         // Auto-open draft test after card activation
         const autoId = sessionStorage.getItem("labTestAutoOpen");
         if (autoId) {
@@ -212,6 +233,12 @@ export default function LabTestsPage() {
     }
   }
 
+  function handleLocationChange(loc: UserLocation | null) {
+    setUserLocation(loc);
+    if (loc) localStorage.setItem("brimsUserLocation", JSON.stringify(loc));
+    else localStorage.removeItem("brimsUserLocation");
+  }
+
   async function fetchUserData() {
     const userId = localStorage.getItem("userId");
     if (!userId) return;
@@ -223,6 +250,17 @@ export default function LabTestsPage() {
         setFamilyMembers(data.familyMembers || []);
         setHasMembership(!!data.familyCard);
         setWalletBalance(data.familyCard?.walletBalance || 0);
+        // Auto-set location from profile district if not saved
+        const profileDistrict = data.user?.address?.district;
+        if (profileDistrict && !localStorage.getItem("brimsUserLocation")) {
+          const canonical = normalizeDistrict(profileDistrict);
+          const coords = getDistrictCoords(canonical);
+          if (coords) {
+            const loc: UserLocation = { ...coords, label: canonical, district: canonical, isGPS: false };
+            setUserLocation(loc);
+            localStorage.setItem("brimsUserLocation", JSON.stringify(loc));
+          }
+        }
       }
     } catch (e) { console.error(e); }
   }
@@ -421,6 +459,14 @@ export default function LabTestsPage() {
           </div>
         )}
 
+        {/* Location Bar */}
+        <LocationBar
+          location={userLocation}
+          onLocationChange={handleLocationChange}
+          radius={radius}
+          onRadiusChange={setRadius}
+        />
+
         {/* Search & Filters */}
         <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 mb-6">
           <input value={search} onChange={(e) => setSearch(e.target.value)}
@@ -522,18 +568,19 @@ export default function LabTestsPage() {
         )}
 
         {/* Tests List */}
-        {!loading && total !== null && (
+        {!loading && (
           <p className="text-sm text-gray-500 mb-3">
-            {total === 0 ? "Koi test nahi mila" : `${total} test${total === 1 ? "" : "s"} mile`}
+            {filteredTests.length === 0 ? "Koi test nahi mila" : `${filteredTests.length} test mile`}
+            {userLocation && radius > 0 ? ` — ${radius} km ke andar` : ""}
             {(search || category || district || maxPrice || homeOnly) ? " — filters lagaye hain" : ""}
           </p>
         )}
         {loading ? (
           <div className="text-center py-10 text-teal-600">Tests dhundh rahe hain...</div>
-        ) : tests.length === 0 ? (
+        ) : filteredTests.length === 0 ? (
           <div className="text-center py-10 text-gray-400">
             <p className="text-4xl mb-3">🧪</p>
-            <p>Koi test nahi mila. Filter change karke try karein.</p>
+            <p>Koi test nahi mila.{userLocation && radius > 0 ? ` Radius badhao ya "All Bihar" karein.` : " Filter change karke try karein."}</p>
             <button onClick={() => fetch("/api/seed-labs").then(() => fetchTests())}
               className="mt-4 text-teal-600 text-sm underline">
               Sample data load karein
@@ -541,7 +588,7 @@ export default function LabTestsPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            {tests.map((test) => (
+            {filteredTests.map((test) => (
               <div key={test._id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                 <div className="p-5">
                   <div className="flex justify-between items-start mb-3">
@@ -563,9 +610,14 @@ export default function LabTestsPage() {
                       </div>
                       <h3 className="font-bold text-gray-800 text-lg">{test.name}</h3>
                       <p className="text-sm text-gray-500">🏥 {test.hospitalName}</p>
-                      {test.address?.district && (
-                        <p className="text-xs text-gray-400">📍 {test.address.district}</p>
-                      )}
+                      <p className="text-xs text-gray-400 flex items-center gap-1.5 flex-wrap">
+                        {test.address?.district && <span>📍 {test.address.district}</span>}
+                        {userLocation && test._distKm !== undefined && test._distKm < 9999 && (
+                          <span className="inline-flex items-center gap-0.5 bg-teal-50 text-teal-600 border border-teal-100 px-1.5 py-0.5 rounded-full text-[10px] font-semibold">
+                            📏 {fmtDistance(test._distKm)}
+                          </span>
+                        )}
+                      </p>
                     </div>
                     {/* ── Price Column ── */}
                     <div className="ml-3 flex-shrink-0 text-right min-w-[88px]">

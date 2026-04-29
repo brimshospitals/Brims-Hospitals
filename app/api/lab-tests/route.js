@@ -2,6 +2,21 @@ import { NextResponse } from "next/server";
 import connectDB from "../../../lib/mongodb";
 import LabTest from "../../../models/LabTest";
 
+const DISTRICT_ALIASES = {
+  rajdhani:"Patna","patna sahib":"Patna","patna city":"Patna",
+  chapra:"Saran",chhapra:"Saran",
+  ara:"Bhojpur",arrah:"Bhojpur",
+  sasaram:"Rohtas",bhabua:"Kaimur",
+  biharsharif:"Nalanda","bihar sharif":"Nalanda",
+  bettiah:"West Champaran","pashchim champaran":"West Champaran",
+  motihari:"East Champaran","purba champaran":"East Champaran",
+  hajipur:"Vaishali",purnea:"Purnia",
+};
+function normalizeDistrict(d) {
+  if (!d) return d;
+  return DISTRICT_ALIASES[d.trim().toLowerCase()] || d.trim();
+}
+
 export const dynamic = "force-dynamic";
 
 export async function GET(request) {
@@ -30,7 +45,8 @@ export async function GET(request) {
     // Fix: case-insensitive category match (was strict equality)
     if (category) query.category = { $regex: `^${category.trim()}$`, $options: "i" };
 
-    if (district) query["address.district"] = { $regex: district.trim(), $options: "i" };
+    const districtNorm = normalizeDistrict(district);
+    if (districtNorm) query["address.district"] = { $regex: `^${districtNorm}$`, $options: "i" };
 
     // Fix: NaN-safe price filter
     const price = parseInt(maxPrice, 10);

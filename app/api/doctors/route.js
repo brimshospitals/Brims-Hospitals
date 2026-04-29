@@ -2,6 +2,22 @@ import { NextResponse } from "next/server";
 import connectDB from "../../../lib/mongodb";
 import Doctor from "../../../models/Doctor";
 
+// Alias map: alternate names → canonical Bihar district names
+const DISTRICT_ALIASES = {
+  rajdhani:"Patna","patna sahib":"Patna","patna city":"Patna",
+  chapra:"Saran",chhapra:"Saran",
+  ara:"Bhojpur",arrah:"Bhojpur",
+  sasaram:"Rohtas",bhabua:"Kaimur",
+  biharsharif:"Nalanda","bihar sharif":"Nalanda",
+  bettiah:"West Champaran","pashchim champaran":"West Champaran",
+  motihari:"East Champaran","purba champaran":"East Champaran",
+  hajipur:"Vaishali",purnea:"Purnia",
+};
+function normalizeDistrict(d) {
+  if (!d) return d;
+  return DISTRICT_ALIASES[d.trim().toLowerCase()] || d.trim();
+}
+
 export const dynamic = "force-dynamic";
 
 export async function GET(request) {
@@ -19,8 +35,9 @@ export async function GET(request) {
 
     const query = { isActive: true };
 
-    // Case-insensitive district match (fixes exact-match bug)
-    if (district) query["address.district"] = { $regex: `^${district.trim()}$`, $options: "i" };
+    // Normalize alias (e.g. "Chapra" → "Saran") then case-insensitive match
+    const districtNorm = normalizeDistrict(district);
+    if (districtNorm) query["address.district"] = { $regex: `^${districtNorm}$`, $options: "i" };
 
     if (department) query.department = { $regex: department.trim(), $options: "i" };
 

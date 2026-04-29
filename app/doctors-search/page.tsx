@@ -3,19 +3,22 @@ import { useState, useEffect } from "react";
 import Header from "../components/header";
 import { BIHAR_DISTRICTS } from "../../lib/biharDistricts";
 import { MEDICAL_DEPARTMENTS } from "../../lib/medicalDepartments";
+import LocationBar, { UserLocation } from "../components/LocationBar";
+import { getDistanceKm, fmtDistance, getDistrictCoords, normalizeDistrict } from "../../lib/biharDistrictCoords";
 
 const departments = MEDICAL_DEPARTMENTS;
-
 const biharDistricts = BIHAR_DISTRICTS;
 
 export default function DoctorsSearchPage() {
-  const [doctors, setDoctors] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState("");
-  const [district, setDistrict] = useState("");
-  const [department, setDepartment] = useState("");
-  const [maxFee, setMaxFee] = useState("");
-  const [total, setTotal] = useState<number | null>(null);
+  const [doctors, setDoctors]           = useState<any[]>([]);
+  const [filteredDoctors, setFilteredDoctors] = useState<any[]>([]);
+  const [loading, setLoading]           = useState(false);
+  const [search, setSearch]             = useState("");
+  const [district, setDistrict]         = useState("");
+  const [department, setDepartment]     = useState("");
+  const [maxFee, setMaxFee]             = useState("");
+  const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
+  const [radius, setRadius]             = useState(50);
   const [selectedDoctor, setSelectedDoctor] = useState<any>(null);
   const [bookingStep, setBookingStep] = useState(0);
   const [selectedDate, setSelectedDate] = useState("");
@@ -27,17 +30,39 @@ export default function DoctorsSearchPage() {
   const [booking, setBooking] = useState(false);
   const [message, setMessage] = useState("");
 
-  // Auto-search on select filter change (district, department, maxFee)
+  // Load saved location from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("brimsUserLocation");
+      if (saved) setUserLocation(JSON.parse(saved));
+    } catch {}
+    fetchUserData();
+  }, []);
+
+  // Auto-search on select filter change
   useEffect(() => { fetchDoctors(); }, [district, department, maxFee]);
 
-  // Debounce text search — fire 500ms after user stops typing
+  // Re-fetch when location changes (location active + no district = fetch all Bihar)
+  useEffect(() => { fetchDoctors(); }, [userLocation]);
+
+  // Debounce text search
   useEffect(() => {
     const t = setTimeout(() => fetchDoctors(), 500);
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
 
-  useEffect(() => { fetchUserData(); }, []);
+  // Distance sort + radius filter whenever doctors list or location/radius changes
+  useEffect(() => {
+    if (!userLocation) { setFilteredDoctors(doctors); return; }
+    const withDist = doctors.map((d) => ({
+      ...d,
+      _distKm: getDistanceKm(userLocation.lat, userLocation.lng, d.address?.district || "") ?? 9999,
+    }));
+    const inRadius = radius > 0 ? withDist.filter((d) => d._distKm <= radius) : withDist;
+    inRadius.sort((a, b) => a._distKm - b._distKm);
+    setFilteredDoctors(inRadius);
+  }, [doctors, userLocation, radius]);
 
   async function fetchDoctors() {
     setLoading(true);
@@ -50,9 +75,15 @@ export default function DoctorsSearchPage() {
 
       const res = await fetch(`/api/doctors?${params}`);
       const data = await res.json();
-      if (data.success) { setDoctors(data.doctors); setTotal(data.total ?? null); }
+      if (data.success) setDoctors(data.doctors);
     } catch (e) { console.error(e); }
     setLoading(false);
+  }
+
+  function handleLocationChange(loc: UserLocation | null) {
+    setUserLocation(loc);
+    if (loc) localStorage.setItem("brimsUserLocation", JSON.stringify(loc));
+    else localStorage.removeItem("brimsUserLocation");
   }
 
   async function fetchUserData() {
@@ -64,8 +95,17 @@ export default function DoctorsSearchPage() {
       if (data.success) {
         setFamilyMembers(data.familyMembers || []);
         setWalletBalance(data.familyCard?.walletBalance || 0);
-        if (data.familyMembers?.length > 0) {
-          setSelectedMember(data.familyMembers[0]._id);
+        if (data.familyMembers?.length > 0) setSelectedMember(data.familyMembers[0]._id);
+        // Auto-set location from profile district if not already set
+        const profileDistrict = data.user?.address?.district;
+        if (profileDistrict && !localStorage.getItem("brimsUserLocation")) {
+          const canonical = normalizeDistrict(profileDistrict);
+          const coords = getDistrictCoords(canonical);
+          if (coords) {
+            const loc: UserLocation = { ...coords, label: canonical, district: canonical, isGPS: false };
+            setUserLocation(loc);
+            localStorage.setItem("brimsUserLocation", JSON.stringify(loc));
+          }
         }
       }
     } catch (e) { console.error(e); }
@@ -134,6 +174,14 @@ export default function DoctorsSearchPage() {
           }`}>{message}</div>
         )}
 
+        {/* Location Bar */}
+        <LocationBar
+          location={userLocation}
+          onLocationChange={handleLocationChange}
+          radius={radius}
+          onRadiusChange={setRadius}
+        />
+
         {/* Search & Filters */}
         <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 mb-6">
           <div className="grid grid-cols-1 gap-3 mb-3">
@@ -168,22 +216,25 @@ export default function DoctorsSearchPage() {
         </div>
 
         {/* Doctors List */}
-        {!loading && total !== null && (
+        {!loading && (
           <p className="text-sm text-gray-500 mb-3">
-            {total === 0 ? "Koi doctor nahi mila" : `${total} doctor${total === 1 ? "" : "s"} mile`}
+            {filteredDoctors.length === 0
+              ? "Koi doctor nahi mila"
+              : `${filteredDoctors.length} doctor${filteredDoctors.length === 1 ? "" : ""} mile`}
+            {userLocation && radius > 0 ? ` — ${radius} km ke andar` : ""}
             {(search || district || department || maxFee) ? " — filters lagaye hain" : ""}
           </p>
         )}
         {loading ? (
           <div className="text-center py-10 text-teal-600">Doctors dhundh rahe hain...</div>
-        ) : doctors.length === 0 ? (
+        ) : filteredDoctors.length === 0 ? (
           <div className="text-center py-10 text-gray-400">
             <p className="text-4xl mb-3">🩺</p>
-            <p>Koi doctor nahi mila. Filter change karke try karein.</p>
+            <p>Koi doctor nahi mila.{userLocation && radius > 0 ? ` Radius badhao ya "All Bihar" karein.` : " Filter change karke try karein."}</p>
           </div>
         ) : (
           <div className="space-y-4">
-            {doctors.map((doctor) => (
+            {filteredDoctors.map((doctor) => (
               <div key={doctor._id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                 <div className="p-5">
                   <div className="flex gap-4">
@@ -200,7 +251,14 @@ export default function DoctorsSearchPage() {
                       <p className="text-sm text-teal-600">{doctor.department} {doctor.speciality ? `• ${doctor.speciality}` : ""}</p>
                       <p className="text-xs text-gray-500">{doctor.degrees?.join(", ")} • {doctor.experience} saal experience</p>
                       {doctor.hospitalName && <p className="text-xs text-gray-400 mt-0.5">🏥 {doctor.hospitalName}</p>}
-                      {doctor.address?.district && <p className="text-xs text-gray-400">📍 {doctor.address.district}</p>}
+                      <p className="text-xs text-gray-400 flex items-center gap-1.5">
+                        {doctor.address?.district && <span>📍 {doctor.address.district}</span>}
+                        {userLocation && doctor._distKm !== undefined && doctor._distKm < 9999 && (
+                          <span className="inline-flex items-center gap-0.5 bg-teal-50 text-teal-600 border border-teal-100 px-1.5 py-0.5 rounded-full text-[10px] font-semibold">
+                            📏 {fmtDistance(doctor._distKm)}
+                          </span>
+                        )}
+                      </p>
                     </div>
                     {/* Fee */}
                     <div className="text-right">

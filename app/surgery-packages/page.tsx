@@ -3,6 +3,8 @@ import { useState, useEffect } from "react";
 import Header from "../components/header";
 import PatientSelector, { SelectedPatient } from "../components/PatientSelector";
 import { BIHAR_DISTRICTS } from "../../lib/biharDistricts";
+import LocationBar, { UserLocation } from "../components/LocationBar";
+import { getDistanceKm, fmtDistance, getDistrictCoords, normalizeDistrict } from "../../lib/biharDistrictCoords";
 
 const categories = [
   "General Surgery", "Laparoscopic Surgery", "Cardiac Surgery",
@@ -12,10 +14,12 @@ const categories = [
 const biharDistricts = BIHAR_DISTRICTS;
 
 export default function SurgeryPackagesPage() {
-  const [packages, setPackages] = useState<any[]>([]);
-  const [total, setTotal] = useState<number | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState("");
+  const [packages, setPackages]               = useState<any[]>([]);
+  const [filteredPackages, setFilteredPackages] = useState<any[]>([]);
+  const [loading, setLoading]                   = useState(false);
+  const [search, setSearch]                     = useState("");
+  const [userLocation, setUserLocation]         = useState<UserLocation | null>(null);
+  const [radius, setRadius]                     = useState(50);
   const [district, setDistrict] = useState("");
   const [category, setCategory] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
@@ -41,17 +45,12 @@ export default function SurgeryPackagesPage() {
   const [promoLoading, setPromoLoading] = useState(false);
   const [promoError, setPromoError]     = useState("");
 
-  // Auto-search on select filter change
-  useEffect(() => { fetchPackages(); }, [district, category, maxPrice]);
-
-  // Debounce text search
+  // Load saved location on mount
   useEffect(() => {
-    const t = setTimeout(() => fetchPackages(), 500);
-    return () => clearTimeout(t);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search]);
-
-  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("brimsUserLocation");
+      if (saved) setUserLocation(JSON.parse(saved));
+    } catch {}
     fetchUserData();
     fetchPendingBookings();
 
@@ -76,6 +75,29 @@ export default function SurgeryPackagesPage() {
       }
     } catch { localStorage.removeItem("surgeryDraft"); }
   }, []);
+
+  // Auto-search on select filter change
+  useEffect(() => { fetchPackages(); }, [district, category, maxPrice]);
+  // Re-fetch when location changes
+  useEffect(() => { fetchPackages(); }, [userLocation]);
+  // Debounce text search
+  useEffect(() => {
+    const t = setTimeout(() => fetchPackages(), 500);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
+
+  // Distance sort + radius filter
+  useEffect(() => {
+    if (!userLocation) { setFilteredPackages(packages); return; }
+    const withDist = packages.map((p) => ({
+      ...p,
+      _distKm: getDistanceKm(userLocation.lat, userLocation.lng, p.address?.district || "") ?? 9999,
+    }));
+    const inRadius = radius > 0 ? withDist.filter((p) => p._distKm <= radius) : withDist;
+    inRadius.sort((a, b) => a._distKm - b._distKm);
+    setFilteredPackages(inRadius);
+  }, [packages, userLocation, radius]);
 
   // ── BookingDraft auto-save ────────────────────────────────────────────────
   async function saveDraft(stage: number, extra: Record<string, any> = {}, pkgOverride?: any) {
@@ -135,7 +157,6 @@ export default function SurgeryPackagesPage() {
       const data = await res.json();
       if (data.success) {
         setPackages(data.packages);
-        setTotal(data.total ?? null);
         const autoId = sessionStorage.getItem("surgeryAutoOpen");
         if (autoId) {
           sessionStorage.removeItem("surgeryAutoOpen");
@@ -181,6 +202,12 @@ export default function SurgeryPackagesPage() {
     }
   }
 
+  function handleLocationChange(loc: UserLocation | null) {
+    setUserLocation(loc);
+    if (loc) localStorage.setItem("brimsUserLocation", JSON.stringify(loc));
+    else localStorage.removeItem("brimsUserLocation");
+  }
+
   async function fetchUserData() {
     const userId = localStorage.getItem("userId");
     if (!userId) return;
@@ -191,6 +218,17 @@ export default function SurgeryPackagesPage() {
         setProfile(data.user);
         setFamilyMembers(data.familyMembers || []);
         setHasMembership(!!data.familyCard);
+        // Auto-set location from profile district if not saved
+        const profileDistrict = data.user?.address?.district;
+        if (profileDistrict && !localStorage.getItem("brimsUserLocation")) {
+          const canonical = normalizeDistrict(profileDistrict);
+          const coords = getDistrictCoords(canonical);
+          if (coords) {
+            const loc: UserLocation = { ...coords, label: canonical, district: canonical, isGPS: false };
+            setUserLocation(loc);
+            localStorage.setItem("brimsUserLocation", JSON.stringify(loc));
+          }
+        }
       }
     } catch (e) { console.error(e); }
   }
@@ -337,6 +375,14 @@ export default function SurgeryPackagesPage() {
           </div>
         )}
 
+        {/* Location Bar */}
+        <LocationBar
+          location={userLocation}
+          onLocationChange={handleLocationChange}
+          radius={radius}
+          onRadiusChange={setRadius}
+        />
+
         {/* Search & Filters */}
         <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 mb-6">
           <input value={search} onChange={(e) => setSearch(e.target.value)}
@@ -406,22 +452,23 @@ export default function SurgeryPackagesPage() {
         )}
 
         {/* Packages List */}
-        {!loading && total !== null && (
+        {!loading && (
           <p className="text-sm text-gray-500 mb-3">
-            {total === 0 ? "Koi package nahi mila" : `${total} package${total === 1 ? "" : "s"} mile`}
+            {filteredPackages.length === 0 ? "Koi package nahi mila" : `${filteredPackages.length} package mile`}
+            {userLocation && radius > 0 ? ` — ${radius} km ke andar` : ""}
             {(search || district || category || maxPrice) ? " — filters lagaye hain" : ""}
           </p>
         )}
         {loading ? (
           <div className="text-center py-10 text-teal-600">Packages dhundh rahe hain...</div>
-        ) : packages.length === 0 ? (
+        ) : filteredPackages.length === 0 ? (
           <div className="text-center py-10 text-gray-400">
             <p className="text-4xl mb-3">🏥</p>
             <p>Koi package nahi mila. Filter change karke try karein.</p>
           </div>
         ) : (
           <div className="space-y-4">
-            {packages.map((pkg) => (
+            {filteredPackages.map((pkg) => (
               <div key={pkg._id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                 <div className="p-5">
                   {/* Header */}
@@ -433,7 +480,14 @@ export default function SurgeryPackagesPage() {
                       </div>
                       <h3 className="font-bold text-gray-800 text-lg">{pkg.name}</h3>
                       <p className="text-sm text-gray-500">🏥 {pkg.hospitalName}</p>
-                      {pkg.address?.district && <p className="text-xs text-gray-400">📍 {pkg.address.district}</p>}
+                      <p className="text-xs text-gray-400 flex items-center gap-1.5 flex-wrap">
+                        {pkg.address?.district && <span>📍 {pkg.address.district}</span>}
+                        {userLocation && pkg._distKm !== undefined && pkg._distKm < 9999 && (
+                          <span className="inline-flex items-center gap-0.5 bg-teal-50 text-teal-600 border border-teal-100 px-1.5 py-0.5 rounded-full text-[10px] font-semibold">
+                            📏 {fmtDistance(pkg._distKm)}
+                          </span>
+                        )}
+                      </p>
                     </div>
                     {/* Price */}
                     <div className="ml-4 flex-shrink-0 text-right min-w-[88px] flex flex-col items-end">
