@@ -5,7 +5,6 @@ import User from "../../../models/User";
 import CommissionSlab from "../../../models/CommissionSlab";
 import Notification from "../../../models/Notification";
 import { hashPassword } from "../../../lib/auth";
-import Notification from "../../../models/Notification";
 
 export const dynamic = "force-dynamic";
 
