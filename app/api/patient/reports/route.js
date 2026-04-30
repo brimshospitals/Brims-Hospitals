@@ -1,40 +1,26 @@
 import { NextResponse } from "next/server";
 import connectDB from "../../../../lib/mongodb";
 import Report from "../../../../models/Report";
-import User   from "../../../../models/User";
-import FamilyCard from "../../../../models/FamilyCard";
+import { requireAuth } from "../../../../lib/auth";
 
 export const dynamic = "force-dynamic";
 
-// GET — Patient fetches their own reports (plus family members' reports)
+// GET — Patient fetches their own reports
+// Family members are embedded in the primary user — their reports are stored
+// under the primary user's _id (hospital looks up by mobile = primary mobile).
 export async function GET(request) {
+  const { error, session } = await requireAuth(request, ["user", "member", "admin", "staff", "coordinator"]);
+  if (error) return error;
+
   try {
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get("userId");
-
-    if (!userId) {
-      return NextResponse.json({ success: false, message: "userId zaruri hai" }, { status: 400 });
-    }
-
     await connectDB();
 
-    // Include family members
-    const user = await User.findById(userId).select("familyCardId").lean();
-    const memberIds = [userId];
-
-    if (user?.familyCardId) {
-      const familyCard = await FamilyCard.findById(user.familyCardId).lean();
-      if (familyCard?.members?.length) {
-        familyCard.members.forEach((id) => memberIds.push(id.toString()));
-      }
-    }
-
-    const reports = await Report.find({ userId: { $in: memberIds } })
+    const reports = await Report.find({ userId: session.userId })
       .sort({ reportDate: -1, createdAt: -1 })
       .lean();
 
     return NextResponse.json({ success: true, reports, total: reports.length });
-  } catch (error) {
-    return NextResponse.json({ success: false, message: "Server error: " + error.message }, { status: 500 });
+  } catch (err) {
+    return NextResponse.json({ success: false, message: "Server error: " + err.message }, { status: 500 });
   }
 }

@@ -20,12 +20,16 @@ const labReportSchema = new mongoose.Schema({
   templateName: { type: String, required: true },
   category:     { type: String, default: "Blood Test" },
 
+  // Sample details
+  sampleType:   { type: String, default: "Blood" },    // Blood / Urine / Stool / Swab / Other
+  referredBy:   { type: String, default: "" },          // Referring doctor name
+
   // Patient
   patientName:   { type: String, required: true },
   patientAge:    { type: Number },
   patientGender: { type: String, enum: ["male", "female", "other"], default: "male" },
   patientMobile: { type: String },
-  patientRefId:  { type: String },        // external patient ID / member ID
+  patientRefId:  { type: String },
 
   // Results
   results: [resultSchema],
@@ -39,9 +43,12 @@ const labReportSchema = new mongoose.Schema({
   collectionDate: { type: Date, default: Date.now },
   reportDate:     { type: Date, default: Date.now },
 
-  status: { type: String, enum: ["draft", "final"], default: "draft" },
+  status:   { type: String, enum: ["draft", "final"], default: "draft" },
   isActive: { type: Boolean, default: true },
 }, { timestamps: true });
+
+labReportSchema.index({ hospitalId: 1, createdAt: -1 });
+labReportSchema.index({ hospitalId: 1, status: 1 });
 
 const LabReport = mongoose.models.LabReport || mongoose.model("LabReport", labReportSchema);
 export default LabReport;
