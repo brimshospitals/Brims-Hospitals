@@ -96,6 +96,298 @@ export const LAB_CATALOG: Record<string, string[]> = {
 
 const ALL_TESTS_FLAT = Object.values(LAB_CATALOG).flat();
 
+// ── Smart metadata: category + sample type per test name ───────────────────
+const EDTA  = "EDTA Whole Blood (Purple Cap)";
+const SERUM = "Plain / Serum (Red/Gold Cap)";
+const FLUOR = "Fluoride Plasma (Grey Cap)";
+const CITR  = "Citrate Plasma (Blue Cap)";
+const HEPN  = "Heparin Plasma (Green Cap)";
+const NONE  = "No Sample Required";
+const MULTI = "Multiple Samples";
+
+const TEST_META: Record<string, { category: string; sampleType: string }> = {
+  // Haematology — EDTA Whole Blood
+  "CBC (Complete Blood Count)":            { category: "Blood Test", sampleType: EDTA },
+  "Haemoglobin (Hb)":                      { category: "Blood Test", sampleType: EDTA },
+  "PCV (Packed Cell Volume)":              { category: "Blood Test", sampleType: EDTA },
+  "RBC Count":                             { category: "Blood Test", sampleType: EDTA },
+  "WBC Count":                             { category: "Blood Test", sampleType: EDTA },
+  "Platelet Count":                        { category: "Blood Test", sampleType: EDTA },
+  "ESR (Erythrocyte Sedimentation Rate)":  { category: "Blood Test", sampleType: EDTA },
+  "Peripheral Blood Smear":               { category: "Blood Test", sampleType: EDTA },
+  "Reticulocyte Count":                   { category: "Blood Test", sampleType: EDTA },
+  "Bleeding Time / Clotting Time":        { category: "Blood Test", sampleType: EDTA },
+  // Coagulation — Citrate Plasma
+  "Prothrombin Time (PT/INR)":            { category: "Blood Test", sampleType: CITR },
+  "APTT":                                  { category: "Blood Test", sampleType: CITR },
+  "D-Dimer":                               { category: "Blood Test", sampleType: CITR },
+  "Fibrinogen":                            { category: "Blood Test", sampleType: CITR },
+  // Biochemistry — Fluoride for sugars, EDTA for HbA1c, Serum for rest
+  "Blood Sugar Fasting":                   { category: "Blood Test", sampleType: FLUOR },
+  "Blood Sugar PP (Post Prandial)":        { category: "Blood Test", sampleType: FLUOR },
+  "Blood Sugar Random":                    { category: "Blood Test", sampleType: FLUOR },
+  "HbA1c (Glycated Haemoglobin)":         { category: "Blood Test", sampleType: EDTA },
+  "LFT (Liver Function Test)":            { category: "Blood Test", sampleType: SERUM },
+  "KFT (Kidney Function Test)":           { category: "Blood Test", sampleType: SERUM },
+  "Uric Acid":                             { category: "Blood Test", sampleType: SERUM },
+  "Serum Creatinine":                      { category: "Blood Test", sampleType: SERUM },
+  "Serum Urea":                            { category: "Blood Test", sampleType: SERUM },
+  "BUN":                                   { category: "Blood Test", sampleType: SERUM },
+  "Lipid Profile":                         { category: "Blood Test", sampleType: SERUM },
+  "Total Cholesterol":                     { category: "Blood Test", sampleType: SERUM },
+  "HDL":                                   { category: "Blood Test", sampleType: SERUM },
+  "LDL":                                   { category: "Blood Test", sampleType: SERUM },
+  "VLDL":                                  { category: "Blood Test", sampleType: SERUM },
+  "Triglycerides":                         { category: "Blood Test", sampleType: SERUM },
+  "SGPT (ALT)":                            { category: "Blood Test", sampleType: SERUM },
+  "SGOT (AST)":                            { category: "Blood Test", sampleType: SERUM },
+  "ALP (Alkaline Phosphatase)":           { category: "Blood Test", sampleType: SERUM },
+  "GGT":                                   { category: "Blood Test", sampleType: SERUM },
+  "Total Bilirubin":                       { category: "Blood Test", sampleType: SERUM },
+  "Direct Bilirubin":                      { category: "Blood Test", sampleType: SERUM },
+  "Indirect Bilirubin":                    { category: "Blood Test", sampleType: SERUM },
+  "Total Protein":                         { category: "Blood Test", sampleType: SERUM },
+  "Albumin":                               { category: "Blood Test", sampleType: SERUM },
+  "Globulin":                              { category: "Blood Test", sampleType: SERUM },
+  "Serum Calcium":                         { category: "Blood Test", sampleType: SERUM },
+  "Serum Phosphorus":                      { category: "Blood Test", sampleType: SERUM },
+  "Serum Sodium":                          { category: "Blood Test", sampleType: SERUM },
+  "Serum Potassium":                       { category: "Blood Test", sampleType: SERUM },
+  "Serum Chloride":                        { category: "Blood Test", sampleType: SERUM },
+  "Serum Magnesium":                       { category: "Blood Test", sampleType: SERUM },
+  "Iron Studies":                          { category: "Blood Test", sampleType: SERUM },
+  "TIBC":                                  { category: "Blood Test", sampleType: SERUM },
+  "Serum Ferritin":                        { category: "Blood Test", sampleType: SERUM },
+  "Amylase":                               { category: "Blood Test", sampleType: SERUM },
+  "Lipase":                                { category: "Blood Test", sampleType: SERUM },
+  "CRP (C-Reactive Protein)":             { category: "Blood Test", sampleType: SERUM },
+  "CK-MB":                                 { category: "Blood Test", sampleType: SERUM },
+  "Troponin I":                            { category: "Blood Test", sampleType: SERUM },
+  "Troponin T":                            { category: "Blood Test", sampleType: SERUM },
+  "LDH":                                   { category: "Blood Test", sampleType: SERUM },
+  "CPK":                                   { category: "Blood Test", sampleType: SERUM },
+  // Serology
+  "HIV 1 & 2 (Elisa)":                    { category: "Blood Test", sampleType: SERUM },
+  "HBsAg (Hepatitis B)":                  { category: "Blood Test", sampleType: SERUM },
+  "Anti-HCV (Hepatitis C)":               { category: "Blood Test", sampleType: SERUM },
+  "VDRL (Syphilis)":                       { category: "Blood Test", sampleType: SERUM },
+  "Widal Test":                            { category: "Blood Test", sampleType: SERUM },
+  "Dengue NS1 Antigen":                   { category: "Blood Test", sampleType: SERUM },
+  "Dengue IgG/IgM":                       { category: "Blood Test", sampleType: SERUM },
+  "Malaria Antigen (RDT)":                { category: "Blood Test", sampleType: EDTA },
+  "Typhoid IgM (Typhidot)":               { category: "Blood Test", sampleType: SERUM },
+  "Scrub Typhus IgM":                     { category: "Blood Test", sampleType: SERUM },
+  "Leptospira IgM":                       { category: "Blood Test", sampleType: SERUM },
+  "H. pylori Antigen":                    { category: "Stool Test", sampleType: "Stool (Fresh)" },
+  "H. pylori IgG":                        { category: "Blood Test", sampleType: SERUM },
+  "ASO Titre":                             { category: "Blood Test", sampleType: SERUM },
+  "RA Factor":                             { category: "Blood Test", sampleType: SERUM },
+  "ANA (Antinuclear Antibody)":           { category: "Blood Test", sampleType: SERUM },
+  "Anti-dsDNA":                           { category: "Blood Test", sampleType: SERUM },
+  "CRP (Quantitative)":                   { category: "Blood Test", sampleType: SERUM },
+  "Blood Culture & Sensitivity":          { category: "Blood Test", sampleType: "Blood Culture Bottle" },
+  "Urine Culture & Sensitivity":          { category: "Urine Test", sampleType: "Mid-stream Urine (MSU)" },
+  "Sputum Culture & Sensitivity":         { category: "Pathology",  sampleType: "Sputum" },
+  "Throat Swab Culture":                  { category: "Swab",       sampleType: "Throat Swab" },
+  // Thyroid & Hormones — all Serum
+  "TSH (Thyroid Stimulating Hormone)":    { category: "Blood Test", sampleType: SERUM },
+  "T3 (Triiodothyronine)":               { category: "Blood Test", sampleType: SERUM },
+  "T4 (Thyroxine)":                       { category: "Blood Test", sampleType: SERUM },
+  "Free T3":                              { category: "Blood Test", sampleType: SERUM },
+  "Free T4":                              { category: "Blood Test", sampleType: SERUM },
+  "Anti-TPO Antibody":                    { category: "Blood Test", sampleType: SERUM },
+  "Anti-Thyroglobulin":                   { category: "Blood Test", sampleType: SERUM },
+  "Prolactin":                            { category: "Blood Test", sampleType: SERUM },
+  "FSH":                                  { category: "Blood Test", sampleType: SERUM },
+  "LH":                                   { category: "Blood Test", sampleType: SERUM },
+  "Testosterone (Total)":                 { category: "Blood Test", sampleType: SERUM },
+  "Testosterone (Free)":                  { category: "Blood Test", sampleType: SERUM },
+  "DHEA-S":                               { category: "Blood Test", sampleType: SERUM },
+  "Cortisol (Fasting)":                   { category: "Blood Test", sampleType: SERUM },
+  "Insulin (Fasting)":                    { category: "Blood Test", sampleType: SERUM },
+  "HOMA-IR":                              { category: "Blood Test", sampleType: SERUM },
+  "Progesterone":                         { category: "Blood Test", sampleType: SERUM },
+  "Estradiol (E2)":                       { category: "Blood Test", sampleType: SERUM },
+  "AMH (Anti-Müllerian Hormone)":         { category: "Blood Test", sampleType: SERUM },
+  "Beta hCG":                             { category: "Blood Test", sampleType: SERUM },
+  "Growth Hormone":                       { category: "Blood Test", sampleType: SERUM },
+  "IGF-1":                                { category: "Blood Test", sampleType: SERUM },
+  "PTH (Parathyroid Hormone)":            { category: "Blood Test", sampleType: SERUM },
+  // Urine & Stool
+  "Urine Routine & Microscopy":           { category: "Urine Test", sampleType: "Urine (Mid-stream)" },
+  "24-Hour Urine Protein":                { category: "Urine Test", sampleType: "24-Hour Urine Collection" },
+  "24-Hour Urine Creatinine":             { category: "Urine Test", sampleType: "24-Hour Urine Collection" },
+  "Urine Microalbumin":                   { category: "Urine Test", sampleType: "Urine (First morning)" },
+  "Urine Ketones":                        { category: "Urine Test", sampleType: "Urine (Random)" },
+  "Pregnancy Test (Urine)":               { category: "Urine Test", sampleType: "Urine (First morning)" },
+  "Stool Routine & Microscopy":           { category: "Stool Test", sampleType: "Stool (Fresh)" },
+  "Stool Occult Blood":                   { category: "Stool Test", sampleType: "Stool (Fresh)" },
+  "Stool Culture":                        { category: "Stool Test", sampleType: "Stool (Fresh)" },
+  "H. pylori Stool Antigen":             { category: "Stool Test", sampleType: "Stool (Fresh)" },
+  // Vitamins & Minerals — Serum
+  "Vitamin D3 (25-OH)":                   { category: "Blood Test", sampleType: SERUM },
+  "Vitamin B12 (Cobalamin)":              { category: "Blood Test", sampleType: SERUM },
+  "Vitamin B9 (Folic Acid)":              { category: "Blood Test", sampleType: SERUM },
+  "Vitamin A":                            { category: "Blood Test", sampleType: SERUM },
+  "Vitamin E":                            { category: "Blood Test", sampleType: SERUM },
+  "Zinc":                                 { category: "Blood Test", sampleType: SERUM },
+  "Copper":                               { category: "Blood Test", sampleType: SERUM },
+  "Selenium":                             { category: "Blood Test", sampleType: SERUM },
+  "Magnesium":                            { category: "Blood Test", sampleType: SERUM },
+  "Serum Iron":                           { category: "Blood Test", sampleType: SERUM },
+  // Tumour Markers — Serum
+  "PSA (Prostate Specific Antigen)":      { category: "Blood Test", sampleType: SERUM },
+  "CEA (Carcinoembryonic Antigen)":       { category: "Blood Test", sampleType: SERUM },
+  "AFP (Alpha-fetoprotein)":              { category: "Blood Test", sampleType: SERUM },
+  "CA-125 (Ovarian)":                     { category: "Blood Test", sampleType: SERUM },
+  "CA 19-9 (Pancreatic)":                { category: "Blood Test", sampleType: SERUM },
+  "CA 15-3 (Breast)":                    { category: "Blood Test", sampleType: SERUM },
+  "Beta-2 Microglobulin":                { category: "Blood Test", sampleType: SERUM },
+  "HE4":                                  { category: "Blood Test", sampleType: SERUM },
+  "CYFRA 21-1":                           { category: "Blood Test", sampleType: SERUM },
+  "NSE (Neuron Specific Enolase)":        { category: "Blood Test", sampleType: SERUM },
+  // Cardiac
+  "ECG (Electrocardiogram)":             { category: "ECG",        sampleType: NONE },
+  "2D Echo (Echocardiography)":          { category: "Ultrasound", sampleType: NONE },
+  "Stress Test (TMT)":                   { category: "Cardiac",    sampleType: NONE },
+  "Holter Monitor (24 hr)":              { category: "Cardiac",    sampleType: NONE },
+  "BNP / NT-proBNP":                     { category: "Blood Test", sampleType: SERUM },
+  "Homocysteine":                        { category: "Blood Test", sampleType: SERUM },
+  "Lipoprotein(a)":                      { category: "Blood Test", sampleType: SERUM },
+  "hs-CRP":                              { category: "Blood Test", sampleType: SERUM },
+  // X-Ray
+  "X-Ray Chest (PA View)":              { category: "X-Ray", sampleType: NONE },
+  "X-Ray Abdomen":                       { category: "X-Ray", sampleType: NONE },
+  "X-Ray KUB":                           { category: "X-Ray", sampleType: NONE },
+  "X-Ray Spine (Cervical)":             { category: "X-Ray", sampleType: NONE },
+  "X-Ray Spine (Lumbar)":               { category: "X-Ray", sampleType: NONE },
+  "X-Ray Skull":                         { category: "X-Ray", sampleType: NONE },
+  "X-Ray Hand / Wrist":                 { category: "X-Ray", sampleType: NONE },
+  "X-Ray Knee":                          { category: "X-Ray", sampleType: NONE },
+  "X-Ray Hip":                           { category: "X-Ray", sampleType: NONE },
+  "X-Ray Pelvis":                        { category: "X-Ray", sampleType: NONE },
+  "OPG (Dental X-Ray)":                 { category: "X-Ray", sampleType: NONE },
+  // Ultrasound
+  "USG Abdomen & Pelvis":               { category: "Ultrasound", sampleType: NONE },
+  "USG Whole Abdomen":                  { category: "Ultrasound", sampleType: NONE },
+  "USG Upper Abdomen":                  { category: "Ultrasound", sampleType: NONE },
+  "USG Lower Abdomen":                  { category: "Ultrasound", sampleType: NONE },
+  "USG Thyroid":                        { category: "Ultrasound", sampleType: NONE },
+  "USG Breast":                         { category: "Ultrasound", sampleType: NONE },
+  "USG Scrotum":                        { category: "Ultrasound", sampleType: NONE },
+  "USG Obstetric (Dating)":            { category: "Ultrasound", sampleType: NONE },
+  "USG Obstetric (Level 2 Anomaly)":   { category: "Ultrasound", sampleType: NONE },
+  "USG Doppler (Peripheral)":          { category: "Ultrasound", sampleType: NONE },
+  "USG Doppler (Carotid)":             { category: "Ultrasound", sampleType: NONE },
+  "USG Doppler (Renal)":               { category: "Ultrasound", sampleType: NONE },
+  "USG Guided Aspiration":             { category: "Ultrasound", sampleType: NONE },
+  // CT Scan
+  "CT Scan Head (Plain)":              { category: "CT Scan", sampleType: NONE },
+  "CT Scan Head (Contrast)":           { category: "CT Scan", sampleType: NONE },
+  "CT Scan Chest":                     { category: "CT Scan", sampleType: NONE },
+  "CT Scan Abdomen & Pelvis":         { category: "CT Scan", sampleType: NONE },
+  "CT Scan KUB":                       { category: "CT Scan", sampleType: NONE },
+  "CT Scan Spine":                     { category: "CT Scan", sampleType: NONE },
+  "CT Angiography":                    { category: "CT Scan", sampleType: NONE },
+  "CT Coronary Angiography (CTCA)":   { category: "CT Scan", sampleType: NONE },
+  "HRCT Chest":                        { category: "CT Scan", sampleType: NONE },
+  "CT Sinuses":                        { category: "CT Scan", sampleType: NONE },
+  // MRI
+  "MRI Brain (Plain)":                 { category: "MRI", sampleType: NONE },
+  "MRI Brain (Contrast)":              { category: "MRI", sampleType: NONE },
+  "MRI Spine (Cervical)":              { category: "MRI", sampleType: NONE },
+  "MRI Spine (Lumbar)":                { category: "MRI", sampleType: NONE },
+  "MRI Knee":                          { category: "MRI", sampleType: NONE },
+  "MRI Shoulder":                      { category: "MRI", sampleType: NONE },
+  "MRI Abdomen":                       { category: "MRI", sampleType: NONE },
+  "MRI Pelvis":                        { category: "MRI", sampleType: NONE },
+  "MRI Brachial Plexus":              { category: "MRI", sampleType: NONE },
+  "MRI Angiography (MRA)":            { category: "MRI", sampleType: NONE },
+  // Nuclear / Imaging
+  "PET Scan":                          { category: "Imaging", sampleType: NONE },
+  "Bone Scan (Scintigraphy)":         { category: "Imaging", sampleType: NONE },
+  "DEXA Scan (Bone Density)":         { category: "Imaging", sampleType: NONE },
+  "Mammography":                       { category: "Imaging", sampleType: NONE },
+  "Fluoroscopy (Barium Swallow)":     { category: "Imaging", sampleType: NONE },
+  // Pathology
+  "FNAC (Fine Needle Aspiration Cytology)": { category: "Pathology", sampleType: "Needle Aspirate (FNAC)" },
+  "Biopsy (Core / Trucut)":           { category: "Pathology", sampleType: "Tissue Biopsy" },
+  "Histopathology (HPE)":             { category: "Pathology", sampleType: "Tissue Biopsy" },
+  "Pap Smear":                        { category: "Pathology", sampleType: "Cervical Swab" },
+  "Sputum AFB (TB)":                  { category: "Pathology", sampleType: "Sputum" },
+  "Sputum Cytology":                  { category: "Pathology", sampleType: "Sputum" },
+  "Bone Marrow Biopsy":               { category: "Pathology", sampleType: "Bone Marrow Aspirate" },
+  "Fluid Analysis (Pleural / Ascitic / CSF)": { category: "Pathology", sampleType: "Body Fluid" },
+  "Skin Biopsy":                      { category: "Pathology", sampleType: "Tissue Biopsy" },
+  "Lymph Node Biopsy":                { category: "Pathology", sampleType: "Tissue Biopsy" },
+  "Frozen Section":                   { category: "Pathology", sampleType: "Tissue Biopsy" },
+  // Health Packages
+  "Basic Health Checkup":             { category: "Blood Test", sampleType: MULTI },
+  "Complete Blood Count Package":     { category: "Blood Test", sampleType: EDTA },
+  "Diabetic Profile":                 { category: "Blood Test", sampleType: MULTI },
+  "Cardiac Risk Package":             { category: "Blood Test", sampleType: MULTI },
+  "Thyroid Package":                  { category: "Blood Test", sampleType: SERUM },
+  "Liver Package":                    { category: "Blood Test", sampleType: SERUM },
+  "Kidney Package":                   { category: "Blood Test", sampleType: MULTI },
+  "Lipid Package":                    { category: "Blood Test", sampleType: SERUM },
+  "Women's Health Package":           { category: "Blood Test", sampleType: MULTI },
+  "Men's Health Package":             { category: "Blood Test", sampleType: MULTI },
+  "Pre-marital Package":              { category: "Blood Test", sampleType: MULTI },
+  "Antenatal Package":                { category: "Blood Test", sampleType: MULTI },
+  "Senior Citizen Package":           { category: "Blood Test", sampleType: MULTI },
+  "Fever Package":                    { category: "Blood Test", sampleType: MULTI },
+  "Full Body Checkup (Basic)":        { category: "Blood Test", sampleType: MULTI },
+  "Full Body Checkup (Advanced)":     { category: "Blood Test", sampleType: MULTI },
+  "PCOD / PCOS Package":              { category: "Blood Test", sampleType: MULTI },
+  "Arthritis Package":                { category: "Blood Test", sampleType: SERUM },
+  "Vitamin Deficiency Package":       { category: "Blood Test", sampleType: SERUM },
+  "Cancer Screening (Basic)":         { category: "Blood Test", sampleType: MULTI },
+  "Pre-operative Package":            { category: "Blood Test", sampleType: MULTI },
+};
+
+// Sample type dropdown options grouped
+const SAMPLE_TYPES = [
+  "-- Blood Samples --",
+  "EDTA Whole Blood (Purple Cap)",
+  "Plain / Serum (Red/Gold Cap)",
+  "Fluoride Plasma (Grey Cap)",
+  "Citrate Plasma (Blue Cap)",
+  "Heparin Plasma (Green Cap)",
+  "Blood Culture Bottle",
+  "-- Urine Samples --",
+  "Urine (Mid-stream)",
+  "Urine (First morning)",
+  "Urine (Random)",
+  "Mid-stream Urine (MSU)",
+  "24-Hour Urine Collection",
+  "-- Stool / Sputum --",
+  "Stool (Fresh)",
+  "Sputum",
+  "-- Swabs --",
+  "Throat Swab",
+  "Nasal Swab",
+  "Pus Swab",
+  "Cervical Swab",
+  "High Vaginal Swab",
+  "-- Tissue / Fluid --",
+  "Needle Aspirate (FNAC)",
+  "Tissue Biopsy",
+  "Bone Marrow Aspirate",
+  "Body Fluid",
+  "-- Semen --",
+  "Semen",
+  "-- Other --",
+  "Multiple Samples",
+  "No Sample Required",
+  "Other",
+];
+
+const CATEGORIES = [
+  "Blood Test","Urine Test","Stool Test","ECG","Cardiac",
+  "X-Ray","Ultrasound","CT Scan","MRI","Imaging",
+  "Pathology","Swab","Semen Analysis","Other",
+];
+
 const INDICATIONS = [
   "Diabetes","CVD (Heart Disease)","Hypertension","Arthritis","Thyroid Disorder",
   "CKD (Kidney Disease)","Liver Disease","Anemia","Pregnancy","Cancer Screening",
@@ -111,7 +403,7 @@ const TURNAROUND_OPTIONS = [
 ];
 
 export interface LabTestFormPayload {
-  type: "single" | "package";
+  type: "single" | "panel" | "package";
   name: string;
   labDepartment: string;
   category: string;
@@ -177,8 +469,8 @@ export default function LabTestFullForm({
 
   const btnLabel = submitLabel ?? (isEdit ? "Save Changes" : "Add Lab Test");
 
-  const [testType, setTestType] = useState<"single"|"package">(
-    (initialData?.type as "single"|"package") || "single"
+  const [testType, setTestType] = useState<"single"|"panel"|"package">(
+    (initialData?.type as "single"|"panel"|"package") || "single"
   );
   const [nameQuery, setNameQuery]     = useState(initialData?.name || "");
   const [nameDropdown, setNameDropdown] = useState(false);
@@ -225,13 +517,24 @@ export default function LabTestFullForm({
     setPkgTests(p => p.includes(name) ? p.filter(x => x !== name) : [...p, name]);
   }
 
-  // Auto-calc membership price when discount changes
   function handleDiscountChange(val: string) {
     set("membershipDiscount", val);
     const op = Number(f.offerPrice);
     const disc = Number(val);
     if (op > 0 && disc > 0 && disc < 100) {
       set("membershipPrice", String(Math.round(op * (1 - disc / 100))));
+    }
+  }
+
+  // Smart auto-fill when test name selected from dropdown
+  function applyTestMeta(testName: string) {
+    const meta = TEST_META[testName];
+    if (meta) {
+      set("category", meta.category);
+      set("sampleType", meta.sampleType);
+    }
+    for (const [dept, tests] of Object.entries(LAB_CATALOG)) {
+      if (tests.includes(testName)) { setLabDept(dept); break; }
     }
   }
 
@@ -283,6 +586,18 @@ export default function LabTestFullForm({
     ? ALL_TESTS_FLAT.filter(t => t.toLowerCase().includes(nameQuery.toLowerCase())).slice(0, 10)
     : [];
 
+  // Sample type colour hint
+  const sampleColor: Record<string, string> = {
+    [EDTA]:  "bg-purple-50 border-purple-200 text-purple-700",
+    [SERUM]: "bg-red-50 border-red-200 text-red-700",
+    [FLUOR]: "bg-gray-50 border-gray-300 text-gray-700",
+    [CITR]:  "bg-blue-50 border-blue-200 text-blue-700",
+    [HEPN]:  "bg-green-50 border-green-200 text-green-700",
+    [NONE]:  "bg-gray-50 border-gray-200 text-gray-500",
+    [MULTI]: "bg-amber-50 border-amber-200 text-amber-700",
+  };
+  const sampleBadgeClass = sampleColor[f.sampleType] || "bg-teal-50 border-teal-200 text-teal-700";
+
   return (
     <div className="space-y-6">
       {error && (
@@ -294,23 +609,24 @@ export default function LabTestFullForm({
       {/* ══ 1: Test Type ══════════════════════════════════════════════════════ */}
       <section>
         <SecHead icon="🧪" title="Test Type" />
-        <div className="flex gap-3">
-          {(["single","package"] as const).map(t => (
-            <button key={t} type="button" onClick={() => setTestType(t)}
-              className={`flex-1 py-3 rounded-xl border text-sm font-semibold transition flex items-center justify-center gap-2 ${
-                testType === t
+        <div className="grid grid-cols-3 gap-2">
+          {([
+            { key: "single",  icon: "🔬", label: "Single Test",  sub: "HbsAg, SGPT, T3, WBC..." },
+            { key: "panel",   icon: "🧬", label: "Test Panel",   sub: "CBC, LFT, KFT, Lipid..." },
+            { key: "package", icon: "📦", label: "Package",      sub: "Full Body, Diabetic..." },
+          ] as const).map(t => (
+            <button key={t.key} type="button" onClick={() => setTestType(t.key)}
+              className={`py-3 px-2 rounded-xl border text-sm font-semibold transition flex flex-col items-center gap-1 ${
+                testType === t.key
                   ? "bg-teal-600 text-white border-teal-600 shadow-sm"
                   : "bg-white text-gray-600 border-gray-200 hover:border-teal-300"
               }`}>
-              {t === "single" ? "🧬 Single Test / Scan" : "📦 Test Package"}
+              <span className="text-lg">{t.icon}</span>
+              <span>{t.label}</span>
+              <span className={`text-[10px] font-normal ${testType === t.key ? "text-teal-100" : "text-gray-400"}`}>{t.sub}</span>
             </button>
           ))}
         </div>
-        <p className="text-xs text-gray-400 mt-2">
-          {testType === "single"
-            ? "Ek test — CBC, LFT, USG, X-Ray, CT, MRI etc."
-            : "Kai tests ka bundle — Full Body Check, Diabetic Package etc."}
-        </p>
       </section>
 
       <div className="border-t border-gray-100" />
@@ -320,30 +636,37 @@ export default function LabTestFullForm({
         <SecHead icon="📋" title="Test Name" />
         <div className="relative">
           <label className="text-xs font-medium text-gray-500">
-            {testType === "single" ? "Test / Scan ka Naam *" : "Package ka Naam *"}
+            {testType === "package" ? "Package ka Naam *" : "Test / Scan ka Naam *"}
           </label>
           <input
             value={nameQuery}
             onChange={e => { setNameQuery(e.target.value); setNameDropdown(true); }}
             onFocus={() => setNameDropdown(true)}
             onBlur={() => setTimeout(() => setNameDropdown(false), 150)}
-            placeholder="e.g. CBC, LFT, USG Abdomen, Full Body Checkup..."
+            placeholder="e.g. CBC, LFT, USG Abdomen, Thyroid Package..."
             className={`mt-1 ${inp}`}
           />
           {nameDropdown && suggestions.length > 0 && (
             <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-52 overflow-y-auto">
-              {suggestions.map(s => (
-                <button key={s} type="button"
-                  onMouseDown={() => { setNameQuery(s); setNameDropdown(false);
-                    // Auto-set lab department
-                    for (const [dept, tests] of Object.entries(LAB_CATALOG)) {
-                      if (tests.includes(s)) { setLabDept(dept); break; }
-                    }
-                  }}
-                  className="w-full text-left px-4 py-2.5 text-sm hover:bg-teal-50 text-gray-700 border-b border-gray-50 last:border-0 transition">
-                  {s}
-                </button>
-              ))}
+              {suggestions.map(s => {
+                const meta = TEST_META[s];
+                return (
+                  <button key={s} type="button"
+                    onMouseDown={() => {
+                      setNameQuery(s);
+                      setNameDropdown(false);
+                      applyTestMeta(s);
+                    }}
+                    className="w-full text-left px-4 py-2.5 hover:bg-teal-50 border-b border-gray-50 last:border-0 transition">
+                    <span className="text-sm text-gray-700">{s}</span>
+                    {meta && (
+                      <span className="ml-2 text-[10px] text-gray-400">
+                        {meta.category} · {meta.sampleType}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
@@ -359,9 +682,7 @@ export default function LabTestFullForm({
           <div>
             <label className="text-xs font-medium text-gray-500">Category</label>
             <select value={f.category} onChange={e => set("category", e.target.value)} className={`mt-1 ${sel}`}>
-              {["Blood Test","Urine Test","Stool Test","Imaging","ECG","X-Ray","Ultrasound","MRI","CT Scan","Pathology","Other"].map(c => (
-                <option key={c}>{c}</option>
-              ))}
+              {CATEGORIES.map(c => <option key={c}>{c}</option>)}
             </select>
           </div>
         </div>
@@ -412,7 +733,36 @@ export default function LabTestFullForm({
 
       <div className="border-t border-gray-100" />
 
-      {/* ══ 4: Pricing ════════════════════════════════════════════════════════ */}
+      {/* ══ 4: Sample Type ════════════════════════════════════════════════════ */}
+      <section>
+        <SecHead icon="🧫" title="Sample Type" />
+        <div>
+          <label className="text-xs font-medium text-gray-500">Sample ka Type *</label>
+          <select value={f.sampleType} onChange={e => set("sampleType", e.target.value)} className={`mt-1 ${sel}`}>
+            <option value="">-- Sample Type Select Karein --</option>
+            {SAMPLE_TYPES.map(s =>
+              s.startsWith("--") ? (
+                <option key={s} disabled className="text-gray-400 font-semibold bg-gray-50">{s}</option>
+              ) : (
+                <option key={s} value={s}>{s}</option>
+              )
+            )}
+          </select>
+        </div>
+        {f.sampleType && !f.sampleType.startsWith("--") && (
+          <div className={`mt-2 inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-semibold ${sampleBadgeClass}`}>
+            <span>🧫</span>
+            <span>{f.sampleType}</span>
+          </div>
+        )}
+        <p className="text-xs text-gray-400 mt-2">
+          Auto-select hota hai jab test name dropdown se choose karein
+        </p>
+      </section>
+
+      <div className="border-t border-gray-100" />
+
+      {/* ══ 5: Pricing ════════════════════════════════════════════════════════ */}
       <section>
         <SecHead icon="💰" title="Pricing" />
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -448,7 +798,7 @@ export default function LabTestFullForm({
 
       <div className="border-t border-gray-100" />
 
-      {/* ══ 5: Test Indication ════════════════════════════════════════════════ */}
+      {/* ══ 6: Test Indication ════════════════════════════════════════════════ */}
       <section>
         <SecHead icon="🩺" title="Test Indication (kis condition ke liye)" />
         <div className="flex flex-wrap gap-2">
@@ -460,7 +810,7 @@ export default function LabTestFullForm({
 
       <div className="border-t border-gray-100" />
 
-      {/* ══ 6: Home Collection ════════════════════════════════════════════════ */}
+      {/* ══ 7: Home Collection ════════════════════════════════════════════════ */}
       <section>
         <SecHead icon="🏠" title="Home Collection" />
         <label className={`flex items-start gap-3 p-4 rounded-xl border cursor-pointer transition mb-4 ${
@@ -505,7 +855,7 @@ export default function LabTestFullForm({
 
       <div className="border-t border-gray-100" />
 
-      {/* ══ 7: Reporting Time & Delivery ═════════════════════════════════════ */}
+      {/* ══ 8: Reporting Time & Delivery ═════════════════════════════════════ */}
       <section>
         <SecHead icon="⏱️" title="Reporting Time & Delivery" />
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -528,7 +878,7 @@ export default function LabTestFullForm({
 
       <div className="border-t border-gray-100" />
 
-      {/* ══ 8: Accreditation ══════════════════════════════════════════════════ */}
+      {/* ══ 9: Accreditation ══════════════════════════════════════════════════ */}
       <section>
         <SecHead icon="🏅" title="Lab Accreditation" />
         <div className="flex flex-wrap gap-2">
@@ -540,7 +890,7 @@ export default function LabTestFullForm({
 
       <div className="border-t border-gray-100" />
 
-      {/* ══ 9: Preparation ════════════════════════════════════════════════════ */}
+      {/* ══ 10: Preparation ═══════════════════════════════════════════════════ */}
       <section>
         <SecHead icon="📌" title="Patient Preparation" />
         <label className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition mb-3 ${
@@ -570,25 +920,15 @@ export default function LabTestFullForm({
 
       <div className="border-t border-gray-100" />
 
-      {/* ══ 10: Sample & Additional Info ══════════════════════════════════════ */}
+      {/* ══ 11: Description ═══════════════════════════════════════════════════ */}
       <section>
-        <SecHead icon="🔬" title="Sample & Additional Info" />
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="text-xs font-medium text-gray-500">Sample Type</label>
-            <input value={f.sampleType} onChange={e => set("sampleType", e.target.value)}
-              placeholder="Blood, Urine, Swab, Stool..." className={`mt-1 ${inp}`} />
-          </div>
-        </div>
-        <div className="mt-3">
-          <label className="text-xs font-medium text-gray-500">Description</label>
-          <textarea value={f.description} onChange={e => set("description", e.target.value)}
-            placeholder="Test ke baare mein short description..."
-            rows={2} className={`mt-1 ${inp} resize-none`} />
-        </div>
+        <SecHead icon="📝" title="Description" />
+        <textarea value={f.description} onChange={e => set("description", e.target.value)}
+          placeholder="Test ke baare mein short description..."
+          rows={2} className={`${inp} resize-none`} />
       </section>
 
-      {/* ══ 11: Location (display only) ═══════════════════════════════════════ */}
+      {/* ══ 12: Location (display only) ═══════════════════════════════════════ */}
       {hospitalAddress && (
         <>
           <div className="border-t border-gray-100" />
@@ -607,7 +947,7 @@ export default function LabTestFullForm({
         </>
       )}
 
-      {/* ══ 12: Status (admin / edit) ═════════════════════════════════════════ */}
+      {/* ══ 13: Status (admin / edit) ════════════════════════════════════════ */}
       {showStatusSection && (
         <>
           <div className="border-t border-gray-100" />

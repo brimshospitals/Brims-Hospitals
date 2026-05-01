@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -471,7 +471,7 @@ function EditReportDrawer({
 }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
-export default function LabReportManagerPage() {
+function LabReportManagerInner() {
   const router      = useRouter();
   const searchParams = useSearchParams();
   const [tab, setTab] = useState<Tab>("reports");
@@ -548,6 +548,19 @@ export default function LabReportManagerPage() {
         {tab === "invoices" && <InvoicesTab hospitalId={hospitalId} showToast={showToast} />}
       </div>
     </div>
+  );
+}
+
+// Suspense wrapper — required because useSearchParams() is used inside
+export default function LabReportManagerPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin" />
+      </div>
+    }>
+      <LabReportManagerInner />
+    </Suspense>
   );
 }
 

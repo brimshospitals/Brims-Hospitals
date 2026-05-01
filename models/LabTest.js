@@ -9,8 +9,8 @@ const labTestSchema = new mongoose.Schema(
     // Linked reporting template (optional — for auto-creating LabReport on booking confirm)
     templateId: { type: mongoose.Schema.Types.ObjectId, ref: "LabTemplate" },
 
-    // Test type: single test OR package of multiple tests
-    type: { type: String, enum: ["single", "package"], default: "single" },
+    // Test type: single param test | multi-param panel (CBC/LFT etc.) | package bundle
+    type: { type: String, enum: ["single", "panel", "package"], default: "single" },
 
     name: { type: String, required: true },
 
@@ -20,8 +20,8 @@ const labTestSchema = new mongoose.Schema(
     category: {
       type: String,
       enum: [
-        "Blood Test","Urine Test","Stool Test","Imaging","ECG",
-        "X-Ray","Ultrasound","MRI","CT Scan","Pathology","Other",
+        "Blood Test","Urine Test","Stool Test","Imaging","ECG","Cardiac",
+        "X-Ray","Ultrasound","MRI","CT Scan","Pathology","Semen Analysis","Swab","Other",
       ],
     },
 
