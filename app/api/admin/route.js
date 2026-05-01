@@ -11,6 +11,7 @@ import Notification from "../../../models/Notification";
 import Transaction from "../../../models/Transaction";
 import Coordinator from "../../../models/Coordinator";
 import { requireAuth } from "../../../lib/auth";
+import { autoProvisionLabBooking } from "../../../lib/labWorkflow";
 
 export const dynamic = "force-dynamic";
 
@@ -183,6 +184,11 @@ export async function PATCH(request) {
         { success: false, message: "Booking nahi mili" },
         { status: 404 }
       );
+    }
+
+    // Auto-provision LabReport + Invoice when a Lab booking is confirmed
+    if (booking.type === "Lab" && (update.status === "confirmed" || statusStage === "confirmed")) {
+      try { await autoProvisionLabBooking(booking); } catch {}
     }
 
     // B10: Notify patient when booking status changes

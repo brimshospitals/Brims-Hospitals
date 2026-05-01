@@ -6,6 +6,7 @@ import Notification from "../../../../models/Notification";
 import Transaction from "../../../../models/Transaction";
 import Coordinator from "../../../../models/Coordinator";
 import { requireAuth, getSession } from "../../../../lib/auth";
+import { autoProvisionLabBooking } from "../../../../lib/labWorkflow";
 
 export const dynamic = "force-dynamic";
 
@@ -179,6 +180,11 @@ export async function PATCH(request) {
       const b2 = await Booking.findByIdAndUpdate(bookingId, update, { new: true });
       if (!b2) return NextResponse.json({ success: false, message: "Booking nahi mili" }, { status: 404 });
       return NextResponse.json({ success: true, booking: b2 });
+    }
+
+    // Auto-provision LabReport + Invoice when a Lab booking is confirmed
+    if (booking.type === "Lab" && (update.status === "confirmed" || statusStage === "confirmed")) {
+      try { await autoProvisionLabBooking(booking); } catch {}
     }
 
     // B10: Notify patient on status change

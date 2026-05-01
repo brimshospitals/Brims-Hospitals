@@ -1224,7 +1224,13 @@ const LAB_PRESETS: Record<string, { name: string; category: string; parameters: 
 
 // ── LAB MANAGE TAB ────────────────────────────────────────────────────────────
 function LabManageTab({ hospitalId }: { hospitalId: string }) {
-  const [view, setView] = useState<"templates" | "reports">("reports");
+  const [view, setView] = useState<"queue" | "templates" | "reports">("queue");
+
+  // ── Lab Queue state ──
+  const [queue,          setQueue]          = useState<any[]>([]);
+  const [qLoading,       setQLoading]       = useState(false);
+  const [qSearch,        setQSearch]        = useState("");
+  const [qTotal,         setQTotal]         = useState(0);
 
   // ── Templates state ──
   const [templates,      setTemplates]      = useState<any[]>([]);
@@ -1242,7 +1248,18 @@ function LabManageTab({ hospitalId }: { hospitalId: string }) {
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const showToast = (msg: string, ok = true) => { setToast({ msg, ok }); setTimeout(() => setToast(null), 3000); };
 
-  useEffect(() => { if (hospitalId) { fetchTemplates(); fetchReports(); } }, [hospitalId]);
+  useEffect(() => { if (hospitalId) { fetchQueue(); fetchTemplates(); fetchReports(); } }, [hospitalId]);
+
+  async function fetchQueue() {
+    setQLoading(true);
+    try {
+      const p = new URLSearchParams({ hospitalId });
+      if (qSearch) p.set("search", qSearch);
+      const r = await fetch(`/api/hospital/lab-queue?${p}`);
+      const d = await r.json();
+      if (d.success) { setQueue(d.queue || []); setQTotal(d.total || 0); }
+    } finally { setQLoading(false); }
+  }
 
   async function fetchTemplates() {
     setTmplLoading(true);
@@ -1308,8 +1325,18 @@ function LabManageTab({ hospitalId }: { hospitalId: string }) {
 
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <h3 className="font-bold text-gray-800 text-lg">📊 Lab Report Management</h3>
-        <div className="flex gap-2">
+        <div>
+          <h3 className="font-bold text-gray-800 text-lg">📊 Lab Report Management</h3>
+          {view === "queue" && qTotal > 0 && (
+            <p className="text-xs text-amber-600 font-medium mt-0.5">⏳ {qTotal} confirmed booking{qTotal !== 1 ? "s" : ""} waiting for report</p>
+          )}
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={() => { setView("queue"); fetchQueue(); }}
+            className={`px-4 py-2 rounded-xl text-sm font-semibold transition flex items-center gap-1.5 ${view === "queue" ? "bg-teal-600 text-white" : "bg-white border border-gray-200 text-gray-600 hover:border-teal-300"}`}>
+            🔬 Lab Queue
+            {qTotal > 0 && <span className="bg-amber-400 text-amber-900 text-[10px] px-1.5 py-0.5 rounded-full font-bold">{qTotal}</span>}
+          </button>
           <button onClick={() => setView("templates")}
             className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${view === "templates" ? "bg-purple-600 text-white" : "bg-white border border-gray-200 text-gray-600 hover:border-purple-300"}`}>
             📋 Templates
@@ -1320,6 +1347,118 @@ function LabManageTab({ hospitalId }: { hospitalId: string }) {
           </button>
         </div>
       </div>
+
+      {/* ── LAB QUEUE VIEW ── */}
+      {view === "queue" && (
+        <div className="space-y-4">
+          <div className="flex gap-3 items-center flex-wrap">
+            <input
+              value={qSearch}
+              onChange={(e) => setQSearch(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && fetchQueue()}
+              placeholder="Search booking ID, patient name..."
+              className="flex-1 min-w-[200px] border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+            />
+            <button onClick={fetchQueue} className="px-4 py-2 bg-teal-600 text-white rounded-xl text-sm font-semibold hover:bg-teal-700 transition">🔄 Refresh</button>
+          </div>
+
+          {qLoading ? <Spinner color="teal" /> : queue.length === 0 ? (
+            <EmptyCard icon="✅" msg="Koi pending lab report nahi! Sab kuch up-to-date hai." />
+          ) : (
+            <div className="space-y-3">
+              {queue.map((item: any) => {
+                const fmtD2 = (d?: string) => d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+                const repBadge = item.reportStatus === "final"
+                  ? "bg-green-100 text-green-700 border-green-200"
+                  : item.reportStatus === "draft"
+                  ? "bg-amber-100 text-amber-700 border-amber-200"
+                  : "bg-red-100 text-red-700 border-red-200";
+                const repLabel = item.reportStatus === "final" ? "✅ Final"
+                  : item.reportStatus === "draft" ? "📝 Draft" : "❗ Not Created";
+                const invBadge = item.invoiceStatus === "paid" ? "bg-green-100 text-green-700 border-green-200"
+                  : item.invoiceStatus === "draft" ? "bg-amber-100 text-amber-700 border-amber-200"
+                  : "bg-gray-100 text-gray-500 border-gray-200";
+                const invLabel = item.invoiceStatus === "paid" ? "✅ Paid"
+                  : item.invoiceStatus === "partial" ? "🔶 Partial"
+                  : item.invoiceStatus === "draft" ? "📋 Invoice Draft" : "—";
+
+                return (
+                  <div key={item._id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-3 min-w-0 flex-1">
+                        <div className="w-10 h-10 rounded-xl bg-teal-100 flex items-center justify-center text-lg flex-shrink-0">🔬</div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-bold text-gray-800 text-sm">{item.patientName}</p>
+                            {item.patientAge && <span className="text-xs text-gray-400">{item.patientAge} yrs</span>}
+                            {item.patientGender && <span className="text-xs text-gray-400">· {item.patientGender}</span>}
+                          </div>
+                          <p className="text-xs text-teal-600 font-mono mt-0.5">{item.bookingId}</p>
+                          {item.templateName && <p className="text-xs text-gray-500 mt-0.5">Test: {item.templateName}</p>}
+                          <p className="text-xs text-gray-400 mt-0.5">Date: {fmtD2(item.appointmentDate)} · ₹{(item.amount || 0).toLocaleString("en-IN")} · {item.paymentMode}</p>
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-1 items-end flex-shrink-0">
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border ${repBadge}`}>{repLabel}</span>
+                        {item.invoiceStatus !== "missing" && (
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border ${invBadge}`}>{invLabel}</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2 mt-3 pt-3 border-t border-gray-50 flex-wrap">
+                      {item.reportId ? (
+                        <a
+                          href={`/lab-report-manager?reportId=${item.reportId}&hospitalId=${hospitalId}`}
+                          className="flex-1 min-w-[100px] text-center text-xs text-purple-700 hover:bg-purple-50 py-2 rounded-xl border border-purple-200 font-semibold transition"
+                        >
+                          ✏️ Report Bharein
+                        </a>
+                      ) : (
+                        <button
+                          onClick={async () => {
+                            const r = await fetch("/api/hospital/bookings", {
+                              method: "PATCH",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ bookingId: item._id, status: "confirmed" }),
+                            });
+                            const d = await r.json();
+                            if (d.success) { fetchQueue(); showToast("Report auto-create ho gaya!"); }
+                            else showToast(d.message || "Error", false);
+                          }}
+                          className="flex-1 min-w-[100px] text-xs text-amber-700 hover:bg-amber-50 py-2 rounded-xl border border-amber-200 font-semibold transition"
+                        >
+                          🔄 Report Banao
+                        </button>
+                      )}
+                      {item.reportId && (
+                        <a
+                          href={`/lab-report/${item.reportId}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex-1 min-w-[100px] text-center text-xs text-teal-700 hover:bg-teal-50 py-2 rounded-xl border border-teal-200 font-semibold transition"
+                        >
+                          🖨️ Print Report
+                        </a>
+                      )}
+                      {item.invoiceId && (
+                        <a
+                          href={`/invoice/${item.invoiceId}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex-1 min-w-[100px] text-center text-xs text-blue-700 hover:bg-blue-50 py-2 rounded-xl border border-blue-200 font-semibold transition"
+                        >
+                          🧾 Invoice
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── TEMPLATES VIEW ── */}
       {view === "templates" && (

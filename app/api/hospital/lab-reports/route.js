@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import connectDB from "../../../../lib/mongodb";
-import LabReport from "../../../../models/LabReport";
-import Hospital  from "../../../../models/Hospital";
+import LabReport   from "../../../../models/LabReport";
+import Hospital    from "../../../../models/Hospital";
+import LabSettings from "../../../../models/LabSettings";
 import { requireHospitalAccess } from "../../../../lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -32,11 +33,14 @@ export async function GET(request) {
     const report = await LabReport.findOne({ reportId, isActive: true }).lean();
     if (!report) return NextResponse.json({ success: false, message: "Report not found" }, { status: 404 });
 
-    const hospital = await Hospital.findById(report.hospitalId)
-      .select("name address mobile email website photos labRegNo")
-      .lean();
+    const [hospital, labSettings] = await Promise.all([
+      Hospital.findById(report.hospitalId)
+        .select("name address mobile email website photos")
+        .lean(),
+      LabSettings.findOne({ hospitalId: report.hospitalId }).lean(),
+    ]);
 
-    return NextResponse.json({ success: true, report, hospital });
+    return NextResponse.json({ success: true, report, hospital, labSettings });
   }
 
   // List reports — requires hospital access
@@ -152,6 +156,7 @@ export async function PATCH(request) {
       "results", "status", "technicianName", "doctorName", "labName",
       "collectionDate", "reportDate", "sampleType", "referredBy",
       "patientName", "patientAge", "patientGender", "patientMobile", "patientRefId",
+      "sampleStatus", "sampleReceivedAt", "sampleReceivedBy",
       "isActive",
     ];
     const update = {};

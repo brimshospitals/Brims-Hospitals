@@ -7,7 +7,7 @@ import { BIHAR_DISTRICTS } from "@/lib/biharDistricts";
 import { MEDICAL_DEPARTMENTS, SURGERY_DEPARTMENTS, SURGERIES_BY_DEPARTMENT } from "@/lib/medicalDepartments";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type Tab = "overview" | "members" | "hospitals" | "doctors" | "packages" | "labtests" | "bookings" | "staff" | "promo" | "reports" | "accounting" | "ambulance" | "articles" | "notifications" | "coordinators" | "ledger" | "support";
+type Tab = "overview" | "members" | "hospitals" | "doctors" | "packages" | "labtests" | "bookings" | "staff" | "promo" | "reports" | "accounting" | "ambulance" | "articles" | "notifications" | "coordinators" | "ledger" | "support" | "labreports";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   pending:   { label: "Pending",   color: "bg-yellow-100 text-yellow-700 border-yellow-200" },
@@ -6534,6 +6534,290 @@ function SupportTab() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// ── LAB REPORTS & INVOICES ADMIN TAB ─────────────────────────────────────────
+const LAB_REPORT_STATUS_COLORS: Record<string, string> = {
+  draft: "bg-amber-100 text-amber-700 border-amber-200",
+  final: "bg-green-100 text-green-700 border-green-200",
+};
+const INV_STATUS_COLORS: Record<string, string> = {
+  draft:     "bg-gray-100 text-gray-600 border-gray-200",
+  partial:   "bg-orange-100 text-orange-700 border-orange-200",
+  paid:      "bg-green-100 text-green-700 border-green-200",
+  cancelled: "bg-red-100 text-red-700 border-red-200",
+};
+
+function LabReportsAdminTab() {
+  const [subTab,         setSubTab]         = useState<"reports" | "invoices">("reports");
+
+  // ── Lab Reports state ──
+  const [reports,        setReports]        = useState<any[]>([]);
+  const [rLoading,       setRLoading]       = useState(false);
+  const [rSearch,        setRSearch]        = useState("");
+  const [rStatus,        setRStatus]        = useState("");
+  const [rPage,          setRPage]          = useState(1);
+  const [rPages,         setRPages]         = useState(1);
+  const [rTotal,         setRTotal]         = useState(0);
+  const [rUpdating,      setRUpdating]      = useState<string | null>(null);
+
+  // ── Invoices state ──
+  const [invoices,       setInvoices]       = useState<any[]>([]);
+  const [iLoading,       setILoading]       = useState(false);
+  const [iSearch,        setISearch]        = useState("");
+  const [iStatus,        setIStatus]        = useState("");
+  const [iPage,          setIPage]          = useState(1);
+  const [iPages,         setIPages]         = useState(1);
+  const [iTotal,         setITotal]         = useState(0);
+
+  // ── Fetch lab reports ──
+  const fetchReports = useCallback(async () => {
+    setRLoading(true);
+    try {
+      const params = new URLSearchParams({ page: String(rPage), limit: "20" });
+      if (rSearch) params.set("search", rSearch);
+      if (rStatus) params.set("status", rStatus);
+      const res = await fetch(`/api/admin/lab-reports?${params}`);
+      const d = await res.json();
+      if (d.success) {
+        setReports(d.reports || []);
+        setRPages(d.pages || 1);
+        setRTotal(d.total || 0);
+      }
+    } finally {
+      setRLoading(false);
+    }
+  }, [rPage, rSearch, rStatus]);
+
+  // ── Fetch invoices (admin sees all — iterate hospitals or use query) ──
+  const fetchInvoices = useCallback(async () => {
+    setILoading(true);
+    try {
+      const params = new URLSearchParams({ page: String(iPage), limit: "20" });
+      if (iSearch) params.set("search", iSearch);
+      if (iStatus) params.set("status", iStatus);
+      params.set("all", "1"); // admin flag
+      const res = await fetch(`/api/hospital/invoice?${params}`);
+      const d = await res.json();
+      if (d.success) {
+        setInvoices(d.invoices || []);
+        setIPages(d.pages || 1);
+        setITotal(d.total || 0);
+      }
+    } finally {
+      setILoading(false);
+    }
+  }, [iPage, iSearch, iStatus]);
+
+  useEffect(() => { if (subTab === "reports") fetchReports(); }, [subTab, fetchReports]);
+  useEffect(() => { if (subTab === "invoices") fetchInvoices(); }, [subTab, fetchInvoices]);
+
+  // ── Finalize report ──
+  async function finalizeReport(reportId: string) {
+    if (!confirm("Mark this report as Final?")) return;
+    setRUpdating(reportId);
+    try {
+      const res = await fetch("/api/admin/lab-reports", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reportId, status: "final" }),
+      });
+      const d = await res.json();
+      if (d.success) {
+        setReports(prev => prev.map(r => r.reportId === reportId ? { ...r, status: "final" } : r));
+      } else {
+        alert(d.message || "Update failed");
+      }
+    } finally {
+      setRUpdating(null);
+    }
+  }
+
+  const fmt = (d: string) => d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+  const fmtAmt = (n: number) => `₹${(n || 0).toLocaleString("en-IN")}`;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h2 className="text-xl font-bold text-gray-800">🧾 Lab Reports & Invoices</h2>
+          <p className="text-sm text-gray-500 mt-0.5">View and manage all lab reports and invoices across hospitals</p>
+        </div>
+      </div>
+
+      {/* Sub-tabs */}
+      <div className="flex gap-2 mb-6 border-b border-gray-200">
+        {([["reports", "🧬 Lab Reports"], ["invoices", "🧾 Invoices"]] as const).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setSubTab(key)}
+            className={`px-5 py-2.5 text-sm font-semibold rounded-t-xl border-b-2 transition ${subTab === key ? "border-teal-600 text-teal-700 bg-teal-50" : "border-transparent text-gray-500 hover:text-gray-700"}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Lab Reports sub-tab ── */}
+      {subTab === "reports" && (
+        <div>
+          {/* Filters */}
+          <div className="flex flex-wrap gap-3 mb-4">
+            <div className="flex-1 min-w-[200px]">
+              <SearchBar value={rSearch} onChange={v => { setRSearch(v); setRPage(1); }} placeholder="Search patient, report ID, template..." />
+            </div>
+            <select
+              value={rStatus}
+              onChange={e => { setRStatus(e.target.value); setRPage(1); }}
+              className="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+            >
+              <option value="">All Status</option>
+              <option value="draft">Draft</option>
+              <option value="final">Final</option>
+            </select>
+            <button onClick={fetchReports} className="px-4 py-2 bg-teal-600 text-white rounded-xl text-sm font-semibold hover:bg-teal-700 transition">Refresh</button>
+          </div>
+
+          {rLoading ? <Spinner /> : reports.length === 0 ? (
+            <EmptyState icon="🧬" message="No lab reports found" />
+          ) : (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-100">
+                  <tr>
+                    {["Report ID", "Patient", "Test", "Hospital", "Collection Date", "Status", "Actions"].map(h => (
+                      <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {reports.map((r: any) => (
+                    <tr key={r._id} className="hover:bg-gray-50 transition">
+                      <td className="px-4 py-3 font-mono text-xs text-teal-700 font-semibold">{r.reportId}</td>
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-gray-800">{r.patientName}</p>
+                        <p className="text-xs text-gray-400">{r.patientAge ? `${r.patientAge}y` : ""} {r.patientGender || ""}</p>
+                      </td>
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-gray-700">{r.templateName}</p>
+                        <p className="text-xs text-gray-400">{r.category}</p>
+                      </td>
+                      <td className="px-4 py-3 text-gray-600 text-xs">{r.hospitalName || "—"}</td>
+                      <td className="px-4 py-3 text-gray-500 text-xs">{fmt(r.collectionDate)}</td>
+                      <td className="px-4 py-3">
+                        <Badge color={LAB_REPORT_STATUS_COLORS[r.status] || "bg-gray-100 text-gray-600"}>
+                          {r.status === "final" ? "✅ Final" : "📝 Draft"}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <a
+                            href={`/lab-report/${r.reportId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs px-3 py-1.5 bg-teal-50 text-teal-700 border border-teal-200 rounded-lg hover:bg-teal-100 transition font-semibold"
+                          >
+                            🖨️ Print
+                          </a>
+                          {r.status === "draft" && (
+                            <button
+                              onClick={() => finalizeReport(r.reportId)}
+                              disabled={rUpdating === r.reportId}
+                              className="text-xs px-3 py-1.5 bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition font-semibold disabled:opacity-50"
+                            >
+                              {rUpdating === r.reportId ? "..." : "✅ Finalize"}
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="px-4 py-3">
+                <Pagination page={rPage} pages={rPages} total={rTotal} onPage={setRPage} />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Invoices sub-tab ── */}
+      {subTab === "invoices" && (
+        <div>
+          {/* Filters */}
+          <div className="flex flex-wrap gap-3 mb-4">
+            <div className="flex-1 min-w-[200px]">
+              <SearchBar value={iSearch} onChange={v => { setISearch(v); setIPage(1); }} placeholder="Search invoice no., patient, hospital..." />
+            </div>
+            <select
+              value={iStatus}
+              onChange={e => { setIStatus(e.target.value); setIPage(1); }}
+              className="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+            >
+              <option value="">All Status</option>
+              <option value="draft">Draft</option>
+              <option value="partial">Partial</option>
+              <option value="paid">Paid</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+            <button onClick={fetchInvoices} className="px-4 py-2 bg-teal-600 text-white rounded-xl text-sm font-semibold hover:bg-teal-700 transition">Refresh</button>
+          </div>
+
+          {iLoading ? <Spinner /> : invoices.length === 0 ? (
+            <EmptyState icon="🧾" message="No invoices found" />
+          ) : (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-100">
+                  <tr>
+                    {["Invoice No.", "Patient", "Hospital", "Date", "Total", "Paid", "Balance", "Status", "Actions"].map(h => (
+                      <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {invoices.map((inv: any) => (
+                    <tr key={inv._id} className="hover:bg-gray-50 transition">
+                      <td className="px-4 py-3 font-mono text-xs text-teal-700 font-semibold">{inv.invoiceId}</td>
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-gray-800">{inv.patientName}</p>
+                        <p className="text-xs text-gray-400">{inv.patientMobile}</p>
+                      </td>
+                      <td className="px-4 py-3 text-gray-600 text-xs">{inv.hospitalName || "—"}</td>
+                      <td className="px-4 py-3 text-gray-500 text-xs">{fmt(inv.invoiceDate)}</td>
+                      <td className="px-4 py-3 font-semibold text-gray-800">{fmtAmt(inv.totalAmount)}</td>
+                      <td className="px-4 py-3 font-semibold text-green-700">{fmtAmt(inv.paidAmount)}</td>
+                      <td className="px-4 py-3 font-semibold text-red-600">{fmtAmt(inv.balanceAmount)}</td>
+                      <td className="px-4 py-3">
+                        <Badge color={INV_STATUS_COLORS[inv.status] || "bg-gray-100 text-gray-600"}>
+                          {inv.status === "paid" ? "✅ Paid" : inv.status === "partial" ? "🔶 Partial" : inv.status === "draft" ? "📝 Draft" : "❌ Cancelled"}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3">
+                        <a
+                          href={`/invoice/${inv.invoiceId}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs px-3 py-1.5 bg-teal-50 text-teal-700 border border-teal-200 rounded-lg hover:bg-teal-100 transition font-semibold"
+                        >
+                          🖨️ Print
+                        </a>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="px-4 py-3">
+                <Pagination page={iPage} pages={iPages} total={iTotal} onPage={setIPage} />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // ── MAIN PAGE ─────────────────────────────────────────────────────────────────
 export default function AdminPage() {
   const [authed, setAuthed]     = useState(false);
@@ -6580,6 +6864,7 @@ export default function AdminPage() {
     { key: "accounting",    icon: "💰", label: "Accounting"                             },
     { key: "coordinators",  icon: "🤝", label: "Coordinators"                           },
     { key: "ledger",        icon: "📒", label: "Master Ledger"                          },
+    { key: "labreports",    icon: "🧾", label: "Lab Reports & Invoices"                         },
     { key: "support",       icon: "🎧", label: "Customer Care",  badge: stats?.openSupportTickets },
     { key: "ambulance",     icon: "🚑", label: "Ambulance"                              },
     { key: "articles",      icon: "📰", label: "Articles"                               },
@@ -6653,6 +6938,7 @@ export default function AdminPage() {
         {activeTab === "accounting"    && <AccountingTab />}
         {activeTab === "coordinators"  && <CoordinatorsTab />}
         {activeTab === "ledger"        && <LedgerTab />}
+        {activeTab === "labreports"    && <LabReportsAdminTab />}
         {activeTab === "support"       && <SupportTab />}
         {activeTab === "ambulance"     && <AmbulanceTab />}
         {activeTab === "articles"      && <ArticlesTab />}

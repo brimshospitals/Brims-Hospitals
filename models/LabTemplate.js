@@ -2,16 +2,17 @@ import mongoose from "mongoose";
 
 const paramSchema = new mongoose.Schema({
   paramId:      { type: String, required: true },
-  name:         { type: String, required: true },   // "Haemoglobin"
-  unit:         { type: String, default: "" },       // "g/dL"
+  name:         { type: String, required: true },
+  unit:         { type: String, default: "" },
   type:         { type: String, enum: ["numeric", "text"], default: "numeric" },
   refMaleMin:   { type: Number },
   refMaleMax:   { type: Number },
   refFemaleMin: { type: Number },
   refFemaleMax: { type: Number },
-  refRangeText: { type: String, default: "" },       // custom display text
+  refRangeText: { type: String, default: "" },
   notes:        { type: String, default: "" },
   order:        { type: Number, default: 0 },
+  section:      { type: String, default: "" },       // e.g. "HAEMOGRAM", "RBC INDICES"
 }, { _id: false });
 
 const labTemplateSchema = new mongoose.Schema({

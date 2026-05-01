@@ -6,6 +6,9 @@ const labTestSchema = new mongoose.Schema(
     hospitalId: { type: mongoose.Schema.Types.ObjectId, ref: "Hospital" },
     hospitalName: { type: String },
 
+    // Linked reporting template (optional — for auto-creating LabReport on booking confirm)
+    templateId: { type: mongoose.Schema.Types.ObjectId, ref: "LabTemplate" },
+
     // Test type: single test OR package of multiple tests
     type: { type: String, enum: ["single", "package"], default: "single" },
 

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import connectDB from "../../../../lib/mongodb";
 import Booking from "../../../../models/Booking";
 import { requireAuth } from "../../../../lib/auth";
+import { autoProvisionLabBooking } from "../../../../lib/labWorkflow";
 
 export const dynamic = "force-dynamic";
 
@@ -116,7 +117,13 @@ export async function PATCH(request) {
     const booking = await Booking.findByIdAndUpdate(bookingId, { $set: update }, { new: true }).lean();
     if (!booking) return NextResponse.json({ success: false, message: "Booking not found" }, { status: 404 });
 
-    return NextResponse.json({ success: true, booking });
+    // Auto-provision LabReport + Invoice when a Lab booking is confirmed
+    let labProvision = null;
+    if (booking.type === "Lab" && update.status === "confirmed") {
+      try { labProvision = await autoProvisionLabBooking(booking); } catch {}
+    }
+
+    return NextResponse.json({ success: true, booking, labProvision });
   } catch (err) {
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });
   }

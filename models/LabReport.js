@@ -8,6 +8,7 @@ const resultSchema = new mongoose.Schema({
   refRangeText: { type: String, default: "" },
   flag:         { type: String, enum: ["H", "L", "N", ""], default: "" },
   type:         { type: String, enum: ["numeric", "text"], default: "numeric" },
+  section:      { type: String, default: "" },  // e.g. "HAEMATOLOGY", "RBC INDICES", "DLC"
 }, { _id: false });
 
 const labReportSchema = new mongoose.Schema({
@@ -42,6 +43,11 @@ const labReportSchema = new mongoose.Schema({
   // Dates
   collectionDate: { type: Date, default: Date.now },
   reportDate:     { type: Date, default: Date.now },
+
+  // Sample receiving workflow
+  sampleStatus:     { type: String, enum: ["pending", "received", "rejected"], default: "pending" },
+  sampleReceivedAt: { type: Date },
+  sampleReceivedBy: { type: String, default: "" }, // staff name who received
 
   status:   { type: String, enum: ["draft", "final"], default: "draft" },
   isActive: { type: Boolean, default: true },
