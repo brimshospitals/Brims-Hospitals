@@ -1246,7 +1246,7 @@ function StaffSurgeryModal({ hospitalId, pkg, onClose, onSaved }: { hospitalId: 
     const body: any = {
       hospitalId, name: finalName, category: dept, description, inclusions, preSurgeryTests: preTests,
       roomOptions: activeRoomOptions, surgeonName: surgeonName2, surgeonExperience: Number(surgeonExp) || 0,
-      surgeonDegrees: surgeonDeg.split(",").map((s) => s.trim()).filter(Boolean),
+      surgeonDegrees: surgeonDeg.split(",").map((s: string) => s.trim()).filter(Boolean),
       pickupFromHome: pickup, pickupCharge: pickup ? Number(pickupCharge) || 0 : 0, dropAvailable: drop,
       foodIncluded: food, foodDetails: food ? foodDetails : "", postCareIncluded: postCare,
       followUpConsultations: Number(followUp) || 0, stayDays: Number(stayDays2) || 1,
