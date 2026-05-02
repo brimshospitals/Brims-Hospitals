@@ -341,6 +341,7 @@ export default function LabTestsPage() {
             userId,
             memberId: selectedPatient.userId || userId,
             labTestId: selectedTest._id,
+            hospitalId: selectedTest.hospitalId,
             appointmentDate: appointmentDate || null,
             slot: homeCollection
               ? `Home Collection${selectedSlot ? " — " + selectedSlot : ""}${hcAddress.district ? " (" + hcAddress.district + ")" : ""}`
@@ -371,6 +372,7 @@ export default function LabTestsPage() {
         body: JSON.stringify({
           type: "Lab",
           labTestId: selectedTest._id,
+          hospitalId: selectedTest.hospitalId,
           appointmentDate: appointmentDate || new Date().toISOString().split("T")[0],
           slot: homeCollection
             ? `Home Collection${selectedSlot ? " — " + selectedSlot : ""}${hcAddress.district ? " (" + hcAddress.district + ")" : ""}`

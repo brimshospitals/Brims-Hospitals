@@ -188,6 +188,16 @@ export async function PATCH(request) {
 
     // Auto-provision LabReport + Invoice when a Lab booking is confirmed
     if (booking.type === "Lab" && (update.status === "confirmed" || statusStage === "confirmed")) {
+      // Back-fill hospitalId from LabTest if missing (fixes old bookings)
+      if (!booking.hospitalId && booking.labTestId) {
+        try {
+          const lt = await LabTest.findById(booking.labTestId).select("hospitalId").lean();
+          if (lt?.hospitalId) {
+            await Booking.findByIdAndUpdate(booking._id, { $set: { hospitalId: lt.hospitalId } });
+            booking.hospitalId = lt.hospitalId;
+          }
+        } catch {}
+      }
       try { await autoProvisionLabBooking(booking); } catch {}
     }
 

@@ -14,6 +14,8 @@ import Transaction from "../../../models/Transaction";
 import { requireAuth } from "../../../lib/auth";
 import { sendPushMulticast } from "../../../lib/fcm-admin";
 import BookingDraft from "../../../models/BookingDraft";
+import LabTest from "../../../models/LabTest";
+import SurgeryPackage from "../../../models/SurgeryPackage";
 
 const DEFAULT_COMMISSION = { OPD: 10, Lab: 12, Surgery: 8, Consultation: 15, IPD: 8 };
 
@@ -88,6 +90,18 @@ export async function POST(request) {
 
     const bookingId = await generateBookingId(type);
 
+    // ── Auto-resolve hospitalId from labTestId / packageId if not sent ──────
+    let resolvedHospitalId = hospitalId;
+    if (!resolvedHospitalId) {
+      if (type === "Lab" && labTestId) {
+        const lt = await LabTest.findById(labTestId).select("hospitalId").lean();
+        if (lt?.hospitalId) resolvedHospitalId = lt.hospitalId.toString();
+      } else if (type === "Surgery" && packageId) {
+        const sp = await SurgeryPackage.findById(packageId).select("hospitalId").lean();
+        if (sp?.hospitalId) resolvedHospitalId = sp.hospitalId.toString();
+      }
+    }
+
     // Encode patient info + symptoms + insurance fields in notes
     const {
       insurancePolicyNo,
@@ -113,8 +127,8 @@ export async function POST(request) {
 
     // ── Commission calculation ──────────────────────────────────
     let commissionPct = DEFAULT_COMMISSION[type] ?? 10;
-    if (hospitalId) {
-      const slab = await CommissionSlab.findOne({ hospitalId, isActive: true }).lean();
+    if (resolvedHospitalId) {
+      const slab = await CommissionSlab.findOne({ hospitalId: resolvedHospitalId, isActive: true }).lean();
       if (slab?.rates?.[type] != null) commissionPct = slab.rates[type];
     }
     const bookingAmount      = amount || 0;
@@ -162,7 +176,7 @@ export async function POST(request) {
       userId: session.userId,
       memberId:  patientUserId  || undefined,
       doctorId:  doctorId       || undefined,
-      hospitalId: hospitalId    || undefined,
+      hospitalId: resolvedHospitalId || undefined,
       packageId:  packageId     || undefined,
       labTestId:  labTestId     || undefined,
       appointmentDate: new Date(appointmentDate),
@@ -334,8 +348,8 @@ export async function POST(request) {
         }
       }
 
-      if (hospitalId) {
-        const hosp = await Hospital.findById(hospitalId).select("userId").lean();
+      if (resolvedHospitalId) {
+        const hosp = await Hospital.findById(resolvedHospitalId).select("userId").lean();
         if (hosp?.userId) {
           const hospUser = await User.findById(hosp.userId).select("fcmToken").lean();
           if (hospUser?.fcmToken) fcmTargets.push(hospUser.fcmToken);
