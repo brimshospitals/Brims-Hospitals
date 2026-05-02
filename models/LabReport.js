@@ -15,7 +15,7 @@ const labReportSchema = new mongoose.Schema({
   reportId:     { type: String, unique: true },
   hospitalId:   { type: mongoose.Schema.Types.ObjectId, ref: "Hospital", required: true },
   hospitalName: { type: String },
-  bookingId:    { type: mongoose.Schema.Types.ObjectId, ref: "Booking" },
+  bookingId:    { type: String, index: true },
 
   templateId:   { type: mongoose.Schema.Types.ObjectId, ref: "LabTemplate" },
   templateName: { type: String, required: true },
@@ -56,6 +56,7 @@ const labReportSchema = new mongoose.Schema({
 
 labReportSchema.index({ hospitalId: 1, createdAt: -1 });
 labReportSchema.index({ hospitalId: 1, status: 1 });
+labReportSchema.index({ hospitalId: 1, sampleStatus: 1 });
 
 const LabReport = mongoose.models.LabReport || mongoose.model("LabReport", labReportSchema);
 export default LabReport;

@@ -162,10 +162,16 @@ export async function PATCH(request) {
 
     await connectDB();
 
+    // Verify the booking belongs to this hospital (non-admin)
+    if (session.role !== "admin" && session.hospitalMongoId) {
+      const owns = await Booking.exists({ _id: bookingId, hospitalId: session.hospitalMongoId });
+      if (!owns) return NextResponse.json({ success: false, message: "Access denied" }, { status: 403 });
+    }
+
     const update = {};
     if (status        !== undefined) update.status        = status;
     if (paymentStatus !== undefined) update.paymentStatus = paymentStatus;
-    if (notes         !== undefined) update.notes         = notes;
+    if (notes         !== undefined) update.notes         = typeof notes === "string" ? notes : JSON.stringify(notes);
 
     const booking = await Booking.findByIdAndUpdate(bookingId, { $set: update }, { new: true }).lean();
     if (!booking) return NextResponse.json({ success: false, message: "Booking not found" }, { status: 404 });

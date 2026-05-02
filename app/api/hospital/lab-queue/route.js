@@ -50,11 +50,14 @@ export async function GET(request) {
     bookingId: { $in: receivedRefs },
   };
   if (search.trim()) {
-    bQuery.$or = [
-      { bookingId: { $regex: search.trim(), $options: "i" } },
-      { notes:     { $regex: search.trim(), $options: "i" } },
+    bQuery.$and = [
+      { bookingId: { $in: receivedRefs } },
+      { $or: [
+        { bookingId: { $regex: search.trim(), $options: "i" } },
+        { notes:     { $regex: search.trim(), $options: "i" } },
+      ]},
     ];
-    delete bQuery.bookingId; // let search override the strict filter
+    delete bQuery.bookingId;
   }
 
   const [bookings, total] = await Promise.all([

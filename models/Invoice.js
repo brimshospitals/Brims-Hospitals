@@ -46,7 +46,7 @@ const invoiceSchema = new mongoose.Schema({
   paidAmount:    { type: Number, default: 0 },
   balanceAmount: { type: Number, default: 0 },
 
-  status:      { type: String, enum: ["draft", "partial", "paid", "cancelled"], default: "paid" },
+  status:      { type: String, enum: ["draft", "partial", "paid", "cancelled"], default: "draft" },
   invoiceDate: { type: Date, default: Date.now },
   notes:       { type: String, default: "" },
   isActive:    { type: Boolean, default: true },
