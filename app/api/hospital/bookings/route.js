@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import mongoose from "mongoose";
 import connectDB from "../../../../lib/mongodb";
 import Booking from "../../../../models/Booking";
 import LabReport from "../../../../models/LabReport";
@@ -111,19 +112,24 @@ export async function GET(request) {
     });
 
     // Accounting summary (all time for this hospital)
+    let hObjId;
+    try { hObjId = mongoose.Types.ObjectId.createFromHexString(hospitalId); } catch { hObjId = null; }
+    if (!hObjId) {
+      return NextResponse.json({ success: true, bookings: enriched, total, page, pages: Math.ceil(total / limit), accounting: {} });
+    }
     const [paidAgg, pendingAgg, todayAgg] = await Promise.all([
       Booking.aggregate([
-        { $match: { hospitalId: require("mongoose").Types.ObjectId.createFromHexString(hospitalId), paymentStatus: "paid" } },
+        { $match: { hospitalId: hObjId, paymentStatus: "paid" } },
         { $group: { _id: null, total: { $sum: "$amount" } } },
       ]),
       Booking.aggregate([
-        { $match: { hospitalId: require("mongoose").Types.ObjectId.createFromHexString(hospitalId), status: { $in: ["pending","confirmed"] } } },
+        { $match: { hospitalId: hObjId, status: { $in: ["pending","confirmed"] } } },
         { $group: { _id: null, count: { $sum: 1 } } },
       ]),
       Booking.aggregate([
         {
           $match: {
-            hospitalId: require("mongoose").Types.ObjectId.createFromHexString(hospitalId),
+            hospitalId: hObjId,
             appointmentDate: {
               $gte: new Date(new Date().setHours(0,0,0,0)),
               $lte: new Date(new Date().setHours(23,59,59,999)),
