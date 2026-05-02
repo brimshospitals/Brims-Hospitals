@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import connectDB from "../../../../lib/mongodb";
 import Booking from "../../../../models/Booking";
+import LabReport from "../../../../models/LabReport";
+import Invoice from "../../../../models/Invoice";
 import { requireAuth } from "../../../../lib/auth";
 import { autoProvisionLabBooking } from "../../../../lib/labWorkflow";
 
@@ -56,11 +58,56 @@ export async function GET(request) {
       .populate("doctorId", "name department")
       .lean();
 
+    // Enrich Lab bookings with their LabReport + Invoice info
+    const labBookingRefs = bookings
+      .filter((b) => b.type === "Lab")
+      .map((b) => b.bookingId || b._id.toString());
+
+    const [labReports, labInvoices] = labBookingRefs.length
+      ? await Promise.all([
+          LabReport.find({ bookingId: { $in: labBookingRefs }, isActive: true })
+            .select("reportId bookingId status sampleStatus sampleReceivedAt sampleReceivedBy sampleBarcode templateName")
+            .lean(),
+          Invoice.find({ bookingId: { $in: labBookingRefs }, isActive: true })
+            .select("invoiceId bookingId status totalAmount paidAmount")
+            .lean(),
+        ])
+      : [[], []];
+
+    const reportMap  = {};
+    const invoiceMap = {};
+    labReports.forEach((r)  => { reportMap[r.bookingId]  = r; });
+    labInvoices.forEach((i) => { invoiceMap[i.bookingId] = i; });
+
     // Parse notes for each booking
     const enriched = bookings.map((b) => {
       let n = {};
       try { n = b.notes ? JSON.parse(b.notes) : {}; } catch {}
-      return { ...b, parsedNotes: n };
+      const ref     = b.bookingId || b._id.toString();
+      const labRpt  = b.type === "Lab" ? (reportMap[ref]  || null) : undefined;
+      const labInv  = b.type === "Lab" ? (invoiceMap[ref] || null) : undefined;
+      return {
+        ...b,
+        parsedNotes: n,
+        ...(labRpt !== undefined && {
+          labReport: labRpt ? {
+            _id:              labRpt._id,
+            reportId:         labRpt.reportId,
+            status:           labRpt.status,
+            sampleStatus:     labRpt.sampleStatus,
+            sampleReceivedAt: labRpt.sampleReceivedAt,
+            sampleReceivedBy: labRpt.sampleReceivedBy,
+            sampleBarcode:    labRpt.sampleBarcode,
+            templateName:     labRpt.templateName,
+          } : null,
+          labInvoice: labInv ? {
+            invoiceId:   labInv.invoiceId,
+            status:      labInv.status,
+            totalAmount: labInv.totalAmount,
+            paidAmount:  labInv.paidAmount,
+          } : null,
+        }),
+      };
     });
 
     // Accounting summary (all time for this hospital)

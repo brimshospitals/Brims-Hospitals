@@ -2993,6 +2993,50 @@ function BookingsTab({ onOpenPatient }: { onOpenPatient: (id: string) => void })
                       </div>
                     </div>
 
+                    {/* Hospital + Booked-by row */}
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {(b.hospitalName || b.hospitalCity || b.hospitalDistrict) && (
+                        <div className="flex items-center gap-1.5 bg-purple-50 border border-purple-100 rounded-lg px-2.5 py-1.5 text-xs">
+                          <span className="text-purple-500">🏥</span>
+                          <div>
+                            <span className="font-semibold text-purple-800">{b.hospitalName || "Hospital"}</span>
+                            {(b.hospitalCity || b.hospitalDistrict) && (
+                              <span className="text-purple-600 ml-1">· {b.hospitalCity || b.hospitalDistrict}</span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      {b.bookedByName && (
+                        <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1.5 text-xs">
+                          <span className="text-slate-400">👤</span>
+                          <div>
+                            <span className="text-slate-500 text-[10px] font-bold uppercase tracking-wide">Booked by </span>
+                            <span className="font-semibold text-slate-700">{b.bookedByName}</span>
+                            <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                              b.bookedByCitation?.includes("Member") ? "bg-teal-100 text-teal-700 border-teal-200" :
+                              b.bookedByCitation === "Coordinator"   ? "bg-orange-100 text-orange-700 border-orange-200" :
+                              b.bookedByCitation === "Hospital"      ? "bg-purple-100 text-purple-700 border-purple-200" :
+                              b.bookedByCitation === "Staff"         ? "bg-indigo-100 text-indigo-700 border-indigo-200" :
+                              b.bookedByCitation === "Admin"         ? "bg-rose-100 text-rose-700 border-rose-200" :
+                              "bg-blue-100 text-blue-700 border-blue-200"
+                            }`}>{b.bookedByCitation || "Patient"}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Home Collection Address */}
+                    {b.homeAddress && (
+                      <div className="bg-emerald-50 border border-emerald-100 rounded-xl px-3 py-2 mb-3">
+                        <span className="text-[10px] font-bold text-emerald-600 uppercase">🏠 Home Collection: </span>
+                        <span className="text-xs text-gray-700">
+                          {typeof b.homeAddress === "string"
+                            ? b.homeAddress
+                            : [b.homeAddress.flat, b.homeAddress.street, b.homeAddress.landmark, b.homeAddress.district, b.homeAddress.pin].filter(Boolean).join(", ")}
+                        </span>
+                      </div>
+                    )}
+
                     {notes.symptoms && (
                       <div className="bg-gray-50 rounded-xl px-3 py-2 mb-3 border border-gray-100">
                         <span className="text-[10px] font-bold text-gray-400 uppercase">Symptoms: </span>

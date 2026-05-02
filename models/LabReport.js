@@ -48,6 +48,7 @@ const labReportSchema = new mongoose.Schema({
   sampleStatus:     { type: String, enum: ["pending", "received", "rejected"], default: "pending" },
   sampleReceivedAt: { type: Date },
   sampleReceivedBy: { type: String, default: "" }, // staff name who received
+  sampleBarcode:    { type: String, default: "" },  // Sample tube ID / barcode
 
   status:   { type: String, enum: ["draft", "final"], default: "draft" },
   isActive: { type: Boolean, default: true },

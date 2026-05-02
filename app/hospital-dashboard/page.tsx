@@ -21,7 +21,9 @@ type Hospital = {
 type Doctor  = { _id: string; name: string; department: string; speciality?: string; mobile?: string; email?: string; opdFee: number; offerFee?: number; experience?: number; surgeonDegrees?: string[]; photo?: string; isActive: boolean; isAvailable?: boolean; };
 type LabTest  = { _id: string; name: string; category: string; mrp: number; offerPrice: number; membershipPrice?: number; homeCollection: boolean; turnaroundTime?: string; fastingRequired?: boolean; sampleType?: string; isActive: boolean; };
 type SurgeryPkg = { _id: string; name: string; category: string; mrp: number; offerPrice: number; membershipPrice?: number; stayDays: number; surgeonName?: string; surgeonExperience?: number; surgeonDegrees?: string[]; inclusions?: string[]; preSurgeryTests?: string[]; roomOptions?: any[]; pickupFromHome?: boolean; pickupCharge?: number; dropAvailable?: boolean; foodIncluded?: boolean; foodDetails?: string; postCareIncluded?: boolean; followUpConsultations?: number; description?: string; isActive: boolean; };
-type Booking = { _id: string; bookingId: string; type: string; status: string; paymentStatus: string; amount?: number; paymentMode?: string; appointmentDate?: string; slot?: string; parsedNotes?: any; doctorId?: any; createdAt: string; platformCommission?: number; commissionPct?: number; hospitalPayable?: number; payoutStatus?: string; payoutUtr?: string; };
+type LabReportInfo = { _id: string; reportId: string; status: string; sampleStatus: string; sampleReceivedAt?: string; sampleReceivedBy?: string; sampleBarcode?: string; templateName?: string; };
+type LabInvoiceInfo = { invoiceId: string; status: string; totalAmount: number; paidAmount: number; };
+type Booking = { _id: string; bookingId: string; type: string; status: string; paymentStatus: string; amount?: number; paymentMode?: string; appointmentDate?: string; slot?: string; parsedNotes?: any; doctorId?: any; createdAt: string; platformCommission?: number; commissionPct?: number; hospitalPayable?: number; payoutStatus?: string; payoutUtr?: string; labReport?: LabReportInfo | null; labInvoice?: LabInvoiceInfo | null; };
 type Report  = { _id: string; reportId: string; title: string; category: string; fileUrl: string; fileType: string; notes?: string; reportDate: string; patientName: string; hospitalName: string; };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -503,6 +505,85 @@ function ProfileEditModal({ hospital, onClose, onSaved }: { hospital: Hospital; 
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// ── SAMPLE RECEIVE MODAL ──────────────────────────────────────────────────────
+function SampleReceiveModal({ booking, staffName, onClose, onDone }: {
+  booking: Booking; staffName: string; onClose: () => void; onDone: (reportId: string) => void;
+}) {
+  const [barcode,    setBarcode]    = useState(booking.labReport?.sampleBarcode || "");
+  const [receivedBy, setReceivedBy] = useState(staffName || "");
+  const [saving,     setSaving]     = useState(false);
+  const [err,        setErr]        = useState("");
+
+  async function submit() {
+    if (!receivedBy.trim()) { setErr("Received by ka naam zaruri hai"); return; }
+    setSaving(true); setErr("");
+    try {
+      const reportId = booking.labReport?._id;
+      if (!reportId) { setErr("LabReport nahi mila — pehle booking confirm karein"); setSaving(false); return; }
+      const res  = await fetch("/api/hospital/lab-reports", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: reportId,
+          sampleStatus:     "received",
+          sampleReceivedAt: new Date().toISOString(),
+          sampleReceivedBy: receivedBy.trim(),
+          sampleBarcode:    barcode.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (data.success) { onDone(booking.bookingId); }
+      else setErr(data.message || "Save nahi hua");
+    } catch { setErr("Network error"); }
+    setSaving(false);
+  }
+
+  const n = booking.parsedNotes || {};
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h3 className="font-bold text-gray-800 text-base">🧪 Sample Received</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
+        </div>
+        {/* Patient info */}
+        <div className="bg-teal-50 rounded-xl p-3 text-xs space-y-1">
+          <p className="font-semibold text-teal-800">{n.patientName || "Patient"} · {booking.bookingId}</p>
+          {booking.labReport?.templateName && <p className="text-teal-700">Test: {booking.labReport.templateName}</p>}
+          {n.patientMobile && <p className="text-teal-600">📱 {n.patientMobile}</p>}
+        </div>
+        {/* Barcode field */}
+        <div>
+          <label className="text-xs font-semibold text-gray-600 block mb-1">Sample ID / Barcode</label>
+          <input value={barcode} onChange={(e) => setBarcode(e.target.value)}
+            placeholder="e.g. SMP-2024-0001 (optional)"
+            className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+        </div>
+        {/* Received by */}
+        <div>
+          <label className="text-xs font-semibold text-gray-600 block mb-1">Received By *</label>
+          <input value={receivedBy} onChange={(e) => setReceivedBy(e.target.value)}
+            placeholder="Staff ya Lab technician ka naam"
+            className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+        </div>
+        {/* Time */}
+        <div className="bg-gray-50 rounded-xl px-3 py-2 text-xs text-gray-500">
+          📅 Received at: {new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
+        </div>
+        {err && <p className="text-xs text-red-600 font-medium">⚠️ {err}</p>}
+        <div className="flex gap-3 pt-1">
+          <button onClick={onClose} className="flex-1 border border-gray-200 text-gray-600 py-2.5 rounded-xl text-sm font-semibold hover:bg-gray-50">Cancel</button>
+          <button onClick={submit} disabled={saving}
+            className="flex-1 bg-teal-600 hover:bg-teal-700 text-white py-2.5 rounded-xl text-sm font-bold shadow-sm disabled:opacity-50">
+            {saving ? "Saving..." : "✅ Confirm Receipt"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // ── BOOKINGS TAB ──────────────────────────────────────────────────────────────
 function BookingsTab({ hospitalId, initialSearch = "", initialType = "all", initialDoctorId = "", filterLabel = "" }: { hospitalId: string; initialSearch?: string; initialType?: string; initialDoctorId?: string; filterLabel?: string }) {
   type BookingSubTab = "today" | "pending" | "all" | "accounting";
@@ -516,9 +597,16 @@ function BookingsTab({ hospitalId, initialSearch = "", initialType = "all", init
   const [page,      setPage]      = useState(1);
   const [totalPages,setTotalPages]= useState(1);
   const [total,     setTotal]     = useState(0);
-  const [updating,  setUpdating]  = useState<string | null>(null);
-  const [toast,     setToast]     = useState<{ msg: string; ok: boolean } | null>(null);
-  const [expanded,  setExpanded]  = useState<string | null>(null);
+  const [updating,     setUpdating]     = useState<string | null>(null);
+  const [toast,        setToast]        = useState<{ msg: string; ok: boolean } | null>(null);
+  const [expanded,     setExpanded]     = useState<string | null>(null);
+  const [sampleModal,  setSampleModal]  = useState<Booking | null>(null);
+  const [staffName,    setStaffName]    = useState("");
+
+  // Fetch logged-in staff/hospital user name for sample receive pre-fill
+  useEffect(() => {
+    fetch("/api/auth/me").then(r => r.json()).then(d => { if (d.name) setStaffName(d.name); }).catch(() => {});
+  }, []);
 
   function showToast(msg: string, ok = true) { setToast({ msg, ok }); setTimeout(() => setToast(null), 3500); }
 
@@ -552,7 +640,8 @@ function BookingsTab({ hospitalId, initialSearch = "", initialType = "all", init
       const res  = await fetch("/api/hospital/bookings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bookingId, status }) });
       const data = await res.json();
       if (data.success) {
-        setBookings((p) => p.map((b) => b._id === bookingId ? { ...b, status } : b));
+        // Re-fetch this booking to get fresh labReport/labInvoice after confirm
+        await fetchBookings();
         showToast(`Booking ${status} ✓`);
       } else showToast(data.message, false);
     } finally { setUpdating(null); }
@@ -681,24 +770,97 @@ function BookingsTab({ hospitalId, initialSearch = "", initialType = "all", init
           </div>
         )}
 
+        {/* ── Lab info banner (for Lab bookings) ── */}
+        {b.type === "Lab" && isOpen && (
+          <div className="px-4 pb-3 space-y-2" onClick={(e) => e.stopPropagation()}>
+            {/* Invoice badge */}
+            {b.labInvoice && (
+              <div className="flex items-center justify-between bg-purple-50 border border-purple-100 rounded-xl px-3 py-2 text-xs">
+                <span className="font-semibold text-purple-700">🧾 Invoice: {b.labInvoice.invoiceId}</span>
+                <span className={`px-2 py-0.5 rounded-full font-semibold border text-[10px] ${b.labInvoice.status === "paid" ? "bg-green-100 text-green-700 border-green-200" : "bg-amber-100 text-amber-700 border-amber-200"}`}>
+                  {b.labInvoice.status === "paid" ? "✅ Paid" : "⏳ Pending"} · ₹{(b.labInvoice.totalAmount || 0).toLocaleString()}
+                </span>
+              </div>
+            )}
+            {/* Sample status */}
+            {b.labReport && (
+              <div className="flex items-center justify-between bg-teal-50 border border-teal-100 rounded-xl px-3 py-2 text-xs">
+                <span className="font-semibold text-teal-700">
+                  {b.labReport.sampleStatus === "received" ? "✅ Sample Received" : "⏳ Sample Awaited"}
+                  {b.labReport.sampleBarcode ? ` · ID: ${b.labReport.sampleBarcode}` : ""}
+                </span>
+                {b.labReport.sampleStatus === "received" && (
+                  <span className="text-teal-600">{b.labReport.sampleReceivedBy ? `By: ${b.labReport.sampleReceivedBy}` : ""}</span>
+                )}
+              </div>
+            )}
+            {/* Report badge */}
+            {b.labReport && (
+              <div className="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-xl px-3 py-2 text-xs">
+                <span className="font-semibold text-blue-700">📋 Report: {b.labReport.reportId}</span>
+                <div className="flex items-center gap-2">
+                  <span className={`px-2 py-0.5 rounded-full font-semibold border text-[10px] ${b.labReport.status === "final" ? "bg-green-100 text-green-700 border-green-200" : "bg-amber-100 text-amber-700 border-amber-200"}`}>
+                    {b.labReport.status === "final" ? "✅ Final" : "📝 Draft"}
+                  </span>
+                  {b.labReport.sampleStatus === "received" && (
+                    <a href={`/lab-report-manager?reportId=${b.labReport.reportId}`}
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-2 py-0.5 rounded-lg font-semibold text-[10px]">
+                      ✏️ Fill Report
+                    </a>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ── Action buttons ── */}
         {(b.status === "pending" || b.status === "confirmed") && (
-          <div className={`flex gap-2 px-4 pb-4 ${isOpen ? "" : "pt-0"}`} onClick={(e) => e.stopPropagation()}>
+          <div className={`flex flex-wrap gap-2 px-4 pb-4 ${isOpen ? "" : "pt-0"}`} onClick={(e) => e.stopPropagation()}>
             {b.status === "pending" && <>
               <button onClick={() => updateStatus(b._id, "confirmed")} disabled={isUpdating}
                 className="flex-1 text-xs bg-green-600 hover:bg-green-700 text-white py-2 rounded-xl font-semibold transition disabled:opacity-50">
-                {isUpdating ? "..." : "✓ Confirm"}
+                {isUpdating ? "⏳..." : "✓ Confirm"}
               </button>
               <button onClick={() => updateStatus(b._id, "cancelled")} disabled={isUpdating}
                 className="flex-1 text-xs bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 py-2 rounded-xl font-semibold transition disabled:opacity-50">
                 ✗ Decline
               </button>
             </>}
-            {b.status === "confirmed" && <>
+            {b.status === "confirmed" && b.type !== "Lab" && <>
               <button onClick={() => updateStatus(b._id, "completed")} disabled={isUpdating}
                 className="flex-1 text-xs bg-teal-600 hover:bg-teal-700 text-white py-2 rounded-xl font-semibold transition disabled:opacity-50">
-                {isUpdating ? "..." : "✓ Mark Completed"}
+                {isUpdating ? "⏳..." : "✓ Mark Completed"}
               </button>
+              <button onClick={() => updateStatus(b._id, "cancelled")} disabled={isUpdating}
+                className="text-xs bg-gray-50 hover:bg-gray-100 text-gray-600 border border-gray-200 px-3 py-2 rounded-xl font-semibold transition disabled:opacity-50">
+                Cancel
+              </button>
+            </>}
+            {b.status === "confirmed" && b.type === "Lab" && <>
+              {/* Sample pending — show Sample Received button */}
+              {(!b.labReport || b.labReport.sampleStatus === "pending") && (
+                <button onClick={() => setSampleModal(b)} disabled={isUpdating || !b.labReport}
+                  className="flex-1 text-xs bg-amber-500 hover:bg-amber-600 text-white py-2 rounded-xl font-semibold transition disabled:opacity-50"
+                  title={!b.labReport ? "LabReport create ho rahi hai..." : ""}>
+                  🧪 Sample Received
+                </button>
+              )}
+              {/* Sample received — show Fill Report + Mark Completed */}
+              {b.labReport?.sampleStatus === "received" && (
+                <>
+                  <a href={`/lab-report-manager?reportId=${b.labReport.reportId}`}
+                    className="flex-1 text-center text-xs bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-xl font-semibold transition">
+                    ✏️ Fill Report
+                  </a>
+                  {b.labReport.status === "final" && (
+                    <button onClick={() => updateStatus(b._id, "completed")} disabled={isUpdating}
+                      className="flex-1 text-xs bg-teal-600 hover:bg-teal-700 text-white py-2 rounded-xl font-semibold transition disabled:opacity-50">
+                      {isUpdating ? "⏳..." : "✓ Mark Completed"}
+                    </button>
+                  )}
+                </>
+              )}
               <button onClick={() => updateStatus(b._id, "cancelled")} disabled={isUpdating}
                 className="text-xs bg-gray-50 hover:bg-gray-100 text-gray-600 border border-gray-200 px-3 py-2 rounded-xl font-semibold transition disabled:opacity-50">
                 Cancel
@@ -802,6 +964,16 @@ function BookingsTab({ hospitalId, initialSearch = "", initialType = "all", init
             </div>
           )}
         </>
+      )}
+
+      {/* Sample Receive Modal */}
+      {sampleModal && (
+        <SampleReceiveModal
+          booking={sampleModal}
+          staffName={staffName}
+          onClose={() => setSampleModal(null)}
+          onDone={() => { setSampleModal(null); fetchBookings(); showToast("✅ Sample received! Lab Queue mein add ho gaya"); }}
+        />
       )}
     </div>
   );

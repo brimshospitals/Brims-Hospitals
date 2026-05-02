@@ -156,7 +156,7 @@ export async function PATCH(request) {
       "results", "status", "technicianName", "doctorName", "labName",
       "collectionDate", "reportDate", "sampleType", "referredBy",
       "patientName", "patientAge", "patientGender", "patientMobile", "patientRefId",
-      "sampleStatus", "sampleReceivedAt", "sampleReceivedBy",
+      "sampleStatus", "sampleReceivedAt", "sampleReceivedBy", "sampleBarcode",
       "isActive",
     ];
     const update = {};

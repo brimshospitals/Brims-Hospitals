@@ -33,17 +33,28 @@ export async function GET(request) {
 
   await connectDB();
 
-  // 1. Fetch confirmed Lab bookings for this hospital
+  // 1. Find LabReports where sample has been received for this hospital
+  const receivedReports = await LabReport.find({
+    hospitalId,
+    sampleStatus: "received",
+    isActive: true,
+  }).select("bookingId").lean();
+
+  const receivedRefs = receivedReports.map((r) => r.bookingId).filter(Boolean);
+
+  // 2. Fetch the confirmed Lab bookings for those refs
   const bQuery = {
     hospitalId,
     type: "Lab",
     status: "confirmed",
+    bookingId: { $in: receivedRefs },
   };
   if (search.trim()) {
     bQuery.$or = [
       { bookingId: { $regex: search.trim(), $options: "i" } },
       { notes:     { $regex: search.trim(), $options: "i" } },
     ];
+    delete bQuery.bookingId; // let search override the strict filter
   }
 
   const [bookings, total] = await Promise.all([

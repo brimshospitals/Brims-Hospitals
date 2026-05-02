@@ -92,24 +92,50 @@ export async function GET(request) {
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
-      .populate("userId",   "name mobile memberId")
+      .populate("userId",   "name mobile memberId role")
       .populate("doctorId", "name speciality")
       .lean();
 
-    // B5: Batch-fetch package/lab test names — eliminates N+1 queries
-    const bkPkgIds  = [...new Set(bookings.filter(b => b.type === "Surgery" && b.packageId).map(b => b.packageId.toString()))];
-    const bkLabIds  = [...new Set(bookings.filter(b => b.type === "Lab"     && b.labTestId).map(b => b.labTestId.toString()))];
-    const [bkPkgs, bkTests] = await Promise.all([
-      bkPkgIds.length ? SurgeryPackage.find({ _id: { $in: bkPkgIds } }).select("name hospitalName").lean() : [],
-      bkLabIds.length ? LabTest.find({ _id: { $in: bkLabIds } }).select("name hospitalName").lean()        : [],
+    // Batch-fetch package/lab test/hospital names
+    const bkPkgIds   = [...new Set(bookings.filter(b => b.type === "Surgery" && b.packageId).map(b => b.packageId.toString()))];
+    const bkLabIds   = [...new Set(bookings.filter(b => b.type === "Lab"     && b.labTestId).map(b => b.labTestId.toString()))];
+    const bkHospIds  = [...new Set(bookings.filter(b => b.hospitalId).map(b => b.hospitalId.toString()))];
+
+    const [bkPkgs, bkTests, bkHosps] = await Promise.all([
+      bkPkgIds.length  ? SurgeryPackage.find({ _id: { $in: bkPkgIds  } }).select("name hospitalName").lean() : [],
+      bkLabIds.length  ? LabTest.find({ _id: { $in: bkLabIds  } }).select("name hospitalName").lean()        : [],
+      bkHospIds.length ? Hospital.find({ _id: { $in: bkHospIds } }).select("name address").lean()            : [],
     ]);
-    const bkPkgMap  = {}; bkPkgs.forEach(p  => { bkPkgMap[p._id.toString()]  = p; });
-    const bkTestMap = {}; bkTests.forEach(t => { bkTestMap[t._id.toString()] = t; });
+    const bkPkgMap   = {}; bkPkgs.forEach(p  => { bkPkgMap[p._id.toString()]  = p; });
+    const bkTestMap  = {}; bkTests.forEach(t => { bkTestMap[t._id.toString()] = t; });
+    const bkHospMap  = {}; bkHosps.forEach(h => { bkHospMap[h._id.toString()] = h; });
+
+    // Booking source citation: what role booked this?
+    const ROLE_CITATION = { user: "Patient", member: "Patient (Member)", coordinator: "Coordinator", hospital: "Hospital", staff: "Staff", admin: "Admin", doctor: "Doctor" };
 
     const enriched = bookings.map(b => {
       let extra = {};
-      if (b.type === "Surgery" && b.packageId) { const p = bkPkgMap[b.packageId.toString()];  if (p) extra = { packageName: p.name, hospitalName: p.hospitalName }; }
+      if (b.type === "Surgery" && b.packageId) { const p = bkPkgMap[b.packageId.toString()]; if (p) extra = { packageName: p.name, hospitalName: p.hospitalName }; }
       if (b.type === "Lab"     && b.labTestId) { const t = bkTestMap[b.labTestId.toString()]; if (t) extra = { testName: t.name, hospitalName: t.hospitalName }; }
+
+      // Hospital name + city (from Hospital doc if not already set)
+      let hosp = b.hospitalId ? bkHospMap[b.hospitalId.toString()] : null;
+      if (hosp && !extra.hospitalName) extra.hospitalName = hosp.name;
+      if (hosp?.address?.city    ) extra.hospitalCity     = hosp.address.city;
+      if (hosp?.address?.district) extra.hospitalDistrict = hosp.address.district;
+
+      // Booked-by info
+      const bookedByRole = b.userId?.role || "user";
+      extra.bookedByName     = b.userId?.name     || "Unknown";
+      extra.bookedByMobile   = b.userId?.mobile   || "";
+      extra.bookedByMemberId = b.userId?.memberId || "";
+      extra.bookedByCitation = ROLE_CITATION[bookedByRole] || bookedByRole;
+
+      // Parse homeAddress from notes for display
+      let notes = {};
+      try { notes = b.notes ? JSON.parse(b.notes) : {}; } catch {}
+      if (notes.homeAddress) extra.homeAddress = notes.homeAddress;
+
       return { ...b, ...extra };
     });
 
